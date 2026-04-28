@@ -1,0 +1,36 @@
+# Git files
+.git
+.gitignore
+.github
+
+# Golang Backend
+backend/vendor/
+backend/.idea/
+backend/.vscode/
+backend/tmp/
+
+# Frontend
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/build/
+frontend/coverage/
+frontend/.env*
+frontend/.DS_Store
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Local development files
+.env*
+*.log
+*.swp
+.DS_Store
+
+# IDE files
+.idea/
+.vscode/
+
+# Docs and CI configuration
+*.md
+LICENSE
+docs/

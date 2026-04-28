@@ -1,7 +1,31 @@
 # Created by https://www.toptal.com/developers/gitignore/api/macos,golang,node
 # Edit at https://www.toptal.com/developers/gitignore?templates=macos,golang,node
 
-#!! ERROR: golang is undefined. Use list command to see defined gitignore types !!#
+### Golang ###
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go binary
+bin/
+
+# Air tmp directory
+tmp/
 
 ### macOS ###
 # General
@@ -179,3 +203,19 @@ dist
 # End of https://www.toptal.com/developers/gitignore/api/macos,golang,node
 dist
 build
+
+# Local development
+.env.*
+!.env.example
+
+# Docker volumes
+data/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# API key file
+.apikey

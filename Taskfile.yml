@@ -1,0 +1,21 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build both the frontend and backend
+    cmds:
+      - task: build:backend
+      - task: build:frontend
+
+  build:backend:
+    desc: Build the backend
+    dir: backend
+    cmds:
+      - go build -o ../backend main.go
+
+  build:frontend:
+    desc: Build the frontend
+    dir: frontend
+    cmds:
+      - npm install
+      - npm run build
