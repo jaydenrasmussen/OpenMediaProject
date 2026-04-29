@@ -17,6 +17,11 @@ func (r *Registry) Register(n Notifier) {
 	r.notifiers = append(r.notifiers, n)
 }
 
+// Reset removes all registered notifiers. Call before rebuilding from updated config.
+func (r *Registry) Reset() {
+	r.notifiers = r.notifiers[:0]
+}
+
 // Fire sends the given event to every registered Notifier, logging any errors.
 func (r *Registry) Fire(event NotificationEvent) {
 	for _, n := range r.notifiers {

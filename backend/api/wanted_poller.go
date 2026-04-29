@@ -147,6 +147,16 @@ func (p *WantedPoller) processWantedItem(item *models.WantedItem, wantedRepo *db
 		return
 	}
 
+	// Mark episode as downloading.
+	if item.MediaType == "tv" && item.Season > 0 && item.Episode > 0 {
+		if ep, epErr := db.NewEpisodeRepository().GetByKey(item.MediaID, item.Season, item.Episode); epErr == nil {
+			ep.Status = models.EpisodeStatusDownloading
+			if saveErr := db.NewEpisodeRepository().Save(ep); saveErr != nil {
+				log.Warn().Err(saveErr).Str("mediaID", item.MediaID).Int("season", item.Season).Int("episode", item.Episode).Msg("processWantedItem: failed to update episode status to downloading")
+			}
+		}
+	}
+
 	now := time.Now()
 
 	if best.InfoHash != "" {

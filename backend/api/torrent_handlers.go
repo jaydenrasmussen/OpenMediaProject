@@ -779,14 +779,20 @@ func (h *TorrentHandler) CheckForCompletedTorrents() {
 						log.Warn().Err(dbErr).Str("mediaID", download.MediaID).Msg("CheckForCompletedTorrents: could not load show for structured move, falling back")
 						moveErr = h.fileMover.MoveFile(file, "tvshow")
 					} else {
-						// Best-effort: find the matching episode by parsing S/E from filename.
-						// Fall back to flat move if we cannot identify the episode.
-						ep := findEpisodeForFile(file, download.MediaID)
-						if ep != nil {
-							_, moveErr = h.fileMover.MoveTVFile(file, show, ep)
-						} else {
-							moveErr = h.fileMover.MoveFile(file, "tvshow")
+				// Best-effort: find the matching episode by parsing S/E from filename.
+					// Fall back to flat move if we cannot identify the episode.
+					ep := findEpisodeForFile(file, download.MediaID)
+					if ep != nil {
+						_, moveErr = h.fileMover.MoveTVFile(file, show, ep)
+						if moveErr == nil {
+							completedAt := time.Now()
+							ep.Status = models.EpisodeStatusDownloaded
+							ep.DownloadedAt = &completedAt
+							_ = db.NewEpisodeRepository().Save(ep)
 						}
+					} else {
+						moveErr = h.fileMover.MoveFile(file, "tvshow")
+					}
 					}
 				} else {
 					moveErr = h.fileMover.MoveFile(file, download.MediaType)

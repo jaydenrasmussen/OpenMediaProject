@@ -42,7 +42,7 @@ Each of these is a separate application, with its own database, its own configur
 | Quality upgrade monitoring | ✅ |
 | Automatic file moving on completion | ✅ |
 | Plex, Jellyfin, and Emby library scan on completion | ✅ |
-| Notifications (Discord, Email, Ntfy, Gotify, Apprise) | ✅ |
+| Notifications (Discord, Email, Ntfy, Gotify, Apprise, Telegram) | ✅ |
 | Wanted queue — request media without triggering an immediate download | ✅ |
 | Admin approve / reject requests | ✅ |
 | Multi-user support with role-based access (admin / user) | ✅ |
@@ -160,7 +160,7 @@ Mark download completed in DB
         │
         ▼
 Scan all registered media servers (Plex / Jellyfin / Emby)
-Send notifications (Discord / Email / Ntfy / Gotify / Apprise)
+Send notifications (Discord / Email / Ntfy / Gotify / Apprise / Telegram)
 ```
 
 ---
@@ -200,7 +200,8 @@ OpenMediaProject/
 │   │   │   ├── email.go
 │   │   │   ├── ntfy.go
 │   │   │   ├── gotify.go
-│   │   │   └── apprise.go
+│   │   │   ├── apprise.go
+│   │   │   └── telegram.go
 │   │   ├── media_server.go         # MediaServer interface
 │   │   ├── media_server_registry.go # Fan-out registry
 │   │   ├── plex.go                 # Plex API client
@@ -268,23 +269,8 @@ OpenMediaProject/
 - All of **Priority 4** (Jellyfin/Emby, qBittorrent/SABnzbd, Activity History, Settings UI, Task Visibility, Multi-User + JWT)
 - From **Priority 1**: P1.2 Wanted Queue, P1.4 Quality Upgrades
 - From **Priority 3**: P3.3 Release Profile Filtering
-
-### 🔴 Priority 1 — Core Functionality Gaps (remaining)
-
-#### 1.1 — TV Show Episode & Season Tracking
-
-Currently the app stores TV shows as flat records. What's still needed:
-- Per-episode `Season` / `Episode` model with status (`wanted`, `downloading`, `downloaded`, `missing`)
-- Automatic "monitor" mode: mark all future episodes wanted when a show is added
-- `GET /api/v1/tvshows/:id/episodes` endpoints
-- Structured file renaming: `TVShows/Show Name/Season 01/Show Name - S01E01 - Title.mkv`
-
-#### 1.3 — Structured File & Library Management
-
-The current `FileMover` places files in flat `Movies/` and `TVShows/` directories. Needed:
-- `Movies/Title (Year)/Title (Year).mkv` naming
-- Multi-file torrent handling (extras, subtitles)
-- Full duplicate detection before any download
+- **P1.1** TV Show Episode & Season Tracking — per-episode status model, `GET /api/v1/tvshows/:id/episodes` and season endpoints, `POST /api/v1/tvshows/:id/monitor` to queue all undownloaded episodes, episode status lifecycle (missing → downloading → downloaded)
+- **P1.3** Structured File & Library Management — `Movies/Title (Year)/Title (Year).mkv` naming, TV `Season NN/Show - S01E01 - Title.mkv` layout, subtitle and extras handling, duplicate detection before every download
 
 ---
 
@@ -388,6 +374,21 @@ cd frontend && npm install && npm run dev
 | `EMAIL_PASSWORD` | SMTP password |
 | `EMAIL_FROM` | Sender address |
 | `EMAIL_TO` | Recipient address |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token (from BotFather) |
+| `TELEGRAM_CHAT_ID` | Telegram chat or channel ID to send messages to |
+
+### Setting up Telegram Notifications
+
+1. **Create a bot** — open Telegram and start a chat with [@BotFather](https://t.me/BotFather).
+2. Send `/newbot` and follow the prompts to choose a name and username for your bot.
+3. BotFather will reply with a token that looks like `123456789:ABCdef...`. Set this as `TELEGRAM_BOT_TOKEN`.
+4. **Get your chat ID** — start a conversation with your new bot (send it any message), then open this URL in a browser, replacing `<token>` with your token:
+   ```
+   https://api.telegram.org/bot<token>/getUpdates
+   ```
+   Find the `"chat"` object in the JSON response and copy its `"id"` value. Set that as `TELEGRAM_CHAT_ID`.
+   > For a public channel, use the channel username prefixed with `@` (e.g. `@mychannel`). For a private channel or group, add the bot as an admin first and use the numeric ID from `getUpdates`.
+5. Set both variables and restart (or redeploy) the container. OpenMediaProject will send a Telegram message on each completed download.
 
 ### Download Quality
 
@@ -449,6 +450,7 @@ POST /api/v1/auth/register       { username, password, email }
 # Download
 POST /api/v1/movies/:id/download?quality=1080p
 POST /api/v1/tvshows/:id/download?season=1&episode=1&quality=1080p
+POST /api/v1/tvshows/:id/monitor
 GET  /api/v1/downloads
 
 # Request queue

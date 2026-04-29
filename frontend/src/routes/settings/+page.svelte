@@ -89,6 +89,8 @@
     field("gotify_url", "Gotify URL", "url"),
     field("gotify_token", "Gotify Token", "password"),
     field("apprise_url", "Apprise URL", "url"),
+    field("telegram_bot_token", "Telegram Bot Token", "password"),
+    field("telegram_chat_id", "Telegram Chat ID"),
     field("email_smtp_host", "SMTP Host"),
     field("email_smtp_port", "SMTP Port", "number"),
     field("email_username", "SMTP Username"),

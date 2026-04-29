@@ -186,6 +186,7 @@ export interface TVShow {
   backdrop_url: string;
   rating: number;
   genres: string[];
+  monitored: boolean;
 }
 
 export interface Episode {
@@ -357,9 +358,22 @@ export const tvApi = {
     }
   },
 
-  getEpisodes: async (id: string): Promise<ApiResponse<Episode[]>> => {
+  getEpisodes: async (id: string): Promise<ApiResponse<{ show_id: string; episodes: Episode[]; count: number }>> => {
     try {
       const response = await apiClient.get(`/v1/tvshows/${id}/episodes`);
+      return { data: response.data };
+    } catch (error) {
+      if (axios.isAxiosError(error))
+        return { error: true, message: error.response?.data?.message || error.message };
+      return { error: true, message: "Unknown error occurred" };
+    }
+  },
+
+  monitorTVShow: async (
+    id: string,
+  ): Promise<ApiResponse<{ success: boolean; monitored: boolean; episodes: number; queued: number }>> => {
+    try {
+      const response = await apiClient.post(`/v1/tvshows/${id}/monitor`);
       return { data: response.data };
     } catch (error) {
       if (axios.isAxiosError(error))

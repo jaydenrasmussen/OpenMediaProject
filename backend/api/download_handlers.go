@@ -231,6 +231,16 @@ func (h *DownloadHandler) DownloadTVShow(c *fiber.Ctx) error {
 		})
 	}
 
+	// Mark episode as downloading so status is reflected immediately.
+	if season > 0 && episode > 0 {
+		if ep, epErr := db.NewEpisodeRepository().GetByKey(show.ID, season, episode); epErr == nil {
+			ep.Status = models.EpisodeStatusDownloading
+			if saveErr := db.NewEpisodeRepository().Save(ep); saveErr != nil {
+				log.Warn().Err(saveErr).Str("showID", show.ID).Int("season", season).Int("episode", episode).Msg("DownloadTVShow: failed to update episode status to downloading")
+			}
+		}
+	}
+
 	hash := best.InfoHash
 
 	if hash != "" {

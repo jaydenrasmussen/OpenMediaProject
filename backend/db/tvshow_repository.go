@@ -141,10 +141,20 @@ func (r *TVShowRepository) Delete(id string) error {
 	})
 }
 
-// UpsertBatch upserts multiple TV shows in a single transaction
+// UpsertBatch upserts multiple TV shows in a single transaction.
+// Fields that represent user-controlled state (Monitored) are preserved
+// from the existing record so that a metadata refresh cannot reset them.
 func (r *TVShowRepository) UpsertBatch(shows []*models.TVShow) error {
 	return r.db.Update(func(tx *nutsdb.Tx) error {
 		for _, show := range shows {
+			// Preserve user-controlled state from the existing record.
+			if existing, err := tx.Get(TVShowBucket, []byte(show.ID)); err == nil {
+				var prev models.TVShow
+				if jsonErr := json.Unmarshal(existing.Value, &prev); jsonErr == nil {
+					show.Monitored = prev.Monitored
+				}
+			}
+
 			// Convert TV show to JSON
 			showData, err := json.Marshal(show)
 			if err != nil {

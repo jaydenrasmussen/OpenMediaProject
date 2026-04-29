@@ -117,6 +117,8 @@ type NotificationsConfig struct {
 	GotifyURL         string
 	GotifyToken       string
 	AppriseURL        string
+	TelegramBotToken  string
+	TelegramChatID    string
 }
 
 // RuTorrentConfig holds ruTorrent API related configuration (legacy)
@@ -193,6 +195,8 @@ func Load() (*Config, error) {
 			GotifyURL:         getEnv("GOTIFY_URL", ""),
 			GotifyToken:       getEnv("GOTIFY_TOKEN", ""),
 			AppriseURL:        getEnv("APPRISE_URL", ""),
+			TelegramBotToken:  getEnv("TELEGRAM_BOT_TOKEN", ""),
+			TelegramChatID:    getEnv("TELEGRAM_CHAT_ID", ""),
 		},
 	}
 

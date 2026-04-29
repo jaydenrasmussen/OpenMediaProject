@@ -19,10 +19,12 @@
   let error = "";
   let requestStatus: "idle" | "loading" | "success" | "error" = "idle";
   let requestMessage = "";
+  let monitorStatus: "idle" | "loading" | "success" | "error" = "idle";
+  let monitorMessage = "";
   let posterError = false;
   let backdropError = false;
 
-  $: id = $page.params.id;
+  $: id = $page.params.id as string;
 
   // Group episodes by season
   $: seasonMap = episodes.reduce<Record<number, Episode[]>>((acc, ep) => {
@@ -81,6 +83,27 @@
     }
   }
 
+  async function handleMonitor() {
+    if (!show) return;
+    monitorStatus = "loading";
+    monitorMessage = "";
+    const result = await tvApi.monitorTVShow(id);
+    if (result.error) {
+      monitorStatus = "error";
+      monitorMessage = result.message || "Failed to enable monitoring.";
+    } else {
+      monitorStatus = "success";
+      const queued = result.data?.queued ?? 0;
+      monitorMessage = `Monitoring enabled — ${queued} episode${queued !== 1 ? "s" : ""} queued.`;
+      if (show) show = { ...show, monitored: true };
+      // Reload episodes since monitor may have fetched new ones from TVDB
+      const epsResult = await tvApi.getEpisodes(id);
+      if (!epsResult.error) {
+        episodes = epsResult.data?.episodes ?? [];
+      }
+    }
+  }
+
   async function handleRequest() {
     if (!show) return;
     requestStatus = "loading";
@@ -109,15 +132,7 @@
     loading = false;
 
     if (!epsResult.error) {
-      // API may return array directly or wrapped
-      const raw = epsResult.data as unknown;
-      if (Array.isArray(raw)) {
-        episodes = raw as Episode[];
-      } else if (raw && typeof raw === "object" && "episodes" in (raw as object)) {
-        episodes = (raw as { episodes: Episode[] }).episodes;
-      } else {
-        episodes = epsResult.data as Episode[] ?? [];
-      }
+      episodes = epsResult.data?.episodes ?? [];
     }
     episodesLoading = false;
   });
@@ -134,7 +149,7 @@
 {:else if error}
   <div class="max-w-2xl mx-auto py-12 text-center">
     <p class="text-red-600 mb-4">{error}</p>
-    <Button on:click={() => goto("/discover")}>Back to Discover</Button>
+    <Button on:click={() => goto("/tvshows")}>Back to TV Shows</Button>
   </div>
 {:else if show}
   <!-- Backdrop -->
@@ -208,27 +223,52 @@
           <p class="text-muted-foreground leading-relaxed">{show.overview}</p>
         {/if}
 
-        <!-- Request button -->
-        <div class="pt-2">
-          <Button
-            on:click={handleRequest}
-            disabled={requestStatus === "loading" || requestStatus === "success"}
-            class="min-w-40"
-          >
-            {#if requestStatus === "loading"}
-              Requesting…
-            {:else if requestStatus === "success"}
-              ✓ Requested
-            {:else}
-              Request Download
-            {/if}
-          </Button>
+        <!-- Action buttons -->
+        <div class="pt-2 flex flex-wrap gap-3 items-start">
+          <div>
+            <Button
+              on:click={handleRequest}
+              disabled={requestStatus === "loading" || requestStatus === "success"}
+              class="min-w-40"
+            >
+              {#if requestStatus === "loading"}
+                Requesting…
+              {:else if requestStatus === "success"}
+                ✓ Requested
+              {:else}
+                Request Download
+              {/if}
+            </Button>
 
-          {#if requestMessage}
-            <p class="mt-2 text-sm {requestStatus === 'error' ? 'text-red-600' : 'text-green-600'}">
-              {requestMessage}
-            </p>
-          {/if}
+            {#if requestMessage}
+              <p class="mt-2 text-sm {requestStatus === 'error' ? 'text-red-600' : 'text-green-600'}">
+                {requestMessage}
+              </p>
+            {/if}
+          </div>
+
+          <div>
+            <Button
+              on:click={handleMonitor}
+              disabled={monitorStatus === "loading" || show.monitored}
+              variant={show.monitored ? "outline" : "secondary"}
+              class="min-w-40"
+            >
+              {#if monitorStatus === "loading"}
+                Enabling…
+              {:else if show.monitored}
+                ✓ Monitored
+              {:else}
+                Monitor
+              {/if}
+            </Button>
+
+            {#if monitorMessage}
+              <p class="mt-2 text-sm {monitorStatus === 'error' ? 'text-red-600' : 'text-green-600'}">
+                {monitorMessage}
+              </p>
+            {/if}
+          </div>
         </div>
       </div>
     </div>

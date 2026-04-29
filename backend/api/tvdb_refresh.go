@@ -8,6 +8,7 @@ import (
 	"backend/db"
 	"backend/models"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -52,6 +53,7 @@ func (r *TVDBRefresher) RefreshAll() error {
 		}
 
 		toSave := make([]*models.Episode, 0, len(rawEpisodes))
+		var newForMonitored []*models.Episode
 
 		for _, raw := range rawEpisodes {
 			ep := models.NewEpisodeFromTVDBData(show.ID, raw)
@@ -72,6 +74,9 @@ func (r *TVDBRefresher) RefreshAll() error {
 				ep.Status = episodeStatusFromAirDate(ep.AirDate, today)
 				ep.FetchedAt = now
 				toSave = append(toSave, ep)
+				if show.Monitored {
+					newForMonitored = append(newForMonitored, ep)
+				}
 			}
 		}
 
@@ -79,6 +84,50 @@ func (r *TVDBRefresher) RefreshAll() error {
 			log.Error().Err(err).Str("show", show.Name).Msg("TVDB refresh: failed to save episodes")
 			time.Sleep(500 * time.Millisecond)
 			continue
+		}
+
+		// For monitored shows, add newly discovered episodes to the wanted queue.
+		if len(newForMonitored) > 0 {
+			wantedRepo := db.NewWantedRepository()
+
+			// Build a deduplication set of (season, episode) already active in the queue.
+			type epKey struct{ season, episode int }
+			activeSet := make(map[epKey]bool)
+			if existing, err := wantedRepo.GetByMedia("tv", show.ID); err == nil {
+				for _, w := range existing {
+					if w.Status == models.WantedStatusWanted || w.Status == models.WantedStatusDownloading {
+						activeSet[epKey{w.Season, w.Episode}] = true
+					}
+				}
+			}
+
+			for _, ep := range newForMonitored {
+				if ep.Status == models.EpisodeStatusDownloaded ||
+					ep.Status == models.EpisodeStatusSkipped ||
+					ep.Status == models.EpisodeStatusDownloading {
+					continue
+				}
+				if activeSet[epKey{ep.Season, ep.Number}] {
+					continue
+				}
+				item := &models.WantedItem{
+					ID:         uuid.NewString(),
+					MediaType:  "tv",
+					MediaID:    show.ID,
+					Title:      show.Name,
+					Season:     ep.Season,
+					Episode:    ep.Number,
+					MinQuality: r.config.Downloads.PreferredQuality,
+					Status:     models.WantedStatusWanted,
+					AddedAt:    now,
+					UpdatedAt:  now,
+				}
+				if err := wantedRepo.Save(item); err != nil {
+					log.Warn().Err(err).Str("show", show.Name).Int("season", ep.Season).Int("episode", ep.Number).Msg("TVDB refresh: failed to queue new episode for monitored show")
+				} else {
+					log.Info().Str("show", show.Name).Int("season", ep.Season).Int("episode", ep.Number).Msg("TVDB refresh: queued new episode for monitored show")
+				}
+			}
 		}
 
 		log.Info().Str("show", show.Name).Int("episodes", len(toSave)).Msg("TVDB refresh complete")

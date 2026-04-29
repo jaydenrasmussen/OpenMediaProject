@@ -91,6 +91,7 @@ func (a *Api) SetupRoutes(app *fiber.App) {
 	tvShowRoutes.Post("/:id/episodes/refresh", a.EpisodeHandler.RefreshEpisodes)
 	tvShowRoutes.Put("/:id/episodes/:eid", a.EpisodeHandler.UpdateEpisode)
 	tvShowRoutes.Get("/:id/seasons/:season/episodes", a.EpisodeHandler.GetSeasonEpisodes)
+	tvShowRoutes.Post("/:id/monitor", a.EpisodeHandler.MonitorTVShow)
 
 	// Movie routes
 	movieRoutes := v1.Group("/movies")

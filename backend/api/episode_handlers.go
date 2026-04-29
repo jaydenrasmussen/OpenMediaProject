@@ -10,6 +10,8 @@ import (
 	"backend/models"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 )
 
 // EpisodeHandler handles episode-related API requests.
@@ -359,5 +361,101 @@ func (h *EpisodeHandler) RefreshEpisodes(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"success": true,
 		"count":   len(toSave),
+	})
+}
+
+// MonitorTVShow handles POST /api/v1/tvshows/:id/monitor.
+// It marks the show as monitored, fetches all episodes from TVDB, and adds
+// every episode that has not yet been downloaded to the wanted queue.
+func (h *EpisodeHandler) MonitorTVShow(c *fiber.Ctx) error {
+	showID := c.Params("id")
+
+	// 1. Verify show exists and mark it monitored.
+	showRepo := db.NewTVShowRepository()
+	show, err := showRepo.GetByID(showID)
+	if err != nil {
+		if err == db.ErrTVShowNotFound {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error":   true,
+				"message": "TV show not found",
+			})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   true,
+			"message": "Error retrieving TV show: " + err.Error(),
+		})
+	}
+
+	// 2. Fetch/refresh episodes from TVDB.
+	if h.config.TVDB.APIKey == "" {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error":   true,
+			"message": "TVDB API key is not configured",
+		})
+	}
+
+	show.Monitored = true
+	if err := showRepo.Update(show); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   true,
+			"message": "Error saving show: " + err.Error(),
+		})
+	}
+
+	episodes, err := h.fetchAndSaveFromTVDB(showID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   true,
+			"message": "Error fetching episodes from TVDB: " + err.Error(),
+		})
+	}
+
+	// 3. Build a set of (season, episode) pairs already active in the wanted queue.
+	wantedRepo := db.NewWantedRepository()
+	existing, _ := wantedRepo.GetByMedia("tv", showID)
+	type epKey struct{ season, episode int }
+	activeSet := make(map[epKey]bool)
+	for _, w := range existing {
+		if w.Status == models.WantedStatusWanted || w.Status == models.WantedStatusDownloading {
+			activeSet[epKey{w.Season, w.Episode}] = true
+		}
+	}
+
+	// 4. Enqueue every episode that hasn't been downloaded or skipped.
+	now := time.Now()
+	added := 0
+	for _, ep := range episodes {
+		if ep.Status == models.EpisodeStatusDownloaded ||
+			ep.Status == models.EpisodeStatusSkipped ||
+			ep.Status == models.EpisodeStatusDownloading {
+			continue
+		}
+		if activeSet[epKey{ep.Season, ep.Number}] {
+			continue
+		}
+		item := &models.WantedItem{
+			ID:         uuid.NewString(),
+			MediaType:  "tv",
+			MediaID:    showID,
+			Title:      show.Name,
+			Season:     ep.Season,
+			Episode:    ep.Number,
+			MinQuality: h.config.Downloads.PreferredQuality,
+			Status:     models.WantedStatusWanted,
+			AddedAt:    now,
+			UpdatedAt:  now,
+		}
+		if err := wantedRepo.Save(item); err != nil {
+			log.Warn().Err(err).Str("showID", showID).Int("season", ep.Season).Int("episode", ep.Number).Msg("MonitorTVShow: failed to save wanted item")
+			continue
+		}
+		added++
+	}
+
+	return c.JSON(fiber.Map{
+		"success":   true,
+		"monitored": true,
+		"episodes":  len(episodes),
+		"queued":    added,
 	})
 }

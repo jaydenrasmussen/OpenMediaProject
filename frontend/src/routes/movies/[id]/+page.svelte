@@ -75,7 +75,7 @@
 {:else if error}
   <div class="max-w-2xl mx-auto py-12 text-center space-y-4">
     <p class="text-destructive text-lg">{error}</p>
-    <Button variant="outline" on:click={() => goto("/discover")}>← Back to Discover</Button>
+    <Button variant="outline" on:click={() => goto("/movies")}>← Back to Movies</Button>
   </div>
 {:else if movie}
   <!-- Backdrop -->
@@ -95,8 +95,8 @@
 
   <div class="max-w-5xl mx-auto space-y-8">
     <!-- Back link -->
-    <a href="/discover" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
-      ← Back to Discover
+    <a href="/movies" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
+      ← Back to Movies
     </a>
 
     <!-- Main detail block -->

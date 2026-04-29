@@ -117,28 +117,7 @@ func main() {
 
 	// Build notification registry
 	notifRegistry := notifications.NewRegistry()
-	if cfg.Notifications.DiscordWebhookURL != "" {
-		notifRegistry.Register(&notifications.DiscordNotifier{WebhookURL: cfg.Notifications.DiscordWebhookURL})
-	}
-	if cfg.Notifications.NtfyTopicURL != "" {
-		notifRegistry.Register(&notifications.NtfyNotifier{TopicURL: cfg.Notifications.NtfyTopicURL})
-	}
-	if cfg.Notifications.GotifyURL != "" && cfg.Notifications.GotifyToken != "" {
-		notifRegistry.Register(&notifications.GotifyNotifier{BaseURL: cfg.Notifications.GotifyURL, Token: cfg.Notifications.GotifyToken})
-	}
-	if cfg.Notifications.AppriseURL != "" {
-		notifRegistry.Register(&notifications.AppriseNotifier{URL: cfg.Notifications.AppriseURL})
-	}
-	if cfg.Notifications.EmailSMTPHost != "" {
-		notifRegistry.Register(&notifications.EmailNotifier{
-			SMTPHost: cfg.Notifications.EmailSMTPHost,
-			SMTPPort: cfg.Notifications.EmailSMTPPort,
-			Username: cfg.Notifications.EmailUsername,
-			Password: cfg.Notifications.EmailPassword,
-			From:     cfg.Notifications.EmailFrom,
-			To:       cfg.Notifications.EmailTo,
-		})
-	}
+	api.RebuildNotifRegistry(cfg, notifRegistry)
 
 	// Initialize handlers
 	idxRegistry := indexers.NewDefaultRegistry()
@@ -153,7 +132,7 @@ func main() {
 	wantedPoller := api.NewWantedPoller(cfg, fileMover, idxRegistry)
 	tvdbRefresher := api.NewTVDBRefresher(cfg)
 	historyHandler := api.NewHistoryHandler()
-	settingsHandler := api.NewSettingsHandler(cfg)
+	settingsHandler := api.NewSettingsHandler(cfg, notifRegistry)
 	taskTracker := api.NewTaskTracker()
 	taskTracker.Register("torrent_completion_check", "every 5 min")
 	taskTracker.Register("wanted_queue_poll", "every 15 min")

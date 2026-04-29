@@ -42,6 +42,32 @@
           </li>
           <li>
             <a
+              href="/movies"
+              class="hover:text-opacity-80 transition-colors"
+              aria-current={$page.url.pathname === "/movies" ? "page" : undefined}
+            >
+              <Button
+                variant={$page.url.pathname === "/movies" ? "secondary" : "ghost"}
+              >
+                Movies
+              </Button>
+            </a>
+          </li>
+          <li>
+            <a
+              href="/tvshows"
+              class="hover:text-opacity-80 transition-colors"
+              aria-current={$page.url.pathname === "/tvshows" ? "page" : undefined}
+            >
+              <Button
+                variant={$page.url.pathname === "/tvshows" ? "secondary" : "ghost"}
+              >
+                TV Shows
+              </Button>
+            </a>
+          </li>
+          <li>
+            <a
               href="/search"
               class="hover:text-opacity-80 transition-colors"
               aria-current={$page.url.pathname === "/search"

@@ -21,6 +21,7 @@ type TVShow struct {
 	Genres           []string  `json:"genres"`
 	FetchedAt        time.Time `json:"fetched_at"`
 	PreferredQuality string    `json:"preferred_quality,omitempty"` // item-level override; "" = use global config
+	Monitored        bool      `json:"monitored"`                   // true = automatically queue future episodes
 }
 
 // ToJSON serializes the TV show to JSON
