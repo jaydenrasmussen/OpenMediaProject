@@ -46,8 +46,8 @@
       Welcome to OpenMedia Project
     </h1>
     <p class="text-xl text-muted-foreground max-w-3xl mx-auto">
-      An integrated platform for managing media content with a Golang backend
-      and SvelteKit frontend
+      A self-hosted media management platform. Browse, request, and automatically
+      download movies and TV shows into your personal library.
     </p>
   </section>
 
@@ -92,10 +92,10 @@
 
     <CardFooter>
       <div class="flex space-x-4">
-        <Button as="a" href="/users">View Users</Button>
-        <Button variant="outline" as="a" href="/about"
-          >About this Project</Button
-        >
+        <!-- Button as="a" is invalid — the Button component always renders a
+             <button> element; href on a <button> has no effect. Use an <a> wrapper. -->
+        <a href="/discover"><Button>Browse Discover</Button></a>
+        <a href="/movies"><Button variant="outline">Movie Library</Button></a>
       </div>
     </CardFooter>
   </Card>
@@ -106,35 +106,36 @@
     <div class="grid md:grid-cols-3 gap-6">
       <Card>
         <CardHeader>
-          <CardTitle class="text-xl">Golang Backend</CardTitle>
+          <CardTitle class="text-xl">Discover &amp; Request</CardTitle>
         </CardHeader>
         <CardContent>
           <p class="text-muted-foreground">
-            Powered by Fiber framework for fast, efficient API responses and
-            database operations.
+            Browse trending movies and popular TV shows powered by TMDB and
+            TVDB. One click to request a download.
           </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle class="text-xl">SvelteKit Frontend</CardTitle>
+          <CardTitle class="text-xl">Automatic Downloads</CardTitle>
         </CardHeader>
         <CardContent>
           <p class="text-muted-foreground">
-            Modern, reactive UI with static site generation for improved
-            performance and client-side navigation.
+            Searches all configured indexers concurrently, picks the best
+            quality match, and sends it straight to your torrent client.
           </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle class="text-xl">Docker Integration</CardTitle>
+          <CardTitle class="text-xl">Monitor TV Shows</CardTitle>
         </CardHeader>
         <CardContent>
           <p class="text-muted-foreground">
-            Single-container deployment for simplified hosting and scalability.
+            Enable monitoring on any series to automatically queue new episodes
+            as they air, with per-episode status tracking.
           </p>
         </CardContent>
       </Card>

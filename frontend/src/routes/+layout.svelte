@@ -1,223 +1,92 @@
 <script lang="ts">
   import "../app.css";
   import { page } from "$app/stores";
+  import { goto } from "$app/navigation";
   import { Button } from "$lib/components/ui/button";
+  import { onMount } from "svelte";
+
+  let isLoggedIn = false;
+  let username = "";
+
+  function readAuthState() {
+    if (typeof localStorage !== "undefined") {
+      isLoggedIn = !!localStorage.getItem("auth_token");
+      username = localStorage.getItem("auth_username") ?? "";
+    }
+  }
+
+  function logout() {
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("auth_username");
+    localStorage.removeItem("auth_role");
+    localStorage.removeItem("auth_user_id");
+    isLoggedIn = false;
+    username = "";
+    goto("/login");
+  }
+
+  onMount(readAuthState);
+
+  function isActive(path: string) {
+    return $page.url.pathname === path;
+  }
+
+  const navLinks = [
+    { href: "/", label: "Home" },
+    { href: "/discover", label: "Discover" },
+    { href: "/movies", label: "Movies" },
+    { href: "/tvshows", label: "TV Shows" },
+    { href: "/search", label: "Search" },
+    { href: "/library", label: "Library" },
+    { href: "/downloads", label: "Downloads" },
+    { href: "/wanted", label: "Wanted" },
+    { href: "/indexers", label: "Indexers" },
+    { href: "/history", label: "History" },
+    { href: "/settings", label: "Settings" },
+    { href: "/system", label: "System" },
+    { href: "/users", label: "Users" },
+  ];
 </script>
 
 <div class="min-h-screen bg-background">
   <header class="bg-primary text-primary-foreground border-b">
     <div class="container mx-auto px-4 py-4 flex justify-between items-center">
-      <div class="text-xl font-bold">OpenMedia Project</div>
-      <nav>
-        <ul class="flex space-x-4">
-          <li>
-            <a
-              href="/"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/" ? "page" : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/" ? "secondary" : "ghost"}
+      <div class="text-xl font-bold flex-shrink-0">OpenMedia Project</div>
+      <nav class="overflow-x-auto">
+        <ul class="flex space-x-1 items-center">
+          {#each navLinks as link}
+            <li class="flex-none">
+              <a
+                href={link.href}
+                class="hover:text-opacity-80 transition-colors"
+                aria-current={isActive(link.href) ? "page" : undefined}
               >
-                Home
+                <Button
+                  variant={isActive(link.href) ? "secondary" : "ghost"}
+                  size="sm"
+                >
+                  {link.label}
+                </Button>
+              </a>
+            </li>
+          {/each}
+
+          <!-- Login / Logout -->
+          <li class="flex-none ml-2 border-l border-primary-foreground/20 pl-2">
+            {#if isLoggedIn}
+              <Button variant="ghost" size="sm" on:click={logout}>
+                Logout{username ? ` (${username})` : ""}
               </Button>
-            </a>
-          </li>
-          <li>
-            <a
-              href="/discover"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/discover"
-                ? "page"
-                : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/discover"
-                  ? "secondary"
-                  : "ghost"}
-              >
-                Discover
-              </Button>
-            </a>
-          </li>
-          <li>
-            <a
-              href="/movies"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/movies" ? "page" : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/movies" ? "secondary" : "ghost"}
-              >
-                Movies
-              </Button>
-            </a>
-          </li>
-          <li>
-            <a
-              href="/tvshows"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/tvshows" ? "page" : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/tvshows" ? "secondary" : "ghost"}
-              >
-                TV Shows
-              </Button>
-            </a>
-          </li>
-          <li>
-            <a
-              href="/search"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/search"
-                ? "page"
-                : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/search"
-                  ? "secondary"
-                  : "ghost"}
-              >
-                Search
-              </Button>
-            </a>
-          </li>
-          <li>
-            <a
-              href="/library"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/library"
-                ? "page"
-                : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/library"
-                  ? "secondary"
-                  : "ghost"}
-              >
-                Library
-              </Button>
-            </a>
-          </li>
-          <li>
-            <a
-              href="/wanted"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/wanted"
-                ? "page"
-                : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/wanted"
-                  ? "secondary"
-                  : "ghost"}
-              >
-                Wanted
-              </Button>
-            </a>
-          </li>
-          <li>
-            <a
-              href="/indexers"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/indexers"
-                ? "page"
-                : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/indexers"
-                  ? "secondary"
-                  : "ghost"}
-              >
-                Indexers
-              </Button>
-            </a>
-          </li>
-          <li>
-            <a
-              href="/history"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/history"
-                ? "page"
-                : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/history"
-                  ? "secondary"
-                  : "ghost"}
-              >
-                History
-              </Button>
-            </a>
-          </li>
-          <li>
-            <a
-              href="/settings"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/settings"
-                ? "page"
-                : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/settings"
-                  ? "secondary"
-                  : "ghost"}
-              >
-                Settings
-              </Button>
-            </a>
-          </li>
-          <li>
-            <a
-              href="/system"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/system"
-                ? "page"
-                : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/system"
-                  ? "secondary"
-                  : "ghost"}
-              >
-                System
-              </Button>
-            </a>
-          </li>
-          <li>
-            <a
-              href="/users"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/users"
-                ? "page"
-                : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/users"
-                  ? "secondary"
-                  : "ghost"}
-              >
-                Users
-              </Button>
-            </a>
-          </li>
-          <li>
-            <a
-              href="/about"
-              class="hover:text-opacity-80 transition-colors"
-              aria-current={$page.url.pathname === "/about"
-                ? "page"
-                : undefined}
-            >
-              <Button
-                variant={$page.url.pathname === "/about"
-                  ? "secondary"
-                  : "ghost"}
-              >
-                About
-              </Button>
-            </a>
+            {:else}
+              <a href="/login">
+                <Button
+                  variant={isActive("/login") ? "secondary" : "ghost"}
+                  size="sm"
+                >
+                  Login
+                </Button>
+              </a>
+            {/if}
           </li>
         </ul>
       </nav>
@@ -235,14 +104,7 @@
           <p>&copy; {new Date().getFullYear()} OpenMedia Project</p>
         </div>
         <div>
-          <ul class="flex space-x-4">
-            <li>
-              <a href="/privacy" class="hover:underline">Privacy Policy</a>
-            </li>
-            <li>
-              <a href="/terms" class="hover:underline">Terms of Service</a>
-            </li>
-          </ul>
+          <a href="/about" class="text-sm hover:underline">About</a>
         </div>
       </div>
     </div>

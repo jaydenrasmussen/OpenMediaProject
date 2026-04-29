@@ -1,21 +1,107 @@
 version: '3'
 
 tasks:
-  build:
-    desc: Build both the frontend and backend
+  default:
+    desc: List available tasks
     cmds:
-      - task: build:backend
-      - task: build:frontend
+      - task --list
+    silent: true
 
-  build:backend:
-    desc: Build the backend
-    dir: backend
+  # ── Format ────────────────────────────────────────────────────────────────────
+
+  fmt:
+    desc: Format all code (frontend + backend)
     cmds:
-      - go build -o ../backend main.go
+      - task: fmt:frontend
+      - task: fmt:backend
 
-  build:frontend:
-    desc: Build the frontend
+  fmt:frontend:
+    desc: Format frontend source files with Oxfmt
     dir: frontend
     cmds:
-      - npm install
+      - npm run fmt
+
+  fmt:backend:
+    desc: Format backend Go source files with gofmt
+    dir: backend
+    cmds:
+      - gofmt -w ./...
+
+  # ── Lint ──────────────────────────────────────────────────────────────────────
+
+  lint:
+    desc: Lint all code (frontend + backend)
+    cmds:
+      - task: lint:frontend
+      - task: lint:backend
+
+  lint:frontend:
+    desc: Type-check frontend with svelte-check
+    dir: frontend
+    cmds:
+      - npm run check
+
+  lint:backend:
+    desc: Vet backend Go source files with go vet
+    dir: backend
+    cmds:
+      - go vet ./...
+
+  # ── Test ──────────────────────────────────────────────────────────────────────
+
+  test:
+    desc: Run all tests (frontend + backend)
+    cmds:
+      - task: test:frontend
+      - task: test:backend
+
+  test:frontend:
+    desc: Run frontend unit tests with Vitest
+    dir: frontend
+    cmds:
+      - npm run test
+
+  test:backend:
+    desc: Run backend Go tests
+    dir: backend
+    cmds:
+      - go test ./...
+
+  # ── Build ─────────────────────────────────────────────────────────────────────
+
+  build:
+    desc: Build frontend and backend
+    cmds:
+      - task: build:frontend
+      - task: build:backend
+
+  build:frontend:
+    desc: Install deps and build the SvelteKit frontend (output → frontend/build)
+    dir: frontend
+    cmds:
+      - npm install --legacy-peer-deps
       - npm run build
+
+  build:backend:
+    desc: Compile the Go backend binary to bin/server
+    dir: backend
+    cmds:
+      - mkdir -p ../bin
+      - go build -o ../bin/server .
+
+  # ── Docker ────────────────────────────────────────────────────────────────────
+
+  docker:build:
+    desc: Build the production Docker image (openmedia:latest)
+    cmds:
+      - docker build -t openmedia:latest .
+
+  docker:dev:
+    desc: Start the development stack with docker compose
+    cmds:
+      - docker compose up --build
+
+  docker:down:
+    desc: Stop the development stack
+    cmds:
+      - docker compose down

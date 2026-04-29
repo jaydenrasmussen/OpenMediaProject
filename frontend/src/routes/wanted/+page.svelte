@@ -13,6 +13,12 @@
   let loading = true;
   let error = "";
 
+  // Read the logged-in role so we can show admin-only actions
+  let isAdmin = false;
+  if (typeof localStorage !== "undefined") {
+    isAdmin = localStorage.getItem("auth_role") === "admin";
+  }
+
   onMount(async () => {
     await loadWanted();
   });
@@ -38,6 +44,25 @@
     }
   }
 
+  async function handleApprove(id: string) {
+    const result = await wantedApi.approveWanted(id);
+    if (result.error) {
+      alert(result.message || "Failed to approve item");
+    } else {
+      // Refresh to get updated status
+      await loadWanted();
+    }
+  }
+
+  async function handleReject(id: string) {
+    const result = await wantedApi.rejectWanted(id);
+    if (result.error) {
+      alert(result.message || "Failed to reject item");
+    } else {
+      await loadWanted();
+    }
+  }
+
   function formatDate(dateStr: string) {
     if (!dateStr) return "—";
     try {
@@ -49,6 +74,8 @@
 
   function statusClass(status: string) {
     switch (status?.toLowerCase()) {
+      case "pending":
+        return "bg-orange-100 text-orange-800";
       case "wanted":
         return "bg-blue-100 text-blue-800";
       case "downloading":
@@ -56,6 +83,7 @@
       case "available":
       case "downloaded":
         return "bg-green-100 text-green-800";
+      case "rejected":
       case "unavailable":
       case "missing":
         return "bg-red-100 text-red-800";
@@ -145,14 +173,34 @@
                   <td class="px-4 py-3 text-muted-foreground whitespace-nowrap">
                     {formatDate(item.added_at)}
                   </td>
-                  <td class="px-4 py-3 text-right">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      on:click={() => handleDelete(item.id)}
-                    >
-                      Delete
-                    </Button>
+                  <td class="px-4 py-3">
+                    <div class="flex items-center gap-2 justify-end">
+                      {#if isAdmin && item.status === "pending"}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          class="text-green-700 border-green-300 hover:bg-green-50"
+                          on:click={() => handleApprove(item.id)}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          class="text-red-700 border-red-300 hover:bg-red-50"
+                          on:click={() => handleReject(item.id)}
+                        >
+                          Reject
+                        </Button>
+                      {/if}
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        on:click={() => handleDelete(item.id)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               {/each}

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import axios from "axios";
-  import { userApi } from "$lib/api";
+  import { userApi, authApi, type User } from "$lib/api";
   import {
     Card,
     CardContent,
@@ -14,27 +13,19 @@
   import { Label } from "$lib/components/ui/label";
   import { Input } from "$lib/components/ui/input";
 
-  // Types
-  interface User {
-    id: string;
-    username: string;
-    email: string;
-    first_name?: string;
-    last_name?: string;
-    is_active?: boolean;
-  }
-
   // State
   let users: User[] = [];
   let loading = true;
   let error: string | null = null;
 
-  // Form state for creating a user
+  // Form state for creating a user via authApi.register (supports password + role)
   let newUser = {
     username: "",
     email: "",
+    password: "",
     first_name: "",
     last_name: "",
+    role: "user" as "admin" | "user",
   };
   let formVisible = false;
   let submitting = false;
@@ -44,7 +35,6 @@
     await fetchUsers();
   });
 
-  // Function to fetch users
   async function fetchUsers() {
     loading = true;
     error = null;
@@ -64,13 +54,13 @@
     }
   }
 
-  // Function to create a new user
+  // Create a new user via the auth/register endpoint so the password is hashed
   async function createUser() {
     submitting = true;
     error = null;
 
     try {
-      const result = await userApi.createUser(newUser);
+      const result = await authApi.register(newUser);
       if (result.error) {
         throw new Error(result.message || "Failed to create user");
       }
@@ -80,7 +70,7 @@
       }
 
       // Reset form
-      newUser = { username: "", email: "", first_name: "", last_name: "" };
+      newUser = { username: "", email: "", password: "", first_name: "", last_name: "", role: "user" };
       formVisible = false;
     } catch (e) {
       error =
@@ -91,7 +81,6 @@
     }
   }
 
-  // Function to delete a user
   async function deleteUser(id: string) {
     if (!confirm("Are you sure you want to delete this user?")) {
       return;
@@ -105,7 +94,6 @@
         throw new Error(result.message || "Failed to delete user");
       }
 
-      // Remove user from the list
       users = users.filter((user) => user.id !== id);
     } catch (e) {
       error =
@@ -159,13 +147,23 @@
           </div>
 
           <div class="grid w-full items-center gap-1.5">
-            <Label for="email">Email*</Label>
+            <Label for="email">Email</Label>
             <Input
               type="email"
               id="email"
               bind:value={newUser.email}
-              required
               placeholder="Enter email address"
+            />
+          </div>
+
+          <div class="grid w-full items-center gap-1.5">
+            <Label for="password">Password*</Label>
+            <Input
+              type="password"
+              id="password"
+              bind:value={newUser.password}
+              required
+              placeholder="Enter password"
             />
           </div>
 
@@ -187,6 +185,18 @@
               bind:value={newUser.last_name}
               placeholder="Enter last name"
             />
+          </div>
+
+          <div class="grid w-full items-center gap-1.5">
+            <Label for="role">Role</Label>
+            <select
+              id="role"
+              bind:value={newUser.role}
+              class="w-full border rounded px-3 py-2 text-sm bg-background"
+            >
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+            </select>
           </div>
         </CardContent>
         <CardFooter class="flex justify-end space-x-2">
@@ -224,17 +234,16 @@
         <table class="min-w-full">
           <thead class="bg-muted/50">
             <tr>
-              <th class="py-3 px-4 text-left">ID</th>
               <th class="py-3 px-4 text-left">Username</th>
               <th class="py-3 px-4 text-left">Email</th>
               <th class="py-3 px-4 text-left">Name</th>
+              <th class="py-3 px-4 text-left">Role</th>
               <th class="py-3 px-4 text-left">Actions</th>
             </tr>
           </thead>
           <tbody>
             {#each users as user (user.id)}
               <tr class="border-t hover:bg-muted/20">
-                <td class="py-3 px-4 text-sm">{user.id}</td>
                 <td class="py-3 px-4 font-medium">{user.username}</td>
                 <td class="py-3 px-4">{user.email}</td>
                 <td class="py-3 px-4">
@@ -242,21 +251,22 @@
                   {user.last_name || ""}
                 </td>
                 <td class="py-3 px-4">
-                  <div class="flex space-x-2">
-                    <Button variant="ghost" size="sm" class="h-8 w-8 p-0">
-                      <span class="sr-only">Edit</span>
-                      <span>✎</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      class="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
-                      on:click={() => deleteUser(user.id)}
-                    >
-                      <span class="sr-only">Delete</span>
-                      <span>🗑️</span>
-                    </Button>
-                  </div>
+                  {#if user.role}
+                    <span class="text-xs px-2 py-0.5 rounded-full {user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'}">
+                      {user.role}
+                    </span>
+                  {/if}
+                </td>
+                <td class="py-3 px-4">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    class="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
+                    on:click={() => deleteUser(user.id)}
+                  >
+                    <span class="sr-only">Delete</span>
+                    <span>🗑️</span>
+                  </Button>
                 </td>
               </tr>
             {/each}

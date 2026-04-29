@@ -132,7 +132,8 @@
       </div>
     </CardContent>
     <CardFooter>
-      <Button as="a" href="/">Return to Home</Button>
+      <!-- Button as="a" is invalid — Button always renders a <button>; href is ignored -->
+      <a href="/"><Button>Return to Home</Button></a>
     </CardFooter>
   </Card>
 </div>
