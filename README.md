@@ -7,6 +7,23 @@ OpenMediaProject is a modern, self-contained media management platform. Search f
 
 ---
 
+## Quickstart
+
+```bash
+docker run -d \
+  --name openmedia \
+  -p 8080:8080 \
+  -v /your/data:/app/data \
+  ghcr.io/jaydenrasmussen/openmediaproject:latest
+
+Open `http://localhost:8080` and log in with username `admin`. The generated password is printed once in the startup logs (`docker logs openmedia | grep password`).
+
+Configure your TMDB/TVDB API keys, torrent client, media library paths, and notifications through the **Settings** UI — no environment variables required.
+
+See [Getting Started](#getting-started) for full options including Docker Compose and local development.
+
+---
+
 ## Vision
 
 The *arr ecosystem is powerful but fragmented. A typical self-hosted media stack requires:
@@ -297,7 +314,7 @@ docker run -d \
   -e MOVER_TVSHOW_DIR=/tvshows \
   -e ENABLE_AUTH=true \
   -e ADMIN_PASSWORD=changeme \
-  ghcr.io/yourusername/openmediaproject:latest
+  ghcr.io/jaydenrasmussen/openmediaproject:latest
 ```
 
 Then open `http://localhost:8080` and log in with username `admin` and your chosen password. If `ADMIN_PASSWORD` is not set, a random password is printed once in the startup logs.
@@ -305,7 +322,7 @@ Then open `http://localhost:8080` and log in with username `admin` and your chos
 ### Docker Compose
 
 ```bash
-git clone https://github.com/yourusername/OpenMediaProject.git
+git clone https://github.com/jaydenrasmussen/openmediaproject.git
 cd OpenMediaProject
 cp .env.example .env   # edit with your values
 docker compose up -d

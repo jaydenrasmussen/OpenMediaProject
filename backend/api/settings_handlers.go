@@ -116,6 +116,9 @@ func (h *SettingsHandler) envDefaults() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
+		// Metadata API keys
+		"tmdb_api_key": cfg.TMDB.APIKey,
+		"tvdb_api_key": cfg.TVDB.APIKey,
 		// Torrent client
 		"torrent_client_type":     string(cfg.TorrentClient.ClientType),
 		"torrent_client_url":      cfg.TorrentClient.BaseURL,
@@ -160,6 +163,17 @@ func (h *SettingsHandler) envDefaults() map[string]interface{} {
 	}
 }
 
+// ApplyStoredSettings loads persisted settings from the DB and applies them to
+// the live config. Call this once at startup (after db.Connect) so that any
+// settings saved via the UI survive container restarts without requiring env vars.
+func ApplyStoredSettings(cfg *config.Config) {
+	stored, err := db.NewConfigRepository().GetSettings()
+	if err != nil || len(stored) == 0 {
+		return
+	}
+	applyToCfg(stored, cfg)
+}
+
 // applyToCfg propagates known settings keys from a persisted map into the live
 // config pointer so changes take effect immediately without a restart.
 func applyToCfg(s map[string]interface{}, cfg *config.Config) {
@@ -190,6 +204,14 @@ func applyToCfg(s map[string]interface{}, cfg *config.Config) {
 			}
 		}
 		return 0, false
+	}
+
+	// Metadata API keys
+	if v, ok := str("tmdb_api_key"); ok {
+		cfg.TMDB.APIKey = v
+	}
+	if v, ok := str("tvdb_api_key"); ok {
+		cfg.TVDB.APIKey = v
 	}
 
 	// Torrent client

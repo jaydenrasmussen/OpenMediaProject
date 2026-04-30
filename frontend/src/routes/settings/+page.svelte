@@ -105,6 +105,11 @@
     field("indexer_name", "Indexer Name", "text", "Prowlarr"),
   ];
 
+  const METADATA_FIELDS = [
+    field("tmdb_api_key", "TMDB API Key", "password"),
+    field("tvdb_api_key", "TVDB API Key", "password"),
+  ];
+
   onMount(load);
 </script>
 
@@ -140,6 +145,24 @@
   {#if loading}
     <div class="text-center py-20 text-muted-foreground">Loading…</div>
   {:else}
+    <!-- Metadata APIs -->
+    <Card>
+      <CardHeader><CardTitle>Metadata APIs</CardTitle></CardHeader>
+      <CardContent class="space-y-4">
+        {#each METADATA_FIELDS as f}
+          <div class="space-y-1">
+            <Label for={f.key}>{f.label}</Label>
+            <Input
+              id={f.key}
+              type={f.type}
+              placeholder={f.placeholder}
+              bind:value={settings[f.key]}
+            />
+          </div>
+        {/each}
+      </CardContent>
+    </Card>
+
     <!-- Torrent Client -->
     <Card>
       <CardHeader><CardTitle>Torrent Client</CardTitle></CardHeader>

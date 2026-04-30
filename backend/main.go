@@ -45,6 +45,10 @@ func main() {
 	}
 	log.Info().Str("path", cfg.Database.DBPath).Msg("Connected to database")
 
+	// Overlay any settings previously saved via the UI on top of the env-derived
+	// config so they survive container restarts without requiring env vars.
+	api.ApplyStoredSettings(cfg)
+
 	// Bootstrap the first admin user if no admin exists yet.
 	bootstrapAdmin()
 
