@@ -84,26 +84,41 @@ func NewTorrentHandler(mediaServers *clients.MediaServerRegistry, fileMover *cli
 	}
 }
 
+// resolveClientConfig returns the effective TorrentClientConfig without mutating
+// the shared config. Falls back to legacy RuTorrent settings when
+// TorrentClient.BaseURL is not set. The second return value is false when no
+// client URL is configured at all.
+func (h *TorrentHandler) resolveClientConfig() (clients.TorrentClientConfig, bool) {
+	tc := h.config.TorrentClient
+	if tc.BaseURL == "" {
+		ru := h.config.RuTorrent
+		if ru.BaseURL == "" {
+			return clients.TorrentClientConfig{}, false
+		}
+		return clients.TorrentClientConfig{
+			ClientType: clients.TorrentClientType(config.ClientTypeRuTorrent),
+			BaseURL:    ru.BaseURL,
+			Username:   ru.Username,
+			Password:   ru.Password,
+		}, true
+	}
+	return clients.TorrentClientConfig{
+		ClientType: clients.TorrentClientType(tc.ClientType),
+		BaseURL:    tc.BaseURL,
+		Username:   tc.Username,
+		Password:   tc.Password,
+	}, true
+}
+
 // UploadTorrent handles uploading a torrent file to ruTorrent
 func (h *TorrentHandler) UploadTorrent(c *fiber.Ctx) error {
 	// Get configuration
-	cfg := h.config
-
-	// Check if a torrent client is configured
-	if cfg.TorrentClient.BaseURL == "" {
-		// Fallback to legacy ruTorrent config
-		if cfg.RuTorrent.BaseURL == "" {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error":   true,
-				"message": "No torrent client URL is configured",
-			})
-		}
-
-		// Use legacy ruTorrent config
-		cfg.TorrentClient.ClientType = config.ClientTypeRuTorrent
-		cfg.TorrentClient.BaseURL = cfg.RuTorrent.BaseURL
-		cfg.TorrentClient.Username = cfg.RuTorrent.Username
-		cfg.TorrentClient.Password = cfg.RuTorrent.Password
+	clientConfig, ok := h.resolveClientConfig()
+	if !ok {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   true,
+			"message": "No torrent client URL is configured",
+		})
 	}
 
 	// Get start parameter (default is true - start torrent after adding)
@@ -156,13 +171,6 @@ func (h *TorrentHandler) UploadTorrent(c *fiber.Ctx) error {
 	}
 
 	// Create torrent client
-	clientConfig := clients.TorrentClientConfig{
-		ClientType: clients.TorrentClientType(cfg.TorrentClient.ClientType),
-		BaseURL:    cfg.TorrentClient.BaseURL,
-		Username:   cfg.TorrentClient.Username,
-		Password:   cfg.TorrentClient.Password,
-	}
-
 	client, err := clients.NewTorrentClient(clientConfig)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -298,33 +306,15 @@ func (h *TorrentHandler) addTorrentFromURL(c *fiber.Ctx, torrentURL string, star
 // GetTorrents returns the list of torrents from ruTorrent
 func (h *TorrentHandler) GetTorrents(c *fiber.Ctx) error {
 	// Get configuration
-	cfg := h.config
-
-	// Check if a torrent client is configured
-	if cfg.TorrentClient.BaseURL == "" {
-		// Fallback to legacy ruTorrent config
-		if cfg.RuTorrent.BaseURL == "" {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error":   true,
-				"message": "No torrent client URL is configured",
-			})
-		}
-
-		// Use legacy ruTorrent config
-		cfg.TorrentClient.ClientType = config.ClientTypeRuTorrent
-		cfg.TorrentClient.BaseURL = cfg.RuTorrent.BaseURL
-		cfg.TorrentClient.Username = cfg.RuTorrent.Username
-		cfg.TorrentClient.Password = cfg.RuTorrent.Password
+	clientConfig, ok := h.resolveClientConfig()
+	if !ok {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   true,
+			"message": "No torrent client URL is configured",
+		})
 	}
 
 	// Create torrent client
-	clientConfig := clients.TorrentClientConfig{
-		ClientType: clients.TorrentClientType(cfg.TorrentClient.ClientType),
-		BaseURL:    cfg.TorrentClient.BaseURL,
-		Username:   cfg.TorrentClient.Username,
-		Password:   cfg.TorrentClient.Password,
-	}
-
 	client, err := clients.NewTorrentClient(clientConfig)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -392,33 +382,15 @@ func (h *TorrentHandler) DeleteTorrent(c *fiber.Ctx) error {
 	}
 
 	// Get configuration
-	cfg := h.config
-
-	// Check if a torrent client is configured
-	if cfg.TorrentClient.BaseURL == "" {
-		// Fallback to legacy ruTorrent config
-		if cfg.RuTorrent.BaseURL == "" {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error":   true,
-				"message": "No torrent client URL is configured",
-			})
-		}
-
-		// Use legacy ruTorrent config
-		cfg.TorrentClient.ClientType = config.ClientTypeRuTorrent
-		cfg.TorrentClient.BaseURL = cfg.RuTorrent.BaseURL
-		cfg.TorrentClient.Username = cfg.RuTorrent.Username
-		cfg.TorrentClient.Password = cfg.RuTorrent.Password
+	clientConfig, ok := h.resolveClientConfig()
+	if !ok {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   true,
+			"message": "No torrent client URL is configured",
+		})
 	}
 
 	// Create torrent client
-	clientConfig := clients.TorrentClientConfig{
-		ClientType: clients.TorrentClientType(cfg.TorrentClient.ClientType),
-		BaseURL:    cfg.TorrentClient.BaseURL,
-		Username:   cfg.TorrentClient.Username,
-		Password:   cfg.TorrentClient.Password,
-	}
-
 	client, err := clients.NewTorrentClient(clientConfig)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -470,33 +442,15 @@ func (h *TorrentHandler) ControlTorrent(c *fiber.Ctx) error {
 	}
 
 	// Get configuration
-	cfg := h.config
-
-	// Check if a torrent client is configured
-	if cfg.TorrentClient.BaseURL == "" {
-		// Fallback to legacy ruTorrent config
-		if cfg.RuTorrent.BaseURL == "" {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error":   true,
-				"message": "No torrent client URL is configured",
-			})
-		}
-
-		// Use legacy ruTorrent config
-		cfg.TorrentClient.ClientType = config.ClientTypeRuTorrent
-		cfg.TorrentClient.BaseURL = cfg.RuTorrent.BaseURL
-		cfg.TorrentClient.Username = cfg.RuTorrent.Username
-		cfg.TorrentClient.Password = cfg.RuTorrent.Password
+	clientConfig, ok := h.resolveClientConfig()
+	if !ok {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   true,
+			"message": "No torrent client URL is configured",
+		})
 	}
 
 	// Create torrent client
-	clientConfig := clients.TorrentClientConfig{
-		ClientType: clients.TorrentClientType(cfg.TorrentClient.ClientType),
-		BaseURL:    cfg.TorrentClient.BaseURL,
-		Username:   cfg.TorrentClient.Username,
-		Password:   cfg.TorrentClient.Password,
-	}
-
 	client, err := clients.NewTorrentClient(clientConfig)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -524,10 +478,13 @@ func (h *TorrentHandler) ControlTorrent(c *fiber.Ctx) error {
 	}
 
 	// For consistency in response messages
-	actionPast := action
-	if action == "pause" {
+	var actionPast string
+	switch action {
+	case "stop":
+		actionPast = "stopped"
+	case "pause":
 		actionPast = "paused"
-	} else {
+	default:
 		actionPast = action + "ed"
 	}
 
@@ -548,33 +505,15 @@ func (h *TorrentHandler) GetTorrentDetails(c *fiber.Ctx) error {
 	}
 
 	// Get configuration
-	cfg := h.config
-
-	// Check if a torrent client is configured
-	if cfg.TorrentClient.BaseURL == "" {
-		// Fallback to legacy ruTorrent config
-		if cfg.RuTorrent.BaseURL == "" {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error":   true,
-				"message": "No torrent client URL is configured",
-			})
-		}
-
-		// Use legacy ruTorrent config
-		cfg.TorrentClient.ClientType = config.ClientTypeRuTorrent
-		cfg.TorrentClient.BaseURL = cfg.RuTorrent.BaseURL
-		cfg.TorrentClient.Username = cfg.RuTorrent.Username
-		cfg.TorrentClient.Password = cfg.RuTorrent.Password
+	clientConfig, ok := h.resolveClientConfig()
+	if !ok {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   true,
+			"message": "No torrent client URL is configured",
+		})
 	}
 
 	// Create torrent client
-	clientConfig := clients.TorrentClientConfig{
-		ClientType: clients.TorrentClientType(cfg.TorrentClient.ClientType),
-		BaseURL:    cfg.TorrentClient.BaseURL,
-		Username:   cfg.TorrentClient.Username,
-		Password:   cfg.TorrentClient.Password,
-	}
-
 	client, err := clients.NewTorrentClient(clientConfig)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -623,33 +562,15 @@ func (h *TorrentHandler) GetTorrentDetails(c *fiber.Ctx) error {
 // GetClientHealth returns health information about the configured torrent client
 func (h *TorrentHandler) GetClientHealth(c *fiber.Ctx) error {
 	// Get configuration
-	cfg := h.config
-
-	// Check if a torrent client is configured
-	if cfg.TorrentClient.BaseURL == "" {
-		// Fallback to legacy ruTorrent config
-		if cfg.RuTorrent.BaseURL == "" {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error":   true,
-				"message": "No torrent client URL is configured",
-			})
-		}
-
-		// Use legacy ruTorrent config
-		cfg.TorrentClient.ClientType = config.ClientTypeRuTorrent
-		cfg.TorrentClient.BaseURL = cfg.RuTorrent.BaseURL
-		cfg.TorrentClient.Username = cfg.RuTorrent.Username
-		cfg.TorrentClient.Password = cfg.RuTorrent.Password
+	clientConfig, ok := h.resolveClientConfig()
+	if !ok {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   true,
+			"message": "No torrent client URL is configured",
+		})
 	}
 
 	// Create torrent client
-	clientConfig := clients.TorrentClientConfig{
-		ClientType: clients.TorrentClientType(cfg.TorrentClient.ClientType),
-		BaseURL:    cfg.TorrentClient.BaseURL,
-		Username:   cfg.TorrentClient.Username,
-		Password:   cfg.TorrentClient.Password,
-	}
-
 	client, err := clients.NewTorrentClient(clientConfig)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -661,29 +582,31 @@ func (h *TorrentHandler) GetClientHealth(c *fiber.Ctx) error {
 	// Measure response time
 	startTime := time.Now()
 
-	// Check health in one goroutine
+	// Run health check and client-info fetch concurrently.
+	// Each goroutine writes only to its own variable to avoid data races.
 	var connected bool
-	var message string
-	var healthErr error
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		connected, message = client.CheckHealth()
-	}()
-
-	// Get client info in another goroutine if health check passes
+	var healthMsg string
 	var clientInfo *clients.TorrentClientInfo
-	wg.Add(1)
+	var clientInfoErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		if clientInfo, healthErr = client.GetClientInfo(); healthErr != nil {
-			message = fmt.Sprintf("%s; Failed to get client info: %s", message, healthErr.Error())
-		}
+		connected, healthMsg = client.CheckHealth()
+	}()
+	go func() {
+		defer wg.Done()
+		clientInfo, clientInfoErr = client.GetClientInfo()
 	}()
 
 	// Wait for both goroutines to finish
 	wg.Wait()
+
+	// Combine messages after synchronisation — no race.
+	message := healthMsg
+	if clientInfoErr != nil {
+		message = fmt.Sprintf("%s; Failed to get client info: %s", message, clientInfoErr.Error())
+	}
 
 	// Calculate response time
 	responseTime := time.Since(startTime).Milliseconds()
@@ -704,7 +627,7 @@ func (h *TorrentHandler) GetClientHealth(c *fiber.Ctx) error {
 		response.UploadSpeed = clientInfo.UploadSpeed
 		response.TorrentsCount = clientInfo.TorrentsCount
 	} else {
-		response.ClientType = string(cfg.TorrentClient.ClientType)
+		response.ClientType = string(clientConfig.ClientType)
 	}
 
 	return c.JSON(response)

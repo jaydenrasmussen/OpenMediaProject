@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -138,7 +139,7 @@ func (c *TVDBClient) makeAuthenticatedRequest(method, endpoint string, body io.R
 // SearchShows searches for TV shows by name
 func (c *TVDBClient) SearchShows(name string) ([]map[string]interface{}, error) {
 	// Make request
-	resp, err := c.makeAuthenticatedRequest("GET", fmt.Sprintf("/search/series?name=%s", name), nil)
+	resp, err := c.makeAuthenticatedRequest("GET", fmt.Sprintf("/search/series?name=%s", url.QueryEscape(name)), nil)
 	if err != nil {
 		return nil, err
 	}

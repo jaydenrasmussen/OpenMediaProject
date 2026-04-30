@@ -177,8 +177,10 @@ apiClient.interceptors.response.use(
     (error) => {
         // Handle global error responses here
         if (error.response?.status === 401) {
-            // Handle unauthorized access
-            // e.g., redirect to login or refresh token
+            // Redirect to login on unauthorised — avoid redirect loops on the login page itself.
+            if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+                window.location.href = "/login";
+            }
         }
 
         // Special handling for static site in development - retry without baseURL if needed

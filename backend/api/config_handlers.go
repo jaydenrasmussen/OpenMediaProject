@@ -210,10 +210,12 @@ func UpdateSystemConfig(c *fiber.Ctx) error {
 		clientType := strings.ToLower(req.TorrentClient.ClientType)
 		if clientType != string(config.ClientTypeRuTorrent) &&
 			clientType != string(config.ClientTypeTransmission) &&
-			clientType != string(config.ClientTypeDeluge) {
+			clientType != string(config.ClientTypeDeluge) &&
+			clientType != string(config.ClientTypeQBittorrent) &&
+			clientType != string(config.ClientTypeSABnzbd) {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error":   true,
-				"message": "Invalid torrent client type. Must be one of: rutorrent, transmission, deluge",
+				"message": "Invalid torrent client type. Must be one of: rutorrent, transmission, deluge, qbittorrent, sabnzbd",
 			})
 		}
 
@@ -356,11 +358,13 @@ func TestTorrentConnection(c *fiber.Ctx) error {
 	clientType := strings.ToLower(req.ClientType)
 	if clientType != string(config.ClientTypeRuTorrent) &&
 		clientType != string(config.ClientTypeTransmission) &&
-		clientType != string(config.ClientTypeDeluge) {
+		clientType != string(config.ClientTypeDeluge) &&
+		clientType != string(config.ClientTypeQBittorrent) &&
+		clientType != string(config.ClientTypeSABnzbd) {
 		log.Warn().Str("client_type", clientType).Msg("Invalid torrent client type in test request")
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error":   true,
-			"message": "Invalid torrent client type. Must be one of: rutorrent, transmission, deluge",
+			"message": "Invalid torrent client type. Must be one of: rutorrent, transmission, deluge, qbittorrent, sabnzbd",
 		})
 	}
 

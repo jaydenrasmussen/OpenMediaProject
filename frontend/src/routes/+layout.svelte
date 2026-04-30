@@ -1,7 +1,7 @@
 <script lang="ts">
   import "../app.css";
   import { page } from "$app/stores";
-  import { goto } from "$app/navigation";
+  import { goto, afterNavigate } from "$app/navigation";
   import { Button } from "$lib/components/ui/button";
   import { onMount } from "svelte";
 
@@ -26,9 +26,11 @@
   }
 
   onMount(readAuthState);
+  afterNavigate(readAuthState);
 
   function isActive(path: string) {
-    return $page.url.pathname === path;
+    if (path === "/") return $page.url.pathname === "/";
+    return $page.url.pathname.startsWith(path);
   }
 
   const navLinks = [

@@ -30,11 +30,9 @@ func GetMovies(c *fiber.Ctx) error {
 		})
 	}
 
-	count, _ := repo.Count()
-
 	return c.JSON(MovieResponse{
 		Movies: movies,
-		Count:  count,
+		Count:  len(movies),
 	})
 }
 

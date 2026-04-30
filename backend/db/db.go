@@ -23,11 +23,12 @@ const (
 	MoverBucket    = "mover"
 	IndexerBucket  = "indexers"
 	DownloadBucket       = "pending_downloads"
-	EpisodeBucket        = "episodes"
+	EpisodeBucket        = "episodes" // legacy flat bucket; kept for migration reads only
 	WantedBucket         = "wanted"
 	ReleaseProfileBucket = "release_profiles"
 	HistoryBucket        = "history"
 	ConfigBucket         = "config"
+	MigrationBucket      = "migrations"
 )
 
 var (
@@ -63,12 +64,11 @@ func Connect(cfg DatabaseConfig) error {
 		log.Debug().Str("path", cfg.DBPath).Msg("Database opened successfully")
 
 		// Initialize buckets
-		initErr := initBuckets()
-		if initErr != nil {
-			log.Error().Err(initErr).Msg("Failed to initialize database buckets")
-		} else {
-			log.Debug().Msg("Database buckets initialized")
+		if err = initBuckets(); err != nil {
+			log.Error().Err(err).Msg("Failed to initialize database buckets")
+			return
 		}
+		log.Debug().Msg("Database buckets initialized")
 	})
 
 	return err
@@ -76,7 +76,7 @@ func Connect(cfg DatabaseConfig) error {
 
 // initBuckets creates the necessary buckets if they don't exist
 func initBuckets() error {
-	buckets := []string{UserBucket, TVShowBucket, MovieBucket, PlexBucket, MoverBucket, IndexerBucket, DownloadBucket, EpisodeBucket, WantedBucket, ReleaseProfileBucket, HistoryBucket, ConfigBucket}
+	buckets := []string{UserBucket, TVShowBucket, MovieBucket, PlexBucket, MoverBucket, IndexerBucket, DownloadBucket, WantedBucket, ReleaseProfileBucket, HistoryBucket, ConfigBucket}
 
 	for _, bucket := range buckets {
 		err := instance.Update(func(tx *nutsdb.Tx) error {
@@ -108,13 +108,16 @@ func GetDB() *nutsdb.DB {
 
 // Disconnect closes the database connection
 func Disconnect() error {
-	if instance == nil {
+	mu.Lock()
+	inst := instance
+	mu.Unlock()
+	if inst == nil {
 		log.Debug().Msg("No database instance to disconnect")
 		return nil
 	}
 
 	log.Info().Msg("Closing database connection")
-	err := instance.Close()
+	err := inst.Close()
 	if err != nil {
 		log.Error().Err(err).Msg("Error closing database")
 	}

@@ -15,11 +15,11 @@
 
   // Read the logged-in role so we can show admin-only actions
   let isAdmin = false;
-  if (typeof localStorage !== "undefined") {
-    isAdmin = localStorage.getItem("auth_role") === "admin";
-  }
 
   onMount(async () => {
+    if (typeof localStorage !== "undefined") {
+      isAdmin = localStorage.getItem("auth_role") === "admin";
+    }
     await loadWanted();
   });
 

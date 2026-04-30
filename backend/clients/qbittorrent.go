@@ -60,13 +60,18 @@ func (c *QBittorrentClient) doJSON(urlPath string, out interface{}) error {
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-// doForm posts form values to the API.
+// doForm posts form values to the API and returns an error on non-2xx status.
 func (c *QBittorrentClient) doForm(urlPath string, values url.Values) error {
 	resp, err := c.httpClient.PostForm(c.baseURL+urlPath, values)
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("qBittorrent %s: unexpected status %d: %s",
+			urlPath, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 	return nil
 }
 

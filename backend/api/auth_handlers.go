@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"time"
 
 	"backend/config"
@@ -124,7 +125,8 @@ func ValidateAPIKey(c *fiber.Ctx) error {
 	}
 
 	// Check if the API key is valid
-	isValid := providedKey != "" && providedKey == cfg.Auth.APIKey
+	isValid := cfg.Auth.APIKey != "" && providedKey != "" &&
+		subtle.ConstantTimeCompare([]byte(providedKey), []byte(cfg.Auth.APIKey)) == 1
 
 	if isValid {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{

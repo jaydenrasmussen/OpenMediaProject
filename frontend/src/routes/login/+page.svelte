@@ -27,8 +27,11 @@
       if (result.error) {
         throw new Error(result.message || "Login failed");
       }
+      if (!result.data) {
+        throw new Error("Login failed: no data returned");
+      }
 
-      const data = result.data!;
+      const data = result.data;
       localStorage.setItem("auth_token", data.token);
       localStorage.setItem("auth_user_id", data.user_id);
       localStorage.setItem("auth_username", data.username);

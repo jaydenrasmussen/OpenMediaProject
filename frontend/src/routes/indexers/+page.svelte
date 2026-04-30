@@ -13,7 +13,8 @@
   let error = "";
   let indexers: IndexerHealth[] = [];
 
-  function fmt(n: number, decimals = 1): string {
+  function fmt(n: number | null | undefined, decimals = 1): string {
+    if (n == null) return "—";
     return n.toFixed(decimals);
   }
 

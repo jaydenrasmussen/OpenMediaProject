@@ -55,14 +55,22 @@ func (r *TVDBRefresher) RefreshAll() error {
 		toSave := make([]*models.Episode, 0, len(rawEpisodes))
 		var newForMonitored []*models.Episode
 
+		// Load all known episodes for this show in one read to avoid N+1 DB round-trips.
+		type existingEpKey struct{ season, episode int }
+		existingMap := make(map[existingEpKey]*models.Episode)
+		if stored, err := epRepo.GetByShow(show.ID); err == nil {
+			for _, e := range stored {
+				existingMap[existingEpKey{e.Season, e.Number}] = e
+			}
+		}
+
 		for _, raw := range rawEpisodes {
 			ep := models.NewEpisodeFromTVDBData(show.ID, raw)
 			if ep == nil {
 				continue
 			}
 
-			existing, err := epRepo.GetByKey(show.ID, ep.Season, ep.Number)
-			if err == nil && existing != nil {
+			if existing := existingMap[existingEpKey{ep.Season, ep.Number}]; existing != nil {
 				// Update metadata only; preserve status, quality, DownloadedAt
 				existing.Title = ep.Title
 				existing.AirDate = ep.AirDate

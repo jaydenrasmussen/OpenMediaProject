@@ -128,7 +128,10 @@ func ParseJWT(tokenStr string) (*JWTClaims, error) {
 		}
 		return jwtSecret, nil
 	})
-	return claims, err
+	if err != nil {
+		return nil, err
+	}
+	return claims, nil
 }
 
 // RegisterUser handles POST /api/v1/auth/register.
@@ -180,5 +183,10 @@ func RegisterUser(c *fiber.Ctx) error {
 		})
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(user)
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"id":       user.ID,
+		"username": user.Username,
+		"email":    user.Email,
+		"role":     user.Role,
+	})
 }

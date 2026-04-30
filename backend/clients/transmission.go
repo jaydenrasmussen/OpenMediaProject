@@ -153,6 +153,12 @@ func NewTransmissionClient(baseURL, username, password string) *TransmissionClie
 
 // sendRequest sends a request to the Transmission RPC API
 func (c *TransmissionClient) sendRequest(method string, args interface{}) (*TransmissionResponse, error) {
+	return c.doSendRequest(method, args, false)
+}
+
+// doSendRequest is the internal implementation. alreadyRetried prevents infinite
+// recursion when the server keeps returning 409.
+func (c *TransmissionClient) doSendRequest(method string, args interface{}, alreadyRetried bool) (*TransmissionResponse, error) {
 	// Check if we need to renew the session ID
 	if c.SessionID == "" || time.Since(c.SessionTime) > sessionIDExpiry {
 		if err := c.getSessionID(); err != nil {
@@ -198,10 +204,13 @@ func (c *TransmissionClient) sendRequest(method string, args interface{}) (*Tran
 
 	// Check if session ID has expired
 	if resp.StatusCode == http.StatusConflict {
-		// Extract new session ID and retry
+		if alreadyRetried {
+			return nil, fmt.Errorf("Transmission session ID conflict persists after one retry")
+		}
+		// Extract new session ID and retry once
 		c.SessionID = resp.Header.Get(sessionIDHeader)
 		c.SessionTime = time.Now()
-		return c.sendRequest(method, args)
+		return c.doSendRequest(method, args, true)
 	}
 
 	// Check response status

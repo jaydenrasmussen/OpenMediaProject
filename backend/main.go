@@ -45,6 +45,11 @@ func main() {
 	}
 	log.Info().Str("path", cfg.Database.DBPath).Msg("Connected to database")
 
+	// Migrate episodes from legacy flat bucket to per-show buckets (idempotent).
+	if err := db.MigrateEpisodeBuckets(); err != nil {
+		log.Fatal().Err(err).Msg("Failed to migrate episode buckets")
+	}
+
 	// Overlay any settings previously saved via the UI on top of the env-derived
 	// config so they survive container restarts without requiring env vars.
 	api.ApplyStoredSettings(cfg)
@@ -68,7 +73,7 @@ func main() {
 			if err := os.WriteFile(".apikey", []byte(apiKey), 0600); err != nil {
 				log.Fatal().Err(err).Msg("Failed to write API key to .apikey file")
 			}
-			log.Info().Str("api_key", apiKey).Msg("Generated new API key and saved to .apikey file")
+			log.Info().Msg("Generated new API key and saved to .apikey file")
 		}
 	}
 
@@ -141,6 +146,7 @@ func main() {
 	taskTracker.Register("torrent_completion_check", "every 5 min")
 	taskTracker.Register("wanted_queue_poll", "every 15 min")
 	taskTracker.Register("tvdb_episode_refresh", "every 24 h")
+	taskTracker.Register("db_compaction", "every 7 days")
 	systemHandler := api.NewSystemHandler(taskTracker)
 
 	// Initialize API
@@ -148,6 +154,14 @@ func main() {
 
 	// Setup API routes
 	api.SetupRoutes(app)
+
+	// SvelteKit immutable assets have content-hashed filenames; cache them permanently.
+	// index.html and other non-hashed files are left without a Cache-Control header
+	// so browsers re-validate on each visit and pick up new deployments.
+	app.Use("/_app/immutable", func(c *fiber.Ctx) error {
+		c.Set(fiber.HeaderCacheControl, "public, max-age=31536000, immutable")
+		return c.Next()
+	})
 
 	// Serve static frontend files
 	app.Use("/", filesystem.New(filesystem.Config{
@@ -221,6 +235,27 @@ func main() {
 					taskTracker.Fail("tvdb_episode_refresh", err.Error())
 				} else {
 					taskTracker.Done("tvdb_episode_refresh")
+				}
+			case <-stopChecker:
+				return
+			}
+		}
+	}()
+
+	// DB compaction — weekly, to reclaim disk space from stale segment files
+	go func() {
+		ticker := time.NewTicker(7 * 24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				taskTracker.Start("db_compaction")
+				if err := db.GetDB().Merge(); err != nil {
+					log.Warn().Err(err).Msg("DB compaction failed")
+					taskTracker.Fail("db_compaction", err.Error())
+				} else {
+					log.Info().Msg("DB compaction complete")
+					taskTracker.Done("db_compaction")
 				}
 			case <-stopChecker:
 				return

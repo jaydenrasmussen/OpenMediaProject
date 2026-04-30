@@ -13,7 +13,7 @@ COPY backend/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -o server .
 
 # Build stage for SvelteKit Frontend
-FROM node:20-alpine AS frontend-builder
+FROM node:24-slim AS frontend-builder
 WORKDIR /app/frontend
 
 # Copy package.json and install dependencies

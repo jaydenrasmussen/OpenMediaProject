@@ -135,7 +135,7 @@ func (h *EpisodeHandler) GetEpisodes(c *fiber.Ctx) error {
 
 	// 4. Optional status filter
 	if statusFilter := c.Query("status"); statusFilter != "" {
-		filtered := episodes[:0]
+		filtered := make([]*models.Episode, 0, len(episodes))
 		for _, ep := range episodes {
 			if ep.Status == statusFilter {
 				filtered = append(filtered, ep)
@@ -205,7 +205,7 @@ func (h *EpisodeHandler) GetSeasonEpisodes(c *fiber.Ctx) error {
 
 	// Optional status filter
 	if statusFilter := c.Query("status"); statusFilter != "" {
-		filtered := episodes[:0]
+		filtered := make([]*models.Episode, 0, len(episodes))
 		for _, ep := range episodes {
 			if ep.Status == statusFilter {
 				filtered = append(filtered, ep)

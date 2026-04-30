@@ -128,7 +128,7 @@ func NewAPIKeyAuthMiddleware(config ...AuthConfig) fiber.Handler {
 		}
 
 		// Verify API key with constant time comparison to prevent timing attacks
-		if apiKey == "" || subtle.ConstantTimeCompare([]byte(strings.ToLower(apiKey)), []byte(strings.ToLower(cfg.APIKey))) != 1 {
+		if cfg.APIKey == "" || apiKey == "" || subtle.ConstantTimeCompare([]byte(strings.ToLower(apiKey)), []byte(strings.ToLower(cfg.APIKey))) != 1 {
 			return cfg.ErrorHandler(c, fiber.ErrUnauthorized)
 		}
 
