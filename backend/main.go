@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/rand"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -296,18 +294,32 @@ func bootstrapAdmin() {
 
 	for _, u := range users {
 		if u.Role == models.UserRoleAdmin {
+			// If the admin has no password hash (legacy: hash wasn't persisted due
+			// to json:"-"), reset it to the default so the account is usable.
+			if u.PasswordHash == "" {
+				password := os.Getenv("ADMIN_PASSWORD")
+				if password == "" {
+					password = "admin"
+				}
+				hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+				if err != nil {
+					log.Error().Err(err).Msg("bootstrapAdmin: failed to hash password for existing admin")
+					return
+				}
+				u.PasswordHash = string(hash)
+				if err := repo.Update(u); err != nil {
+					log.Error().Err(err).Msg("bootstrapAdmin: failed to update admin password hash")
+					return
+				}
+				log.Warn().Str("username", u.Username).Str("password", password).Msg("bootstrapAdmin: restored missing password hash for existing admin")
+			}
 			return // already have an admin, nothing to do
 		}
 	}
 
 	password := os.Getenv("ADMIN_PASSWORD")
 	if password == "" {
-		b := make([]byte, 12)
-		if _, err := rand.Read(b); err != nil {
-			log.Error().Err(err).Msg("bootstrapAdmin: failed to generate password")
-			return
-		}
-		password = fmt.Sprintf("%x", b) // 24-char hex string
+		password = "admin"
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -332,7 +344,7 @@ func bootstrapAdmin() {
 	}
 
 	if os.Getenv("ADMIN_PASSWORD") == "" {
-		log.Warn().Str("username", "admin").Str("password", password).Msg("Created initial admin user — change this password immediately")
+		log.Warn().Str("username", "admin").Str("password", password).Msg("Created initial admin user with default password — change this immediately via the Users page")
 	} else {
 		log.Info().Str("username", "admin").Msg("Created initial admin user")
 	}

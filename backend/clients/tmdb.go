@@ -109,37 +109,57 @@ func (c *TMDBClient) SearchMovies(query string, page int) (*TMDBSearchResponse, 
 
 // GetPopularMovies gets a list of popular movies
 func (c *TMDBClient) GetPopularMovies(page int) (*TMDBPopularResponse, error) {
-	// Create parameters
 	params := map[string]string{
-		"page": fmt.Sprintf("%d", page),
+		"page":                    fmt.Sprintf("%d", page),
+		"language":                "en-US",
+		"with_original_language":  "en",
 	}
 
-	// Make request
 	resp, err := c.makeRequest("GET", "/movie/popular", params)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	// Check response status
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("get popular movies failed with status code: %d", resp.StatusCode)
 	}
 
-	// Parse response
 	var popularResp TMDBPopularResponse
 	if err := json.NewDecoder(resp.Body).Decode(&popularResp); err != nil {
 		return nil, err
 	}
-
 	return &popularResp, nil
+}
+
+// GetTVShow gets details for a specific TV show by TMDB ID,
+// including cast credits and external IDs.
+func (c *TMDBClient) GetTVShow(tmdbID string) (map[string]interface{}, error) {
+	params := map[string]string{
+		"append_to_response": "credits,external_ids",
+	}
+	resp, err := c.makeRequest("GET", fmt.Sprintf("/tv/%s", tmdbID), params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GetTVShow failed with status %d", resp.StatusCode)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // GetMovie gets details for a specific movie by ID
 func (c *TMDBClient) GetMovie(id string) (map[string]interface{}, error) {
 	// Create parameters with append_to_response to get additional details
 	params := map[string]string{
-		"append_to_response": "credits,images,videos",
+		"append_to_response": "credits,images,videos,external_ids,release_dates",
 	}
 
 	// Make request
@@ -165,84 +185,125 @@ func (c *TMDBClient) GetMovie(id string) (map[string]interface{}, error) {
 
 // GetNowPlayingMovies gets a list of movies currently in theaters
 func (c *TMDBClient) GetNowPlayingMovies(page int) (*TMDBPopularResponse, error) {
-	// Create parameters
 	params := map[string]string{
-		"page": fmt.Sprintf("%d", page),
+		"page":                   fmt.Sprintf("%d", page),
+		"language":               "en-US",
+		"with_original_language": "en",
 	}
 
-	// Make request
 	resp, err := c.makeRequest("GET", "/movie/now_playing", params)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	// Check response status
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("get now playing movies failed with status code: %d", resp.StatusCode)
 	}
 
-	// Parse response
 	var nowPlayingResp TMDBPopularResponse
 	if err := json.NewDecoder(resp.Body).Decode(&nowPlayingResp); err != nil {
 		return nil, err
 	}
-
 	return &nowPlayingResp, nil
 }
 
 // GetTopRatedMovies gets a list of top rated movies
 func (c *TMDBClient) GetTopRatedMovies(page int) (*TMDBPopularResponse, error) {
-	// Create parameters
 	params := map[string]string{
-		"page": fmt.Sprintf("%d", page),
+		"page":                   fmt.Sprintf("%d", page),
+		"language":               "en-US",
+		"with_original_language": "en",
 	}
 
-	// Make request
 	resp, err := c.makeRequest("GET", "/movie/top_rated", params)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	// Check response status
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("get top rated movies failed with status code: %d", resp.StatusCode)
 	}
 
-	// Parse response
 	var topRatedResp TMDBPopularResponse
 	if err := json.NewDecoder(resp.Body).Decode(&topRatedResp); err != nil {
 		return nil, err
 	}
-
 	return &topRatedResp, nil
 }
 
 // GetUpcomingMovies gets a list of upcoming movies
 func (c *TMDBClient) GetUpcomingMovies(page int) (*TMDBPopularResponse, error) {
-	// Create parameters
 	params := map[string]string{
-		"page": fmt.Sprintf("%d", page),
+		"page":                   fmt.Sprintf("%d", page),
+		"language":               "en-US",
+		"with_original_language": "en",
 	}
 
-	// Make request
 	resp, err := c.makeRequest("GET", "/movie/upcoming", params)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	// Check response status
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("get upcoming movies failed with status code: %d", resp.StatusCode)
 	}
 
-	// Parse response
 	var upcomingResp TMDBPopularResponse
 	if err := json.NewDecoder(resp.Body).Decode(&upcomingResp); err != nil {
 		return nil, err
 	}
-
 	return &upcomingResp, nil
+}
+
+// GetTrendingMovies gets weekly trending movies
+func (c *TMDBClient) GetTrendingMovies(page int) (*TMDBPopularResponse, error) {
+	params := map[string]string{
+		"page":                   fmt.Sprintf("%d", page),
+		"language":               "en-US",
+		"with_original_language": "en",
+	}
+
+	resp, err := c.makeRequest("GET", "/trending/movie/week", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get trending movies failed with status code: %d", resp.StatusCode)
+	}
+
+	var result TMDBPopularResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetTrendingTV gets weekly trending TV shows
+func (c *TMDBClient) GetTrendingTV(page int) (*TMDBPopularResponse, error) {
+	params := map[string]string{
+		"page":                   fmt.Sprintf("%d", page),
+		"language":               "en-US",
+		"with_original_language": "en",
+	}
+
+	resp, err := c.makeRequest("GET", "/trending/tv/week", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get trending TV failed with status code: %d", resp.StatusCode)
+	}
+
+	var result TMDBPopularResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }

@@ -54,7 +54,7 @@ func (a *Api) SetupRoutes(app *fiber.App) {
 	// v1 API group
 	v1 := api.Group("/v1")
 
-	// Auth routes
+	// Auth routes (public — no JWT required)
 	authRoutes := v1.Group("/auth")
 	authRoutes.Get("/key", GetAPIKey)
 	authRoutes.Post("/key", GenerateNewAPIKey)
@@ -62,14 +62,17 @@ func (a *Api) SetupRoutes(app *fiber.App) {
 	authRoutes.Post("/login", Login)
 	authRoutes.Post("/register", RegisterUser)
 
+	// All remaining v1 routes require a valid JWT session.
+	p := v1.Group("", middleware.RequireAuth)
+
 	// Configuration routes
-	configRoutes := v1.Group("/config")
+	configRoutes := p.Group("/config")
 	configRoutes.Get("/", GetSystemConfig)
 	configRoutes.Post("/", UpdateSystemConfig)
 	configRoutes.Post("/test-torrent", TestTorrentConnection)
 
 	// User routes
-	userRoutes := v1.Group("/users")
+	userRoutes := p.Group("/users")
 	userRoutes.Get("/", GetUsers)
 	userRoutes.Get("/:id", GetUser)
 	userRoutes.Post("/", CreateUser)
@@ -77,13 +80,14 @@ func (a *Api) SetupRoutes(app *fiber.App) {
 	userRoutes.Delete("/:id", DeleteUser)
 
 	// TV Show routes
-	tvShowRoutes := v1.Group("/tvshows")
+	tvShowRoutes := p.Group("/tvshows")
 	tvShowRoutes.Get("/", GetTVShows)
 	tvShowRoutes.Get("/recent", GetRecentTVShows)
 	tvShowRoutes.Get("/search", SearchTVShows)
 	tvShowRoutes.Get("/:id", GetTVShow)
 	tvShowRoutes.Delete("/:id", DeleteTVShow)
 	tvShowRoutes.Post("/fetch-popular", FetchPopularTVShows)
+	tvShowRoutes.Post("/fetch-trending", FetchTrendingTV)
 	tvShowRoutes.Patch("/:id/quality", SetTVShowQuality)
 	tvShowRoutes.Post("/:id/download", a.DownloadHandler.DownloadTVShow)
 	tvShowRoutes.Post("/:id/request", a.WantedHandler.RequestTVShow)
@@ -94,7 +98,7 @@ func (a *Api) SetupRoutes(app *fiber.App) {
 	tvShowRoutes.Post("/:id/monitor", a.EpisodeHandler.MonitorTVShow)
 
 	// Movie routes
-	movieRoutes := v1.Group("/movies")
+	movieRoutes := p.Group("/movies")
 	movieRoutes.Get("/", GetMovies)
 	movieRoutes.Get("/recent", GetRecentMovies)
 	movieRoutes.Get("/search", SearchMovies)
@@ -102,12 +106,15 @@ func (a *Api) SetupRoutes(app *fiber.App) {
 	movieRoutes.Delete("/:id", DeleteMovie)
 	movieRoutes.Post("/fetch-popular", FetchPopularMovies)
 	movieRoutes.Post("/fetch-now-playing", FetchNowPlayingMovies)
+	movieRoutes.Post("/fetch-trending", FetchTrendingMovies)
+	movieRoutes.Post("/fetch-top-rated", FetchTopRatedMovies)
+	movieRoutes.Post("/fetch-upcoming", FetchUpcomingMovies)
 	movieRoutes.Patch("/:id/quality", SetMovieQuality)
 	movieRoutes.Post("/:id/download", a.DownloadHandler.DownloadMovie)
 	movieRoutes.Post("/:id/request", a.WantedHandler.RequestMovie)
 
 	// Wanted routes
-	wantedRoutes := v1.Group("/wanted")
+	wantedRoutes := p.Group("/wanted")
 	wantedRoutes.Get("/", a.WantedHandler.ListWanted)
 	wantedRoutes.Get("/:id", a.WantedHandler.GetWanted)
 	wantedRoutes.Delete("/:id", a.WantedHandler.DeleteWanted)
@@ -115,12 +122,12 @@ func (a *Api) SetupRoutes(app *fiber.App) {
 	wantedRoutes.Post("/:id/reject", middleware.RequireRole("admin"), a.WantedHandler.RejectWanted)
 
 	// Plex routes
-	plexRoutes := v1.Group("/plex")
+	plexRoutes := p.Group("/plex")
 	plexRoutes.Get("/", a.PlexHandler.GetPlexConfig)
 	plexRoutes.Post("/", a.PlexHandler.UpdatePlexConfig)
 
 	// Indexer routes
-	indexerRoutes := v1.Group("/indexers")
+	indexerRoutes := p.Group("/indexers")
 	indexerRoutes.Get("/", a.IndexerHandler.ListIndexers)
 	indexerRoutes.Get("/health", a.IndexerHandler.GetIndexerHealth)
 	indexerRoutes.Post("/", a.IndexerHandler.CreateIndexer)
@@ -131,35 +138,35 @@ func (a *Api) SetupRoutes(app *fiber.App) {
 	indexerRoutes.Delete("/:id", a.IndexerHandler.DeleteIndexer)
 
 	// Release profile routes
-	releaseProfileRoutes := v1.Group("/release-profiles")
+	releaseProfileRoutes := p.Group("/release-profiles")
 	releaseProfileRoutes.Get("/", ListReleaseProfiles)
 	releaseProfileRoutes.Post("/", CreateReleaseProfile)
 	releaseProfileRoutes.Put("/:id", UpdateReleaseProfile)
 	releaseProfileRoutes.Delete("/:id", DeleteReleaseProfile)
 
 	// Library routes
-	libraryRoutes := v1.Group("/library")
+	libraryRoutes := p.Group("/library")
 	libraryRoutes.Get("/scan", a.LibraryHandler.ScanLibrary)
 
 	// History routes
-	v1.Get("/history", a.HistoryHandler.GetHistory)
+	p.Get("/history", a.HistoryHandler.GetHistory)
 
 	// Settings routes
-	settingsRoutes := v1.Group("/settings")
+	settingsRoutes := p.Group("/settings")
 	settingsRoutes.Get("/", a.SettingsHandler.GetSettings)
 	settingsRoutes.Put("/", a.SettingsHandler.UpdateSettings)
 
 	// System routes
-	systemRoutes := v1.Group("/system")
+	systemRoutes := p.Group("/system")
 	systemRoutes.Get("/tasks", a.SystemHandler.GetTasks)
 
 	// Download routes
-	downloadRoutes := v1.Group("/downloads")
+	downloadRoutes := p.Group("/downloads")
 	downloadRoutes.Get("/", a.DownloadHandler.GetDownloads)
 	downloadRoutes.Get("/:hash", a.DownloadHandler.GetDownload)
 
 	// Torrent routes
-	torrentRoutes := v1.Group("/torrents")
+	torrentRoutes := p.Group("/torrents")
 	torrentRoutes.Get("/", a.TorrentHandler.GetTorrents)
 	torrentRoutes.Get("/health", a.TorrentHandler.GetClientHealth)
 	torrentRoutes.Get("/:hash", a.TorrentHandler.GetTorrentDetails)

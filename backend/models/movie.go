@@ -26,7 +26,16 @@ type Movie struct {
 	OriginalLang  string    `json:"original_language"`
 	FetchedAt     time.Time `json:"fetched_at"`
 	PopularityIdx    float64   `json:"popularity_index"`
-	PreferredQuality string    `json:"preferred_quality,omitempty"` // item-level override; "" = use global config
+	PreferredQuality string    `json:"preferred_quality,omitempty"`
+	// Enriched metadata (populated lazily on first detail-page view)
+	Cast           []CastMember `json:"cast,omitempty"`
+	IMDBId         string       `json:"imdb_id,omitempty"`
+	ContentRating  string       `json:"content_rating,omitempty"`
+	IMDBRating     string       `json:"imdb_rating,omitempty"`
+	RottenTomatoes string       `json:"rotten_tomatoes,omitempty"`
+	RTAudienceScore string      `json:"rt_audience_score,omitempty"`
+	RTUrl          string       `json:"rt_url,omitempty"`
+	Metacritic     string       `json:"metacritic,omitempty"`
 }
 
 // ToJSON serializes the movie to JSON
@@ -131,7 +140,7 @@ func NewMovieFromTMDBData(tmdbData map[string]interface{}) *Movie {
 		}
 	}
 
-	// Try to extract director and production company if available
+	// Try to extract director, cast, and production company from credits
 	if credits, ok := tmdbData["credits"].(map[string]interface{}); ok {
 		if crew, ok := credits["crew"].([]interface{}); ok {
 			for _, crewMember := range crew {
@@ -145,12 +154,74 @@ func NewMovieFromTMDBData(tmdbData map[string]interface{}) *Movie {
 				}
 			}
 		}
+		// Top-billed cast (up to 15)
+		if castList, ok := credits["cast"].([]interface{}); ok {
+			for _, raw := range castList {
+				cm, ok := raw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				name, _ := cm["name"].(string)
+				if name == "" {
+					continue
+				}
+				char, _ := cm["character"].(string)
+				img := ""
+				if pp, ok := cm["profile_path"].(string); ok && pp != "" {
+					img = "https://image.tmdb.org/t/p/w185" + pp
+				}
+				movie.Cast = append(movie.Cast, CastMember{
+					Name:      name,
+					Character: char,
+					Image:     img,
+				})
+				if len(movie.Cast) >= 15 {
+					break
+				}
+			}
+		}
 	}
 
 	if productionCompanies, ok := tmdbData["production_companies"].([]interface{}); ok && len(productionCompanies) > 0 {
 		if company, ok := productionCompanies[0].(map[string]interface{}); ok {
 			if name, ok := company["name"].(string); ok {
 				movie.ProductionCo = name
+			}
+		}
+	}
+
+	// IMDB ID from external_ids (available when append_to_response includes external_ids)
+	if extIDs, ok := tmdbData["external_ids"].(map[string]interface{}); ok {
+		if imdbID, ok := extIDs["imdb_id"].(string); ok {
+			movie.IMDBId = imdbID
+		}
+	}
+
+	// Content rating from US theatrical release_dates
+	if relDates, ok := tmdbData["release_dates"].(map[string]interface{}); ok {
+		if results, ok := relDates["results"].([]interface{}); ok {
+			for _, raw := range results {
+				entry, ok := raw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if entry["iso_3166_1"] != "US" {
+					continue
+				}
+				if rdList, ok := entry["release_dates"].([]interface{}); ok {
+					for _, rd := range rdList {
+						rdMap, ok := rd.(map[string]interface{})
+						if !ok {
+							continue
+						}
+						cert, _ := rdMap["certification"].(string)
+						if cert != "" {
+							movie.ContentRating = cert
+							break
+						}
+					}
+				}
+				break
 			}
 		}
 	}

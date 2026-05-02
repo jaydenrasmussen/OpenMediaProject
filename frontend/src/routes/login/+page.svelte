@@ -13,8 +13,8 @@
   import { Label } from "$lib/components/ui/label";
   import { Input } from "$lib/components/ui/input";
 
-  let username = "";
-  let password = "";
+  let username = "admin";
+  let password = "admin";
   let submitting = false;
   let error: string | null = null;
 
@@ -55,6 +55,7 @@
     <CardHeader>
       <CardTitle>Sign In</CardTitle>
       <CardDescription>Enter your credentials to access OpenMedia</CardDescription>
+      <p class="text-xs text-muted-foreground pt-1">Default credentials on first run: <code>admin</code> / <code>admin</code></p>
     </CardHeader>
 
     <form on:submit|preventDefault={handleLogin}>

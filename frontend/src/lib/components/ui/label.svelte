@@ -5,7 +5,7 @@
   export { className as class };
   export let for_: string | undefined = undefined;
 
-  let element: HTMLLabelElement;
+  let element: HTMLLabelElement | undefined = undefined;
   export { element as el };
 </script>
 

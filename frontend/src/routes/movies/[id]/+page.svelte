@@ -3,12 +3,6 @@
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { movieApi, type Movie } from "$lib/api/index";
-  import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-  } from "$lib/components/ui/card";
   import { Button } from "$lib/components/ui/button";
 
   let movie: Movie | null = null;
@@ -22,10 +16,6 @@
   $: id = $page.params.id;
 
   onMount(async () => {
-    await loadMovie();
-  });
-
-  async function loadMovie() {
     loading = true;
     error = "";
     const result = await movieApi.getMovie(id);
@@ -35,7 +25,7 @@
       movie = result.data ?? null;
     }
     loading = false;
-  }
+  });
 
   async function requestDownload() {
     if (!movie) return;
@@ -52,15 +42,34 @@
   }
 
   function formatRuntime(minutes: number): string {
-    if (!minutes) return "Unknown";
+    if (!minutes) return "";
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   }
 
   function formatYear(dateStr: string): string {
-    if (!dateStr) return "Unknown";
-    return new Date(dateStr).getFullYear().toString();
+    if (!dateStr) return "";
+    return dateStr.slice(0, 4);
+  }
+
+  function metacriticClass(score: string): string {
+    const n = parseInt(score, 10);
+    if (isNaN(n)) return "bg-gray-200 text-gray-700";
+    if (n >= 61) return "bg-green-600 text-white";
+    if (n >= 40) return "bg-yellow-500 text-white";
+    return "bg-red-600 text-white";
+  }
+
+  function rtClass(score: string): string {
+    const n = parseInt(score, 10);
+    if (isNaN(n)) return "bg-gray-200 text-gray-700";
+    return n >= 60 ? "bg-red-600 text-white" : "bg-green-700 text-white";
+  }
+
+  function hideBrokenImage(e: Event) {
+    const el = e.currentTarget as HTMLElement;
+    if (el) el.style.display = "none";
   }
 </script>
 
@@ -70,39 +79,35 @@
 
 {#if loading}
   <div class="flex items-center justify-center py-24">
-    <p class="text-muted-foreground text-lg">Loading…</p>
+    <div class="text-muted-foreground text-lg animate-pulse">Loading…</div>
   </div>
 {:else if error}
-  <div class="max-w-2xl mx-auto py-12 text-center space-y-4">
-    <p class="text-destructive text-lg">{error}</p>
-    <Button variant="outline" on:click={() => goto("/movies")}>← Back to Movies</Button>
+  <div class="max-w-2xl mx-auto py-12 text-center">
+    <p class="text-red-600 mb-4">{error}</p>
+    <Button on:click={() => goto("/movies")}>Back to Movies</Button>
   </div>
 {:else if movie}
-  <!-- Backdrop -->
-  {#if movie.backdrop_url && !backdropError}
-    <div class="relative -mx-4 -mt-8 mb-8 h-64 md:h-80 overflow-hidden">
-      <img
-        src={movie.backdrop_url}
-        alt="{movie.title} backdrop"
-        class="w-full h-full object-cover"
-        on:error={() => (backdropError = true)}
-      />
-      <div class="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
-    </div>
-  {:else}
-    <div class="h-8" />
-  {/if}
+  <div class="relative">
+    <!-- Backdrop: absolute, sits behind page content -->
+    {#if movie.backdrop_url && !backdropError}
+      <div class="absolute inset-x-0 top-0 h-[32rem] overflow-hidden pointer-events-none">
+        <img
+          src={movie.backdrop_url}
+          alt="{movie.title} backdrop"
+          class="w-full h-full object-cover"
+          on:error={() => (backdropError = true)}
+        />
+        <div class="absolute inset-0 bg-gradient-to-b from-transparent via-background/60 to-background" />
+      </div>
+    {/if}
 
-  <div class="max-w-5xl mx-auto space-y-8">
-    <!-- Back link -->
-    <a href="/movies" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
-      ← Back to Movies
-    </a>
+    <div class="relative max-w-5xl mx-auto space-y-10 {movie.backdrop_url && !backdropError ? 'pt-48 md:pt-64' : ''}">
+    <Button size="sm" on:click={() => goto("/movies")}>← Back to Movies</Button>
 
     <!-- Main detail block -->
     <div class="flex flex-col md:flex-row gap-8">
       <!-- Poster -->
-      <div class="flex-shrink-0 w-full md:w-56">
+      <div class="flex-shrink-0 w-full md:w-52">
         {#if movie.poster_url && !posterError}
           <img
             src={movie.poster_url}
@@ -111,25 +116,28 @@
             on:error={() => (posterError = true)}
           />
         {:else}
-          <div class="w-full h-80 md:h-auto aspect-[2/3] bg-muted rounded-lg flex items-center justify-center">
+          <div class="w-full aspect-[2/3] bg-muted rounded-lg flex items-center justify-center">
             <span class="text-muted-foreground text-4xl">🎬</span>
           </div>
         {/if}
       </div>
 
       <!-- Details -->
-      <div class="flex-1 space-y-5">
+      <div class="flex-1 space-y-4">
+        <!-- Title + meta badges -->
         <div>
           <h1 class="text-3xl md:text-4xl font-bold leading-tight">{movie.title}</h1>
-          <div class="flex flex-wrap items-center gap-3 mt-2 text-muted-foreground text-sm">
-            <span>{formatYear(movie.release_date)}</span>
-            {#if movie.runtime}
-              <span>·</span>
-              <span>{formatRuntime(movie.runtime)}</span>
+          <div class="flex flex-wrap items-center gap-2 mt-2">
+            {#if movie.release_date}
+              <span class="text-muted-foreground text-sm">{formatYear(movie.release_date)}</span>
             {/if}
-            {#if movie.rating}
-              <span>·</span>
-              <span class="flex items-center gap-1">⭐ {movie.rating.toFixed(1)}</span>
+            {#if movie.runtime}
+              <span class="text-muted-foreground text-sm">· {formatRuntime(movie.runtime)}</span>
+            {/if}
+            {#if movie.content_rating}
+              <span class="text-xs font-semibold px-2 py-0.5 rounded border border-muted-foreground text-muted-foreground">
+                {movie.content_rating}
+              </span>
             {/if}
           </div>
         </div>
@@ -145,6 +153,57 @@
           </div>
         {/if}
 
+        <!-- Ratings row -->
+        <div class="flex flex-wrap items-center gap-3">
+          {#if movie.rating && movie.rating > 0}
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">TMDB</span>
+              <span class="text-sm font-bold text-blue-600">{movie.rating.toFixed(1)}</span>
+            </div>
+          {/if}
+          {#if movie.imdb_rating && movie.imdb_rating !== "N/A"}
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-semibold px-1.5 py-0.5 rounded bg-yellow-400 text-black font-bold">IMDb</span>
+              <span class="text-sm font-bold">{movie.imdb_rating}</span>
+              {#if movie.imdb_id}
+                <a
+                  href="https://www.imdb.com/title/{movie.imdb_id}/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-xs text-muted-foreground hover:underline"
+                >↗</a>
+              {/if}
+            </div>
+          {:else if movie.imdb_id}
+            <a
+              href="https://www.imdb.com/title/{movie.imdb_id}/"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-xs px-1.5 py-0.5 rounded bg-yellow-400 text-black font-bold hover:bg-yellow-300"
+            >IMDb ↗</a>
+          {/if}
+          {#if movie.rotten_tomatoes && movie.rotten_tomatoes !== "N/A"}
+            <div class="flex items-center gap-1.5">
+              {#if movie.rt_url}
+                <a href={movie.rt_url} target="_blank" rel="noopener noreferrer"
+                  class="text-xs font-semibold px-1.5 py-0.5 rounded {rtClass(movie.rotten_tomatoes)} hover:opacity-80">🍅 RT</a>
+              {:else}
+                <span class="text-xs font-semibold px-1.5 py-0.5 rounded {rtClass(movie.rotten_tomatoes)}">🍅 RT</span>
+              {/if}
+              <span class="text-sm font-bold">{movie.rotten_tomatoes}</span>
+              {#if movie.rt_audience_score && movie.rt_audience_score !== "N/A"}
+                <span class="text-xs text-muted-foreground">/ 🍿 {movie.rt_audience_score}</span>
+              {/if}
+            </div>
+          {/if}
+          {#if movie.metacritic && movie.metacritic !== "N/A"}
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-bold px-1.5 py-0.5 rounded {metacriticClass(movie.metacritic)}">{movie.metacritic}</span>
+              <span class="text-xs text-muted-foreground">Metacritic</span>
+            </div>
+          {/if}
+        </div>
+
         <!-- Director -->
         {#if movie.director}
           <div class="text-sm">
@@ -159,59 +218,51 @@
         {/if}
 
         <!-- Request button -->
-        <div class="pt-2 space-y-3">
+        <div class="pt-2">
           <Button
             on:click={requestDownload}
             disabled={requestStatus === "loading" || requestStatus === "success"}
-            size="lg"
+            class="min-w-40"
           >
-            {#if requestStatus === "loading"}
-              Requesting…
-            {:else if requestStatus === "success"}
-              ✓ Requested!
-            {:else}
-              Request Download
-            {/if}
+            {#if requestStatus === "loading"}Requesting…
+            {:else if requestStatus === "success"}✓ Requested!
+            {:else}Request Download{/if}
           </Button>
-
           {#if requestMessage}
-            <p class={requestStatus === "error" ? "text-destructive text-sm" : "text-green-600 text-sm"}>
-              {requestMessage}
-            </p>
+            <p class="mt-2 text-sm {requestStatus === 'error' ? 'text-red-600' : 'text-green-600'}">{requestMessage}</p>
           {/if}
         </div>
       </div>
     </div>
 
-    <!-- Additional info card -->
-    {#if movie.vote_count || movie.popularity_index}
-      <Card>
-        <CardHeader>
-          <CardTitle class="text-base">More Info</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-            {#if movie.vote_count}
-              <div>
-                <dt class="text-muted-foreground">Vote Count</dt>
-                <dd class="font-medium">{movie.vote_count.toLocaleString()}</dd>
-              </div>
-            {/if}
-            {#if movie.popularity_index}
-              <div>
-                <dt class="text-muted-foreground">Popularity</dt>
-                <dd class="font-medium">{movie.popularity_index.toFixed(1)}</dd>
-              </div>
-            {/if}
-            {#if movie.release_date}
-              <div>
-                <dt class="text-muted-foreground">Release Date</dt>
-                <dd class="font-medium">{movie.release_date}</dd>
-              </div>
-            {/if}
-          </dl>
-        </CardContent>
-      </Card>
+    <!-- Cast -->
+    {#if movie.cast && movie.cast.length > 0}
+      <div>
+        <h2 class="text-xl font-semibold mb-3">Cast</h2>
+        <div class="flex flex-wrap gap-4">
+          {#each movie.cast as member}
+            <div class="w-24 text-center">
+              {#if member.image}
+                <img
+                  src={member.image}
+                  alt={member.name}
+                  class="w-24 h-24 rounded-full object-cover mx-auto mb-1 bg-muted"
+                  on:error={hideBrokenImage}
+                />
+              {:else}
+                <div class="w-24 h-24 rounded-full bg-muted flex items-center justify-center mx-auto mb-1">
+                  <span class="text-2xl text-muted-foreground">👤</span>
+                </div>
+              {/if}
+              <p class="text-xs font-semibold leading-tight">{member.name}</p>
+              {#if member.character}
+                <p class="text-xs text-muted-foreground leading-tight">{member.character}</p>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </div>
     {/if}
+  </div>
   </div>
 {/if}

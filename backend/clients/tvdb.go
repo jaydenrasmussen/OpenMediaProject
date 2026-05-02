@@ -22,30 +22,22 @@ type TVDBClient struct {
 	HTTPClient  *http.Client
 }
 
-// TVDBAuthResponse represents the authentication response from TVDB
-type TVDBAuthResponse struct {
-	Token   string `json:"token"`
-	Success bool   `json:"success"`
-}
-
 // TVDBSearchResponse represents the search response from TVDB
 type TVDBSearchResponse struct {
-	Data    []map[string]interface{} `json:"data"`
-	Status  string                   `json:"status"`
-	Success bool                     `json:"success"`
+	Data   []map[string]interface{} `json:"data"`
+	Status string                   `json:"status"`
 }
 
 // TVDBPopularResponse represents the popular shows response from TVDB
 type TVDBPopularResponse struct {
-	Data    []map[string]interface{} `json:"data"`
-	Status  string                   `json:"status"`
-	Success bool                     `json:"success"`
+	Data   []map[string]interface{} `json:"data"`
+	Status string                   `json:"status"`
 }
 
 // NewTVDBClient creates a new TVDB API client
 func NewTVDBClient(apiKey string) *TVDBClient {
 	return &TVDBClient{
-		BaseURL:    "https://api.thetvdb.com",
+		BaseURL:    "https://api4.thetvdb.com/v4",
 		APIKey:     apiKey,
 		HTTPClient: &http.Client{Timeout: 10 * time.Second},
 	}
@@ -58,9 +50,9 @@ func (c *TVDBClient) Authenticate() error {
 		return nil
 	}
 
-	// Prepare auth request
+	// Prepare auth request — v4 API uses camelCase "apiKey"
 	authData := map[string]string{
-		"apikey": c.APIKey,
+		"apiKey": c.APIKey,
 	}
 	jsonData, err := json.Marshal(authData)
 	if err != nil {
@@ -86,18 +78,23 @@ func (c *TVDBClient) Authenticate() error {
 		return fmt.Errorf("authentication failed with status code: %d", resp.StatusCode)
 	}
 
-	// Parse response
-	var authResp TVDBAuthResponse
+	// Parse response — v4 wraps token under {"data": {"token": "..."}, "status": "success"}
+	var authResp struct {
+		Data struct {
+			Token string `json:"token"`
+		} `json:"data"`
+		Status string `json:"status"`
+	}
 	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
 		return err
 	}
 
-	if !authResp.Success {
+	if authResp.Status != "success" {
 		return errors.New("authentication failed")
 	}
 
 	// Store token and expiry (tokens typically last 24 hours)
-	c.AccessToken = authResp.Token
+	c.AccessToken = authResp.Data.Token
 	c.TokenExpiry = time.Now().Add(23 * time.Hour)
 
 	return nil
@@ -138,8 +135,8 @@ func (c *TVDBClient) makeAuthenticatedRequest(method, endpoint string, body io.R
 
 // SearchShows searches for TV shows by name
 func (c *TVDBClient) SearchShows(name string) ([]map[string]interface{}, error) {
-	// Make request
-	resp, err := c.makeAuthenticatedRequest("GET", fmt.Sprintf("/search/series?name=%s", url.QueryEscape(name)), nil)
+	// Make request — v4 uses /search?query= instead of /search/series?name=
+	resp, err := c.makeAuthenticatedRequest("GET", fmt.Sprintf("/search?query=%s", url.QueryEscape(name)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +153,7 @@ func (c *TVDBClient) SearchShows(name string) ([]map[string]interface{}, error) 
 		return nil, err
 	}
 
-	if !searchResp.Success {
+	if searchResp.Status != "success" {
 		return nil, errors.New("search failed")
 	}
 
@@ -165,8 +162,8 @@ func (c *TVDBClient) SearchShows(name string) ([]map[string]interface{}, error) 
 
 // GetPopularShows gets a list of popular TV shows
 func (c *TVDBClient) GetPopularShows() ([]map[string]interface{}, error) {
-	// Make request
-	resp, err := c.makeAuthenticatedRequest("GET", "/popular", nil)
+	// Make request — v4 uses /series/filter sorted by score instead of /popular
+	resp, err := c.makeAuthenticatedRequest("GET", "/series/filter?sort=score&sortType=desc", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +180,7 @@ func (c *TVDBClient) GetPopularShows() ([]map[string]interface{}, error) {
 		return nil, err
 	}
 
-	if !popularResp.Success {
+	if popularResp.Status != "success" {
 		return nil, errors.New("get popular shows failed")
 	}
 
@@ -245,6 +242,33 @@ func (c *TVDBClient) GetEpisodes(seriesID string) ([]map[string]interface{}, err
 	return all, nil
 }
 
+// GetShowExtended gets the full extended record for a series, including cast,
+// content ratings, and remote IDs (IMDB, TMDB).
+// Endpoint: GET /series/:id/extended
+func (c *TVDBClient) GetShowExtended(id string) (map[string]interface{}, error) {
+	resp, err := c.makeAuthenticatedRequest("GET", fmt.Sprintf("/series/%s/extended", id), nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GetShowExtended failed with status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Data   map[string]interface{} `json:"data"`
+		Status string                 `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if result.Status != "success" {
+		return nil, errors.New("GetShowExtended: non-success status")
+	}
+	return result.Data, nil
+}
+
 // GetShow gets details for a specific TV show by ID
 func (c *TVDBClient) GetShow(id string) (map[string]interface{}, error) {
 	// Make request
@@ -262,13 +286,13 @@ func (c *TVDBClient) GetShow(id string) (map[string]interface{}, error) {
 	// Parse response
 	var result struct {
 		Data    map[string]interface{} `json:"data"`
-		Success bool                   `json:"success"`
+		Status  string                 `json:"status"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
 
-	if !result.Success {
+	if result.Status != "success" {
 		return nil, errors.New("get show failed")
 	}
 

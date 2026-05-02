@@ -158,8 +158,11 @@ export const authApi = {
 // Interceptors
 apiClient.interceptors.request.use(
     (config) => {
-        // Attach JWT Bearer token if one is stored (set by the login page).
-        if (typeof localStorage !== "undefined") {
+        // Attach JWT Bearer token if one is stored, but never on auth routes
+        // (avoids stale/expired tokens blocking the login endpoint).
+        const url = config.url ?? "";
+        const isAuthRoute = url.includes("/auth/");
+        if (!isAuthRoute && typeof localStorage !== "undefined") {
             const token = localStorage.getItem("auth_token");
             if (token) {
                 config.headers.Authorization = `Bearer ${token}`;
@@ -217,6 +220,21 @@ export interface Movie {
     genres: string[];
     director: string;
     popularity_index: number;
+    // enriched metadata
+    cast?: CastMember[];
+    imdb_id?: string;
+    content_rating?: string;
+    imdb_rating?: string;
+    rotten_tomatoes?: string;
+    rt_audience_score?: string;
+    rt_url?: string;
+    metacritic?: string;
+}
+
+export interface CastMember {
+    name: string;
+    character: string;
+    image?: string;
 }
 
 export interface TVShow {
@@ -231,6 +249,18 @@ export interface TVShow {
     rating: number;
     genres: string[];
     monitored: boolean;
+    // enriched metadata
+    cast?: CastMember[];
+    content_rating?: string;
+    imdb_id?: string;
+    tmdb_id?: string;
+    imdb_rating?: string;
+    rotten_tomatoes?: string;
+    rt_audience_score?: string;
+    rt_url?: string;
+    metacritic?: string;
+    tmdb_rating?: number;
+    popularity?: number;
 }
 
 export interface Episode {
@@ -331,10 +361,14 @@ export const movieApi = {
         }
     },
 
-    fetchPopular: async (): Promise<ApiResponse<null>> => {
+    fetchPopular: async (
+        page = 1,
+    ): Promise<ApiResponse<{ movies: Movie[]; count: number; page: number; total_pages: number }>> => {
         try {
-            await apiClient.post("/v1/movies/fetch-popular");
-            return { data: null };
+            const response = await apiClient.post("/v1/movies/fetch-popular", null, {
+                params: { page },
+            });
+            return { data: response.data };
         } catch (error) {
             if (axios.isAxiosError(error))
                 return { error: true, message: error.response?.data?.message || error.message };
@@ -342,10 +376,59 @@ export const movieApi = {
         }
     },
 
-    fetchNowPlaying: async (): Promise<ApiResponse<null>> => {
+    fetchNowPlaying: async (
+        page = 1,
+    ): Promise<ApiResponse<{ movies: Movie[]; count: number; page: number; total_pages: number }>> => {
         try {
-            await apiClient.post("/v1/movies/fetch-now-playing");
-            return { data: null };
+            const response = await apiClient.post("/v1/movies/fetch-now-playing", null, {
+                params: { page },
+            });
+            return { data: response.data };
+        } catch (error) {
+            if (axios.isAxiosError(error))
+                return { error: true, message: error.response?.data?.message || error.message };
+            return { error: true, message: "Unknown error occurred" };
+        }
+    },
+
+    fetchTrending: async (
+        page = 1,
+    ): Promise<ApiResponse<{ movies: Movie[]; count: number; page: number; total_pages: number }>> => {
+        try {
+            const response = await apiClient.post("/v1/movies/fetch-trending", null, {
+                params: { page },
+            });
+            return { data: response.data };
+        } catch (error) {
+            if (axios.isAxiosError(error))
+                return { error: true, message: error.response?.data?.message || error.message };
+            return { error: true, message: "Unknown error occurred" };
+        }
+    },
+
+    fetchTopRated: async (
+        page = 1,
+    ): Promise<ApiResponse<{ movies: Movie[]; count: number; page: number; total_pages: number }>> => {
+        try {
+            const response = await apiClient.post("/v1/movies/fetch-top-rated", null, {
+                params: { page },
+            });
+            return { data: response.data };
+        } catch (error) {
+            if (axios.isAxiosError(error))
+                return { error: true, message: error.response?.data?.message || error.message };
+            return { error: true, message: "Unknown error occurred" };
+        }
+    },
+
+    fetchUpcoming: async (
+        page = 1,
+    ): Promise<ApiResponse<{ movies: Movie[]; count: number; page: number; total_pages: number }>> => {
+        try {
+            const response = await apiClient.post("/v1/movies/fetch-upcoming", null, {
+                params: { page },
+            });
+            return { data: response.data };
         } catch (error) {
             if (axios.isAxiosError(error))
                 return { error: true, message: error.response?.data?.message || error.message };
@@ -406,10 +489,25 @@ export const tvApi = {
         }
     },
 
-    fetchPopularTV: async (): Promise<ApiResponse<null>> => {
+    fetchPopularTV: async (): Promise<ApiResponse<{ shows: TVShow[]; count: number }>> => {
         try {
-            await apiClient.post("/v1/tvshows/fetch-popular");
-            return { data: null };
+            const response = await apiClient.post("/v1/tvshows/fetch-popular");
+            return { data: response.data };
+        } catch (error) {
+            if (axios.isAxiosError(error))
+                return { error: true, message: error.response?.data?.message || error.message };
+            return { error: true, message: "Unknown error occurred" };
+        }
+    },
+
+    fetchTrendingTV: async (
+        page = 1,
+    ): Promise<ApiResponse<{ shows: TVShow[]; count: number; page: number; total_pages: number }>> => {
+        try {
+            const response = await apiClient.post("/v1/tvshows/fetch-trending", null, {
+                params: { page },
+            });
+            return { data: response.data };
         } catch (error) {
             if (axios.isAxiosError(error))
                 return { error: true, message: error.response?.data?.message || error.message };

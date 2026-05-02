@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"backend/models"
@@ -207,6 +208,47 @@ func (r *TVShowRepository) GetRecentlyUpdated(since time.Time) ([]*models.TVShow
 	}
 
 	return shows, nil
+}
+
+// Search searches for TV shows by name
+func (r *TVShowRepository) Search(query string) ([]*models.TVShow, error) {
+	results := make([]*models.TVShow, 0)
+	query = strings.ToLower(query)
+
+	err := r.db.View(func(tx *nutsdb.Tx) error {
+		entries, err := tx.GetAll(TVShowBucket)
+		if err != nil {
+			if err == nutsdb.ErrBucketEmpty {
+				return nil
+			}
+			return err
+		}
+
+		for _, entry := range entries {
+			// Skip initialization entry
+			if string(entry.Key) == "_init" {
+				continue
+			}
+
+			var show models.TVShow
+			if err := json.Unmarshal(entry.Value, &show); err != nil {
+				return err
+			}
+
+			// Check if name contains the query
+			if strings.Contains(strings.ToLower(show.Name), query) {
+				results = append(results, &show)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return results, nil
 }
 
 // Count returns the number of TV shows in the database

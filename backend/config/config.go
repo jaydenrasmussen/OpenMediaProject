@@ -31,6 +31,7 @@ type Config struct {
 	Auth             AuthConfig
 	TVDB             TVDBConfig
 	TMDB             TMDBConfig
+	OMDB             OMDBConfig
 	TorrentClient    TorrentClientConfig
 	RuTorrent        RuTorrentConfig // For backward compatibility
 	Plex             PlexConfig
@@ -63,6 +64,11 @@ type JellyfinConfig struct {
 // EmbyConfig holds Emby related configuration
 type EmbyConfig struct {
 	URL    string
+	APIKey string
+}
+
+// OMDBConfig holds OMDB API related configuration
+type OMDBConfig struct {
 	APIKey string
 }
 
@@ -146,10 +152,13 @@ func Load() (*Config, error) {
 			SkipAuthEndpoints: getEnvStringSlice("SKIP_AUTH_ENDPOINTS", []string{"/api/health", "/api/v1/health", "/api/v1/auth"}),
 		},
 		TVDB: TVDBConfig{
-			APIKey: getEnv("TVDB_API_KEY", ""),
+			APIKey: getEnv("TVDB_API_KEY", "d00d9ecb-a9d0-4860-958a-74b14a041405"),
 		},
 		TMDB: TMDBConfig{
-			APIKey: getEnv("TMDB_API_KEY", ""),
+			APIKey: getEnv("TMDB_API_KEY", "431a8708161bcd1f1fbe7536137e61ed"),
+		},
+		OMDB: OMDBConfig{
+			APIKey: getEnv("OMDB_API_KEY", ""),
 		},
 		TorrentClient: TorrentClientConfig{
 			ClientType: TorrentClientType(getEnv("TORRENT_CLIENT_TYPE", string(ClientTypeRuTorrent))),

@@ -1,14 +1,12 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
-  import type { HTMLAttributes, HTMLHeadingElement } from "svelte/elements";
 
   let className: string | undefined | null = undefined;
   export { className as class };
 
-  export let tag: keyof HTMLAttributes<HTMLHeadingElement> = "h3";
+  export let tag: string = "h3";
 
-  // Enable forwarding of the ref to the element
-  let element: HTMLElement;
+  let element: HTMLElement | undefined = undefined;
   export { element as el };
 </script>
 

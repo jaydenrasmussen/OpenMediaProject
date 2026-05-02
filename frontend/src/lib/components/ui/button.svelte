@@ -40,7 +40,7 @@
 	let className: string | undefined | null = undefined;
 	export { className as class };
 
-	let element: HTMLButtonElement;
+	let element: HTMLButtonElement | undefined = undefined;
 	export { element as el };
 
 	export let type: HTMLButtonElement["type"] = "button";

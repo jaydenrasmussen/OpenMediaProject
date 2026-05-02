@@ -55,6 +55,19 @@ func JWTMiddleware(secret []byte) fiber.Handler {
 	}
 }
 
+// RequireAuth rejects requests where no valid JWT was parsed.
+// Must be placed after JWTMiddleware in the middleware chain.
+func RequireAuth(c *fiber.Ctx) error {
+	uid, _ := c.Locals(LocalKeyUserID).(string)
+	if uid == "" {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error":   true,
+			"message": "Authentication required",
+		})
+	}
+	return c.Next()
+}
+
 // RequireRole is a middleware that rejects requests where the JWT role does
 // not match one of the allowed roles. Must be placed after JWTMiddleware.
 func RequireRole(roles ...string) fiber.Handler {

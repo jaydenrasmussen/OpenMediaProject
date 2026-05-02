@@ -15,6 +15,29 @@ var (
 	ErrKeyExists    = errors.New("user with this key already exists")
 )
 
+// userRecord is the on-disk representation of a User.
+// It embeds models.User and adds PasswordHash so it is persisted to the DB,
+// while the public models.User struct keeps json:"-" to prevent hash exposure
+// in API responses.
+type userRecord struct {
+	models.User
+	PasswordHash string `json:"password_hash"`
+}
+
+func marshalUser(u *models.User) ([]byte, error) {
+	return json.Marshal(userRecord{User: *u, PasswordHash: u.PasswordHash})
+}
+
+func unmarshalUser(data []byte, u *models.User) error {
+	var rec userRecord
+	if err := json.Unmarshal(data, &rec); err != nil {
+		return err
+	}
+	*u = rec.User
+	u.PasswordHash = rec.PasswordHash
+	return nil
+}
+
 // UserRepository handles user data operations with NutsDB
 type UserRepository struct {
 	db *nutsdb.DB
@@ -33,7 +56,7 @@ func (r *UserRepository) Create(user *models.User) error {
 	user.BeforeCreate()
 
 	// Convert user to JSON
-	userData, err := json.Marshal(user)
+	userData, err := marshalUser(user)
 	if err != nil {
 		return err
 	}
@@ -68,7 +91,7 @@ func (r *UserRepository) GetByID(id string) (*models.User, error) {
 		}
 
 		// Deserialize data
-		return json.Unmarshal(entry.Value, &user)
+		return unmarshalUser(entry.Value, &user)
 	})
 
 	if err != nil {
@@ -89,8 +112,11 @@ func (r *UserRepository) GetByUsername(username string) (*models.User, error) {
 		}
 
 		for _, entry := range entries {
+			if string(entry.Key) == "_init" {
+				continue
+			}
 			var user models.User
-			if err := json.Unmarshal(entry.Value, &user); err != nil {
+			if err := unmarshalUser(entry.Value, &user); err != nil {
 				return err
 			}
 
@@ -121,8 +147,11 @@ func (r *UserRepository) GetByEmail(email string) (*models.User, error) {
 		}
 
 		for _, entry := range entries {
+			if string(entry.Key) == "_init" {
+				continue
+			}
 			var user models.User
-			if err := json.Unmarshal(entry.Value, &user); err != nil {
+			if err := unmarshalUser(entry.Value, &user); err != nil {
 				return err
 			}
 
@@ -162,7 +191,7 @@ func (r *UserRepository) GetAll() ([]*models.User, error) {
 			}
 
 			var user models.User
-			if err := json.Unmarshal(entry.Value, &user); err != nil {
+			if err := unmarshalUser(entry.Value, &user); err != nil {
 				return err
 			}
 			users = append(users, &user)
@@ -184,7 +213,7 @@ func (r *UserRepository) Update(user *models.User) error {
 	user.UpdatedAt = time.Now()
 
 	// Convert to JSON
-	userData, err := json.Marshal(user)
+	userData, err := marshalUser(user)
 	if err != nil {
 		return err
 	}
@@ -225,7 +254,7 @@ func (r *UserRepository) SoftDelete(id string) error {
 
 		// Deserialize user
 		var user models.User
-		if err := json.Unmarshal(entry.Value, &user); err != nil {
+		if err := unmarshalUser(entry.Value, &user); err != nil {
 			return err
 		}
 
@@ -234,7 +263,7 @@ func (r *UserRepository) SoftDelete(id string) error {
 		user.IsActive = false
 
 		// Save updated user
-		userData, err := json.Marshal(user)
+		userData, err := marshalUser(&user)
 		if err != nil {
 			return err
 		}

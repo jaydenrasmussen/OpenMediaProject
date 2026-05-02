@@ -304,13 +304,6 @@ func (h *EpisodeHandler) RefreshEpisodes(c *fiber.Ctx) error {
 		})
 	}
 
-	if h.config.TVDB.APIKey == "" {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
-			"error":   true,
-			"message": "TVDB API key is not configured",
-		})
-	}
-
 	// 2. Fetch from TVDB
 	client := clients.NewTVDBClient(h.config.TVDB.APIKey)
 	rawEpisodes, err := client.GetEpisodes(showID)
@@ -387,13 +380,6 @@ func (h *EpisodeHandler) MonitorTVShow(c *fiber.Ctx) error {
 	}
 
 	// 2. Fetch/refresh episodes from TVDB.
-	if h.config.TVDB.APIKey == "" {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
-			"error":   true,
-			"message": "TVDB API key is not configured",
-		})
-	}
-
 	show.Monitored = true
 	if err := showRepo.Update(show); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
