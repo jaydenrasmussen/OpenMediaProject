@@ -13,24 +13,21 @@
   import { Label } from "$lib/components/ui/label";
   import { Input } from "$lib/components/ui/input";
 
-  // State
-  let users: User[] = [];
-  let loading = true;
-  let error: string | null = null;
+  let users: User[] = $state([]);
+  let loading = $state(true);
+  let error: string | null = $state(null);
 
-  // Form state for creating a user via authApi.register (supports password + role)
-  let newUser = {
+  let newUser = $state({
     username: "",
     email: "",
     password: "",
     first_name: "",
     last_name: "",
     role: "user" as "admin" | "user",
-  };
-  let formVisible = false;
-  let submitting = false;
+  });
+  let formVisible = $state(false);
+  let submitting = $state(false);
 
-  // Fetch users on component mount
   onMount(async () => {
     await fetchUsers();
   });
@@ -54,7 +51,6 @@
     }
   }
 
-  // Create a new user via the auth/register endpoint so the password is hashed
   async function createUser() {
     submitting = true;
     error = null;
@@ -69,7 +65,6 @@
         users = [...users, result.data];
       }
 
-      // Reset form
       newUser = { username: "", email: "", password: "", first_name: "", last_name: "", role: "user" };
       formVisible = false;
     } catch (e) {
@@ -104,7 +99,7 @@
 </script>
 
 <svelte:head>
-  <title>Users | OpenMedia Project</title>
+  <title>Users — OpenMediaProject</title>
 </svelte:head>
 
 <div class="space-y-8">
@@ -112,7 +107,7 @@
     <h1 class="text-3xl font-bold">Users</h1>
     <Button
       variant={formVisible ? "outline" : "default"}
-      on:click={() => (formVisible = !formVisible)}
+      onclick={() => (formVisible = !formVisible)}
     >
       {formVisible ? "Cancel" : "Add User"}
     </Button>
@@ -133,7 +128,7 @@
         <CardTitle>Add New User</CardTitle>
         <CardDescription>Create a new user account</CardDescription>
       </CardHeader>
-      <form on:submit|preventDefault={createUser}>
+      <form onsubmit={(e) => { e.preventDefault(); createUser(); }}>
         <CardContent class="space-y-4">
           <div class="grid w-full items-center gap-1.5">
             <Label for="username">Username*</Label>
@@ -203,7 +198,7 @@
           <Button
             type="button"
             variant="outline"
-            on:click={() => (formVisible = false)}
+            onclick={() => (formVisible = false)}
           >
             Cancel
           </Button>
@@ -262,7 +257,7 @@
                     variant="ghost"
                     size="sm"
                     class="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
-                    on:click={() => deleteUser(user.id)}
+                    onclick={() => deleteUser(user.id)}
                   >
                     <span class="sr-only">Delete</span>
                     <span>🗑️</span>

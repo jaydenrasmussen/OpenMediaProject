@@ -3,17 +3,18 @@
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { movieApi, type Movie } from "$lib/api/index";
-  import { Button } from "$lib/components/ui/button";
+  import { InteractiveHoverButton } from "$lib/components/magic/interactive-hover-button";
+  import { BlurFade } from "$lib/components/magic/blur-fade";
 
-  let movie: Movie | null = null;
-  let loading = true;
-  let error = "";
-  let requestStatus: "idle" | "loading" | "success" | "error" = "idle";
-  let requestMessage = "";
-  let posterError = false;
-  let backdropError = false;
+  const id = $page.params.id;
 
-  $: id = $page.params.id;
+  let movie: Movie | null = $state(null);
+  let loading = $state(true);
+  let error = $state("");
+  let requestStatus: "idle" | "loading" | "success" | "error" = $state("idle");
+  let requestMessage = $state("");
+  let posterError = $state(false);
+  let backdropError = $state(false);
 
   onMount(async () => {
     loading = true;
@@ -74,7 +75,7 @@
 </script>
 
 <svelte:head>
-  <title>{movie ? movie.title : "Movie"} — OpenMedia Project</title>
+  <title>{movie ? movie.title : "Movie"} — OpenMediaProject</title>
 </svelte:head>
 
 {#if loading}
@@ -84,7 +85,7 @@
 {:else if error}
   <div class="max-w-2xl mx-auto py-12 text-center">
     <p class="text-red-600 mb-4">{error}</p>
-    <Button on:click={() => goto("/movies")}>Back to Movies</Button>
+    <InteractiveHoverButton onclick={() => goto("/movies")}>Back to Movies</InteractiveHoverButton>
   </div>
 {:else if movie}
   <div class="relative">
@@ -95,14 +96,15 @@
           src={movie.backdrop_url}
           alt="{movie.title} backdrop"
           class="w-full h-full object-cover"
-          on:error={() => (backdropError = true)}
+          onerror={() => (backdropError = true)}
         />
-        <div class="absolute inset-0 bg-gradient-to-b from-transparent via-background/60 to-background" />
+        <div class="absolute inset-0 bg-gradient-to-b from-transparent via-background/60 to-background"></div>
       </div>
     {/if}
+    <BlurFade>
 
     <div class="relative max-w-5xl mx-auto space-y-10 {movie.backdrop_url && !backdropError ? 'pt-48 md:pt-64' : ''}">
-    <Button size="sm" on:click={() => goto("/movies")}>← Back to Movies</Button>
+    <InteractiveHoverButton class="text-sm" onclick={() => goto("/movies")}>Back to Movies</InteractiveHoverButton>
 
     <!-- Main detail block -->
     <div class="flex flex-col md:flex-row gap-8">
@@ -113,7 +115,7 @@
             src={movie.poster_url}
             alt={movie.title}
             class="w-full h-auto rounded-lg shadow-lg"
-            on:error={() => (posterError = true)}
+            onerror={() => (posterError = true)}
           />
         {:else}
           <div class="w-full aspect-[2/3] bg-muted rounded-lg flex items-center justify-center">
@@ -219,15 +221,15 @@
 
         <!-- Request button -->
         <div class="pt-2">
-          <Button
-            on:click={requestDownload}
+          <InteractiveHoverButton
+            onclick={requestDownload}
             disabled={requestStatus === "loading" || requestStatus === "success"}
             class="min-w-40"
           >
             {#if requestStatus === "loading"}Requesting…
             {:else if requestStatus === "success"}✓ Requested!
             {:else}Request Download{/if}
-          </Button>
+          </InteractiveHoverButton>
           {#if requestMessage}
             <p class="mt-2 text-sm {requestStatus === 'error' ? 'text-red-600' : 'text-green-600'}">{requestMessage}</p>
           {/if}
@@ -247,7 +249,7 @@
                   src={member.image}
                   alt={member.name}
                   class="w-24 h-24 rounded-full object-cover mx-auto mb-1 bg-muted"
-                  on:error={hideBrokenImage}
+                  onerror={hideBrokenImage}
                 />
               {:else}
                 <div class="w-24 h-24 rounded-full bg-muted flex items-center justify-center mx-auto mb-1">
@@ -263,6 +265,7 @@
         </div>
       </div>
     {/if}
-  </div>
+    </div>
+    </BlurFade>
   </div>
 {/if}

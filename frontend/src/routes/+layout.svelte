@@ -5,10 +5,13 @@
   import { Button } from "$lib/components/ui/button";
   import { onMount } from "svelte";
   import { fly } from "svelte/transition";
+  import type { Snippet } from "svelte";
 
-  let isLoggedIn = false;
-  let username = "";
-  let mobileOpen = false;
+  let { children }: { children: Snippet } = $props();
+
+  let isLoggedIn = $state(false);
+  let username = $state("");
+  let mobileOpen = $state(false);
 
   function readAuthState() {
     if (typeof localStorage !== "undefined") {
@@ -77,15 +80,11 @@
     },
   ];
 
-  let collapsedGroups = new Set<string>(["Admin"]);
+  // true = collapsed, false/undefined = expanded
+  let collapsedGroups = $state<Record<string, boolean>>({ Admin: true });
 
   function toggleGroup(label: string) {
-    if (collapsedGroups.has(label)) {
-      collapsedGroups.delete(label);
-    } else {
-      collapsedGroups.add(label);
-    }
-    collapsedGroups = collapsedGroups;
+    collapsedGroups[label] = !collapsedGroups[label];
   }
 </script>
 
@@ -104,7 +103,7 @@
         <div class={i > 0 ? "mt-4" : ""}>
           <button
             class="flex w-full items-center justify-between px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors rounded"
-            on:click={() => toggleGroup(group.label)}
+            onclick={() => toggleGroup(group.label)}
           >
             {group.label}
             <svg
@@ -117,14 +116,12 @@
               stroke-width="2.5"
               stroke-linecap="round"
               stroke-linejoin="round"
-              class="transition-transform duration-200 {collapsedGroups.has(
-                group.label,
-              )
+              class="transition-transform duration-200 {collapsedGroups[group.label]
                 ? '-rotate-90'
                 : ''}"><polyline points="6 9 12 15 18 9" /></svg
             >
           </button>
-          {#if !collapsedGroups.has(group.label)}
+          {#if !collapsedGroups[group.label]}
             <div class="space-y-0.5 mt-0.5">
               {#each group.links as link}
                 <a
@@ -148,7 +145,7 @@
     <!-- Auth at bottom -->
     <div class="shrink-0 border-t p-3">
       {#if isLoggedIn}
-        <Button variant="ghost" class="w-full justify-start" on:click={logout}>
+        <Button variant="ghost" class="w-full justify-start" onclick={logout}>
           Logout{username ? ` (${username})` : ""}
         </Button>
       {:else}
@@ -171,7 +168,7 @@
       class="md:hidden flex items-center h-16 px-4 border-b bg-card shrink-0"
     >
       <button
-        on:click={() => (mobileOpen = true)}
+        onclick={() => (mobileOpen = true)}
         aria-label="Open navigation menu"
         class="p-2 -ml-2 rounded-md hover:bg-accent transition-colors"
       >
@@ -198,7 +195,7 @@
 
     <!-- Page content -->
     <main class="flex-1 overflow-y-auto p-4 md:p-8">
-      <slot />
+      {@render children?.()}
     </main>
   </div>
 </div>
@@ -209,7 +206,7 @@
   <div
     class="fixed inset-0 z-50 bg-black/60 md:hidden"
     role="presentation"
-    on:click={() => (mobileOpen = false)}
+    onclick={() => (mobileOpen = false)}
   ></div>
 
   <!-- Slide-in drawer -->
@@ -221,7 +218,7 @@
     <div class="flex items-center justify-between h-16 px-6 border-b shrink-0">
       <span class="font-bold text-base tracking-tight">OpenMedia</span>
       <button
-        on:click={() => (mobileOpen = false)}
+        onclick={() => (mobileOpen = false)}
         aria-label="Close navigation menu"
         class="p-1.5 rounded-md hover:bg-accent transition-colors"
       >
@@ -250,7 +247,7 @@
         <div class={i > 0 ? "mt-4" : ""}>
           <button
             class="flex w-full items-center justify-between px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors rounded"
-            on:click={() => toggleGroup(group.label)}
+            onclick={() => toggleGroup(group.label)}
           >
             {group.label}
             <svg
@@ -263,19 +260,17 @@
               stroke-width="2.5"
               stroke-linecap="round"
               stroke-linejoin="round"
-              class="transition-transform duration-200 {collapsedGroups.has(
-                group.label,
-              )
+              class="transition-transform duration-200 {collapsedGroups[group.label]
                 ? '-rotate-90'
                 : ''}"><polyline points="6 9 12 15 18 9" /></svg
             >
           </button>
-          {#if !collapsedGroups.has(group.label)}
+          {#if !collapsedGroups[group.label]}
             <div class="space-y-0.5 mt-0.5">
               {#each group.links as link}
                 <a
                   href={link.href}
-                  on:click={() => (mobileOpen = false)}
+                  onclick={() => (mobileOpen = false)}
                   aria-current={isActive(link.href) ? "page" : undefined}
                 >
                   <Button
@@ -298,7 +293,7 @@
         <Button
           variant="ghost"
           class="w-full justify-start"
-          on:click={() => {
+          onclick={() => {
             mobileOpen = false;
             logout();
           }}
@@ -306,7 +301,7 @@
           Logout{username ? ` (${username})` : ""}
         </Button>
       {:else}
-        <a href="/login" on:click={() => (mobileOpen = false)}>
+        <a href="/login" onclick={() => (mobileOpen = false)}>
           <Button
             variant={isActive("/login") ? "secondary" : "ghost"}
             class="w-full justify-start"

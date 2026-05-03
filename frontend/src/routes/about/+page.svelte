@@ -7,11 +7,11 @@
     CardHeader,
     CardTitle,
   } from "$lib/components/ui/card";
-  import { Button } from "$lib/components/ui/button";
+  import { InteractiveHoverButton } from "$lib/components/magic/interactive-hover-button";
 </script>
 
 <svelte:head>
-  <title>About | OpenMedia Project</title>
+  <title>About — OpenMediaProject</title>
   <meta name="description" content="About the OpenMedia Project" />
 </svelte:head>
 
@@ -133,7 +133,7 @@
     </CardContent>
     <CardFooter>
       <!-- Button as="a" is invalid — Button always renders a <button>; href is ignored -->
-      <a href="/"><Button>Return to Home</Button></a>
+      <a href="/"><InteractiveHoverButton>Return to Home</InteractiveHoverButton></a>
     </CardFooter>
   </Card>
 </div>

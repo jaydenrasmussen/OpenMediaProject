@@ -9,9 +9,9 @@
   import { Button } from "$lib/components/ui/button";
   import { historyApi, type HistoryEntry } from "$lib/api/index";
 
-  let loading = true;
-  let error = "";
-  let entries: HistoryEntry[] = [];
+  let loading = $state(true);
+  let error = $state("");
+  let entries: HistoryEntry[] = $state([]);
 
   const EVENT_LABELS: Record<string, string> = {
     torrent_added: "Added",
@@ -61,7 +61,7 @@
 </script>
 
 <svelte:head>
-  <title>Activity History — OpenMedia</title>
+  <title>Activity History — OpenMediaProject</title>
 </svelte:head>
 
 <div class="space-y-8">
@@ -72,7 +72,7 @@
         Record of all download, search, and upgrade events.
       </p>
     </div>
-    <Button on:click={load} disabled={loading} variant="outline">
+    <Button onclick={load} disabled={loading} variant="outline">
       {loading ? "Loading…" : "Refresh"}
     </Button>
   </div>

@@ -2,20 +2,23 @@
   import { onMount } from "svelte";
   import { tvApi, type TVShow } from "$lib/api/index";
   import MediaCard from "$lib/components/MediaCard.svelte";
+  import { BlurFade } from "$lib/components/magic/blur-fade";
 
-  let allShows: TVShow[] = [];
-  let loading = true;
-  let error = "";
-  let query = "";
+  let allShows: TVShow[] = $state([]);
+  let loading = $state(true);
+  let error = $state("");
+  let query = $state("");
 
-  $: filtered = query.trim()
-    ? allShows.filter((s) =>
-        s.name.toLowerCase().includes(query.trim().toLowerCase()),
-      )
-    : allShows;
+  let filtered = $derived(
+    query.trim()
+      ? allShows.filter((s) =>
+          s.name.toLowerCase().includes(query.trim().toLowerCase()),
+        )
+      : allShows
+  );
 
-  $: monitored = filtered.filter((s) => s.monitored);
-  $: unmonitored = filtered.filter((s) => !s.monitored);
+  let monitored = $derived(filtered.filter((s) => s.monitored));
+  let unmonitored = $derived(filtered.filter((s) => !s.monitored));
 
   function getYear(dateStr: string | undefined) {
     if (!dateStr) return "";
@@ -36,7 +39,7 @@
 </script>
 
 <svelte:head>
-  <title>TV Shows — OpenMedia</title>
+  <title>TV Shows — OpenMediaProject</title>
 </svelte:head>
 
 <div class="space-y-6">
@@ -64,15 +67,42 @@
       No shows match "{query}".
     </div>
   {:else}
-    {#if monitored.length > 0}
-      <section class="space-y-3">
-        <h2 class="text-lg font-semibold text-muted-foreground">
-          Monitored
-          <span class="ml-1 text-sm font-normal">({monitored.length})</span>
-        </h2>
-        <div class="flex flex-wrap gap-4">
-          {#each monitored as show (show.id)}
-            <div class="relative">
+    <BlurFade>
+      {#if monitored.length > 0}
+        <section class="space-y-3">
+          <h2 class="text-lg font-semibold text-muted-foreground">
+            Monitored
+            <span class="ml-1 text-sm font-normal">({monitored.length})</span>
+          </h2>
+          <div class="flex flex-wrap gap-4">
+            {#each monitored as show (show.id)}
+              <div class="relative">
+                <MediaCard
+                  id={show.id}
+                  title={show.name}
+                  year={getYear(show.first_aired)}
+                  posterUrl={show.poster_url}
+                  type="tv"
+                />
+                <span
+                  class="absolute top-1.5 left-1.5 bg-primary text-primary-foreground text-[10px] font-semibold px-1.5 py-0.5 rounded-sm leading-none"
+                >
+                  Monitored
+                </span>
+              </div>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      {#if unmonitored.length > 0}
+        <section class="space-y-3">
+          <h2 class="text-lg font-semibold text-muted-foreground">
+            Unmonitored
+            <span class="ml-1 text-sm font-normal">({unmonitored.length})</span>
+          </h2>
+          <div class="flex flex-wrap gap-4">
+            {#each unmonitored as show (show.id)}
               <MediaCard
                 id={show.id}
                 title={show.name}
@@ -80,35 +110,10 @@
                 posterUrl={show.poster_url}
                 type="tv"
               />
-              <span
-                class="absolute top-1.5 left-1.5 bg-primary text-primary-foreground text-[10px] font-semibold px-1.5 py-0.5 rounded-sm leading-none"
-              >
-                Monitored
-              </span>
-            </div>
-          {/each}
-        </div>
-      </section>
-    {/if}
-
-    {#if unmonitored.length > 0}
-      <section class="space-y-3">
-        <h2 class="text-lg font-semibold text-muted-foreground">
-          Unmonitored
-          <span class="ml-1 text-sm font-normal">({unmonitored.length})</span>
-        </h2>
-        <div class="flex flex-wrap gap-4">
-          {#each unmonitored as show (show.id)}
-            <MediaCard
-              id={show.id}
-              title={show.name}
-              year={getYear(show.first_aired)}
-              posterUrl={show.poster_url}
-              type="tv"
-            />
-          {/each}
-        </div>
-      </section>
-    {/if}
+            {/each}
+          </div>
+        </section>
+      {/if}
+    </BlurFade>
   {/if}
 </div>

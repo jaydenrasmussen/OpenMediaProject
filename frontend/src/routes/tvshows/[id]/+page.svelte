@@ -10,50 +10,54 @@
     CardHeader,
     CardTitle,
   } from "$lib/components/ui/card";
-  import { Button } from "$lib/components/ui/button";
+  import { InteractiveHoverButton } from "$lib/components/magic/interactive-hover-button";
+  import { BlurFade } from "$lib/components/magic/blur-fade";
 
-  let show: TVShow | null = null;
-  let episodes: Episode[] = [];
-  let loading = true;
-  let episodesLoading = true;
-  let error = "";
-  let requestStatus: "idle" | "loading" | "success" | "error" = "idle";
-  let requestMessage = "";
-  let monitorStatus: "idle" | "loading" | "success" | "error" = "idle";
-  let monitorMessage = "";
-  let posterError = false;
-  let backdropError = false;
+  const id = $page.params.id as string;
 
-  $: id = $page.params.id as string;
+  let show: TVShow | null = $state(null);
+  let episodes: Episode[] = $state([]);
+  let loading = $state(true);
+  let episodesLoading = $state(true);
+  let error = $state("");
+  let requestStatus: "idle" | "loading" | "success" | "error" = $state("idle");
+  let requestMessage = $state("");
+  let monitorStatus: "idle" | "loading" | "success" | "error" = $state("idle");
+  let monitorMessage = $state("");
+  let posterError = $state(false);
+  let backdropError = $state(false);
 
   // Group episodes by season
-  $: seasonMap = episodes.reduce<Record<number, Episode[]>>((acc, ep) => {
-    if (!acc[ep.season]) acc[ep.season] = [];
-    acc[ep.season].push(ep);
-    return acc;
-  }, {});
+  let seasonMap = $derived(
+    episodes.reduce<Record<number, Episode[]>>((acc, ep) => {
+      if (!acc[ep.season]) acc[ep.season] = [];
+      acc[ep.season].push(ep);
+      return acc;
+    }, {})
+  );
 
   // Seasons in descending order (newest first)
-  $: seasons = Object.keys(seasonMap)
-    .map(Number)
-    .sort((a, b) => b - a);
+  let seasons = $derived(
+    Object.keys(seasonMap)
+      .map(Number)
+      .sort((a, b) => b - a)
+  );
 
-  // Track which seasons are collapsed; all collapsed except the newest (first in the list)
-  let collapsedSeasons: Set<number> = new Set();
-  let seasonsInitialized = false;
+  // Track which seasons are collapsed; all collapsed except the newest
+  let collapsedSeasons = $state<Record<number, boolean>>({});
+  let seasonsInitialized = $state(false);
 
-  $: if (seasons.length > 0 && !seasonsInitialized) {
-    seasonsInitialized = true;
-    collapsedSeasons = new Set(seasons.slice(1)); // collapse all but the newest
-  }
+  $effect(() => {
+    if (seasons.length > 0 && !seasonsInitialized) {
+      seasonsInitialized = true;
+      for (const s of seasons.slice(1)) {
+        collapsedSeasons[s] = true;
+      }
+    }
+  });
 
   function toggleSeason(season: number) {
-    if (collapsedSeasons.has(season)) {
-      collapsedSeasons.delete(season);
-    } else {
-      collapsedSeasons.add(season);
-    }
-    collapsedSeasons = collapsedSeasons;
+    collapsedSeasons[season] = !collapsedSeasons[season];
   }
 
   function formatYear(dateStr?: string) {
@@ -91,7 +95,6 @@
     }
   }
 
-  // Convert Metacritic score (0-100) to a colour class
   function metacriticClass(score: string) {
     const n = parseInt(score, 10);
     if (isNaN(n)) return "bg-gray-200 text-gray-700";
@@ -100,7 +103,6 @@
     return "bg-red-600 text-white";
   }
 
-  // Convert RT score to a colour
   function rtClass(score: string) {
     const n = parseInt(score, 10);
     if (isNaN(n)) return "bg-gray-200 text-gray-700";
@@ -163,7 +165,7 @@
 </script>
 
 <svelte:head>
-  <title>{show ? show.name : "TV Show"} — OpenMedia Project</title>
+  <title>{show ? show.name : "TV Show"} — OpenMediaProject</title>
 </svelte:head>
 
 {#if loading}
@@ -173,7 +175,7 @@
 {:else if error}
   <div class="max-w-2xl mx-auto py-12 text-center">
     <p class="text-red-600 mb-4">{error}</p>
-    <Button on:click={() => goto("/tvshows")}>Back to TV Shows</Button>
+    <InteractiveHoverButton onclick={() => goto("/tvshows")}>Back to TV Shows</InteractiveHoverButton>
   </div>
 {:else if show}
   <div class="relative">
@@ -184,11 +186,12 @@
           src={show.backdrop_url}
           alt="{show.name} backdrop"
           class="w-full h-full object-cover"
-          on:error={() => (backdropError = true)}
+          onerror={() => (backdropError = true)}
         />
-        <div class="absolute inset-0 bg-gradient-to-b from-transparent via-background/60 to-background" />
+        <div class="absolute inset-0 bg-gradient-to-b from-transparent via-background/60 to-background"></div>
       </div>
     {/if}
+    <BlurFade>
 
     <div class="relative max-w-5xl mx-auto space-y-8 {show.backdrop_url && !backdropError ? 'pt-48 md:pt-64' : ''}">
     <!-- Poster + main info -->
@@ -200,7 +203,7 @@
             src={show.poster_url}
             alt={show.name}
             class="w-full h-auto rounded-lg shadow-lg"
-            on:error={() => (posterError = true)}
+            onerror={() => (posterError = true)}
           />
         {:else}
           <div class="w-48 h-72 rounded-lg bg-muted flex items-center justify-center shadow-lg">
@@ -316,31 +319,30 @@
         <!-- Action buttons -->
         <div class="pt-2 flex flex-wrap gap-3 items-start">
           <div>
-            <Button
-              on:click={handleRequest}
+            <InteractiveHoverButton
+              onclick={handleRequest}
               disabled={requestStatus === "loading" || requestStatus === "success"}
               class="min-w-40"
             >
               {#if requestStatus === "loading"}Requesting…
               {:else if requestStatus === "success"}✓ Requested
               {:else}Request Download{/if}
-            </Button>
+            </InteractiveHoverButton>
             {#if requestMessage}
               <p class="mt-2 text-sm {requestStatus === 'error' ? 'text-red-600' : 'text-green-600'}">{requestMessage}</p>
             {/if}
           </div>
 
           <div>
-            <Button
-              on:click={handleMonitor}
+            <InteractiveHoverButton
+              onclick={handleMonitor}
               disabled={monitorStatus === "loading" || show.monitored}
-              variant={show.monitored ? "outline" : "secondary"}
               class="min-w-40"
             >
               {#if monitorStatus === "loading"}Enabling…
               {:else if show.monitored}✓ Monitored
               {:else}Monitor{/if}
-            </Button>
+            </InteractiveHoverButton>
             {#if monitorMessage}
               <p class="mt-2 text-sm {monitorStatus === 'error' ? 'text-red-600' : 'text-green-600'}">{monitorMessage}</p>
             {/if}
@@ -361,7 +363,7 @@
                   src={member.image}
                   alt={member.name}
                   class="w-24 h-24 rounded-full object-cover mx-auto mb-1 bg-muted"
-                  on:error={hideBrokenImage}
+                  onerror={hideBrokenImage}
                 />
               {:else}
                 <div class="w-24 h-24 rounded-full bg-muted flex items-center justify-center mx-auto mb-1">
@@ -393,7 +395,7 @@
               <CardHeader class="pb-2">
                 <button
                   class="flex items-center justify-between w-full text-left"
-                  on:click={() => toggleSeason(season)}
+                  onclick={() => toggleSeason(season)}
                 >
                   <CardTitle class="text-lg">
                     {season === 0 ? "Specials" : `Season ${season}`}
@@ -402,12 +404,12 @@
                     </span>
                   </CardTitle>
                   <span class="text-muted-foreground text-sm">
-                    {collapsedSeasons.has(season) ? "▶" : "▼"}
+                    {collapsedSeasons[season] ? "▶" : "▼"}
                   </span>
                 </button>
               </CardHeader>
 
-              {#if !collapsedSeasons.has(season)}
+              {#if !collapsedSeasons[season]}
                 <CardContent class="pt-0">
                   <div class="overflow-x-auto">
                     <table class="w-full text-sm">
@@ -444,11 +446,12 @@
                   </div>
                 </CardContent>
               {/if}
-            </Card>
+        </Card>
           {/each}
         </div>
       {/if}
     </div>
-  </div>
+    </div>
+    </BlurFade>
   </div>
 {/if}

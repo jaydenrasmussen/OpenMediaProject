@@ -9,12 +9,10 @@
   import { Button } from "$lib/components/ui/button";
   import { wantedApi, type WantedItem } from "$lib/api/index";
 
-  let items: WantedItem[] = [];
-  let loading = true;
-  let error = "";
-
-  // Read the logged-in role so we can show admin-only actions
-  let isAdmin = false;
+  let items: WantedItem[] = $state([]);
+  let loading = $state(true);
+  let error = $state("");
+  let isAdmin = $state(false);
 
   onMount(async () => {
     if (typeof localStorage !== "undefined") {
@@ -49,7 +47,6 @@
     if (result.error) {
       alert(result.message || "Failed to approve item");
     } else {
-      // Refresh to get updated status
       await loadWanted();
     }
   }
@@ -100,13 +97,13 @@
 </script>
 
 <svelte:head>
-  <title>Wanted — OpenMedia</title>
+  <title>Wanted — OpenMediaProject</title>
 </svelte:head>
 
 <div class="space-y-6">
   <div class="flex items-center justify-between">
     <h1 class="text-3xl font-bold">Wanted</h1>
-    <Button variant="outline" on:click={loadWanted} disabled={loading}>
+    <Button variant="outline" onclick={loadWanted} disabled={loading}>
       {loading ? "Refreshing…" : "Refresh"}
     </Button>
   </div>
@@ -180,7 +177,7 @@
                           variant="outline"
                           size="sm"
                           class="text-green-700 border-green-300 hover:bg-green-50"
-                          on:click={() => handleApprove(item.id)}
+                          onclick={() => handleApprove(item.id)}
                         >
                           Approve
                         </Button>
@@ -188,7 +185,7 @@
                           variant="outline"
                           size="sm"
                           class="text-red-700 border-red-300 hover:bg-red-50"
-                          on:click={() => handleReject(item.id)}
+                          onclick={() => handleReject(item.id)}
                         >
                           Reject
                         </Button>
@@ -196,7 +193,7 @@
                       <Button
                         variant="destructive"
                         size="sm"
-                        on:click={() => handleDelete(item.id)}
+                        onclick={() => handleDelete(item.id)}
                       >
                         Delete
                       </Button>

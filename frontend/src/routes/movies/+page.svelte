@@ -2,21 +2,25 @@
   import { onMount } from "svelte";
   import { movieApi, type Movie } from "$lib/api/index";
   import MediaCard from "$lib/components/MediaCard.svelte";
+  import { BlurFade } from "$lib/components/magic/blur-fade";
 
-  let allMovies: Movie[] = [];
-  let loading = true;
-  let error = "";
-  let query = "";
+  let allMovies: Movie[] = $state([]);
+  let loading = $state(true);
+  let error = $state("");
+  let query = $state("");
 
-  $: filtered = query.trim()
-    ? allMovies.filter((m) =>
-        m.title.toLowerCase().includes(query.trim().toLowerCase()),
-      )
-    : allMovies;
+  let filtered = $derived(
+    query.trim()
+      ? allMovies.filter((m) =>
+          m.title.toLowerCase().includes(query.trim().toLowerCase()),
+        )
+      : allMovies
+  );
 
-  // Sort by popularity descending by default
-  $: sorted = [...filtered].sort(
-    (a, b) => (b.popularity_index ?? 0) - (a.popularity_index ?? 0),
+  let sorted = $derived(
+    [...filtered].sort(
+      (a, b) => (b.popularity_index ?? 0) - (a.popularity_index ?? 0),
+    )
   );
 
   function getYear(dateStr: string | undefined) {
@@ -38,7 +42,7 @@
 </script>
 
 <svelte:head>
-  <title>Movies — OpenMedia</title>
+  <title>Movies — OpenMediaProject</title>
 </svelte:head>
 
 <div class="space-y-6">
@@ -71,16 +75,18 @@
       No movies match "{query}".
     </div>
   {:else}
-    <div class="flex flex-wrap gap-4">
-      {#each sorted as movie (movie.id)}
-        <MediaCard
-          id={movie.id}
-          title={movie.title}
-          year={getYear(movie.release_date)}
-          posterUrl={movie.poster_url}
-          type="movie"
-        />
-      {/each}
-    </div>
+    <BlurFade>
+      <div class="flex flex-wrap gap-4">
+        {#each sorted as movie (movie.id)}
+          <MediaCard
+            id={movie.id}
+            title={movie.title}
+            year={getYear(movie.release_date)}
+            posterUrl={movie.poster_url}
+            type="movie"
+          />
+        {/each}
+      </div>
+    </BlurFade>
   {/if}
 </div>

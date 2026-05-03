@@ -17,23 +17,15 @@
   type Field = { key: string; label: string; type: string; placeholder: string };
   type Settings = Record<string, string>;
 
-  let loading = true;
-  let saving = false;
-  let error = "";
-  let successMsg = "";
-  let settings: Settings = {};
+  let loading = $state(true);
+  let saving = $state(false);
+  let error = $state("");
+  let successMsg = $state("");
+  let settings: Settings = $state({});
 
   // Which media server / notification provider the user has selected
-  let mediaServer = "";
-  let notificationProvider = "";
-
-  $: selectedMediaServerItem = mediaServer
-    ? { value: mediaServer, label: MEDIA_SERVER_LABELS[mediaServer] }
-    : undefined;
-
-  $: selectedNotifItem = notificationProvider
-    ? { value: notificationProvider, label: NOTIF_LABELS[notificationProvider] }
-    : undefined;
+  let mediaServer = $state("");
+  let notificationProvider = $state("");
 
   const MEDIA_SERVER_LABELS: Record<string, string> = {
     plex: "Plex",
@@ -173,7 +165,7 @@
 </script>
 
 <svelte:head>
-  <title>Settings — OpenMedia</title>
+  <title>Settings — OpenMediaProject</title>
 </svelte:head>
 
 <div class="space-y-6 max-w-3xl mx-auto">
@@ -185,10 +177,10 @@
       </p>
     </div>
     <div class="flex gap-2">
-      <Button on:click={load} disabled={loading} variant="outline">
+      <Button onclick={load} disabled={loading} variant="outline">
         {loading ? "Loading…" : "Reload"}
       </Button>
-      <Button on:click={save} disabled={saving || loading}>
+      <Button onclick={save} disabled={saving || loading}>
         {saving ? "Saving…" : "Save"}
       </Button>
     </div>
@@ -293,16 +285,17 @@
         <div class="space-y-1">
           <Label>Server</Label>
           <Select.Root
-            selected={selectedMediaServerItem}
-            onSelectedChange={(v) => { mediaServer = v?.value ?? ""; }}
+            type="single"
+            value={mediaServer}
+            onValueChange={(v) => { mediaServer = v; }}
           >
             <Select.Trigger class="w-full">
-              <Select.Value placeholder="Select a media server…" />
+              {mediaServer ? MEDIA_SERVER_LABELS[mediaServer] : "Select a media server…"}
             </Select.Trigger>
             <Select.Content>
-              <Select.Item value="plex" label="Plex">Plex</Select.Item>
-              <Select.Item value="jellyfin" label="Jellyfin">Jellyfin</Select.Item>
-              <Select.Item value="emby" label="Emby">Emby</Select.Item>
+              <Select.Item value="plex">Plex</Select.Item>
+              <Select.Item value="jellyfin">Jellyfin</Select.Item>
+              <Select.Item value="emby">Emby</Select.Item>
             </Select.Content>
           </Select.Root>
         </div>
@@ -329,19 +322,20 @@
         <div class="space-y-1">
           <Label>Provider</Label>
           <Select.Root
-            selected={selectedNotifItem}
-            onSelectedChange={(v) => { notificationProvider = v?.value ?? ""; }}
+            type="single"
+            value={notificationProvider}
+            onValueChange={(v) => { notificationProvider = v; }}
           >
             <Select.Trigger class="w-full">
-              <Select.Value placeholder="Select a notification provider…" />
+              {notificationProvider ? NOTIF_LABELS[notificationProvider] : "Select a notification provider…"}
             </Select.Trigger>
             <Select.Content>
-              <Select.Item value="discord" label="Discord">Discord</Select.Item>
-              <Select.Item value="ntfy" label="ntfy">ntfy</Select.Item>
-              <Select.Item value="gotify" label="Gotify">Gotify</Select.Item>
-              <Select.Item value="apprise" label="Apprise">Apprise</Select.Item>
-              <Select.Item value="telegram" label="Telegram">Telegram</Select.Item>
-              <Select.Item value="email" label="Email">Email</Select.Item>
+              <Select.Item value="discord">Discord</Select.Item>
+              <Select.Item value="ntfy">ntfy</Select.Item>
+              <Select.Item value="gotify">Gotify</Select.Item>
+              <Select.Item value="apprise">Apprise</Select.Item>
+              <Select.Item value="telegram">Telegram</Select.Item>
+              <Select.Item value="email">Email</Select.Item>
             </Select.Content>
           </Select.Root>
         </div>
@@ -386,7 +380,7 @@
     </Accordion.Root>
 
     <div class="flex justify-end">
-      <Button on:click={save} disabled={saving}>
+      <Button onclick={save} disabled={saving}>
         {saving ? "Saving…" : "Save Settings"}
       </Button>
     </div>

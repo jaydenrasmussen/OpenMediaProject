@@ -9,9 +9,9 @@
   import { Button } from "$lib/components/ui/button";
   import { indexerApi, type IndexerHealth } from "$lib/api/index";
 
-  let loading = true;
-  let error = "";
-  let indexers: IndexerHealth[] = [];
+  let loading = $state(true);
+  let error = $state("");
+  let indexers: IndexerHealth[] = $state([]);
 
   function fmt(n: number | null | undefined, decimals = 1): string {
     if (n == null) return "—";
@@ -49,7 +49,7 @@
 </script>
 
 <svelte:head>
-  <title>Indexer Health — OpenMedia</title>
+  <title>Indexer Health — OpenMediaProject</title>
 </svelte:head>
 
 <div class="space-y-8">
@@ -60,7 +60,7 @@
         Runtime statistics for all registered built-in indexers.
       </p>
     </div>
-    <Button on:click={load} disabled={loading} variant="outline">
+    <Button onclick={load} disabled={loading} variant="outline">
       {loading ? "Loading…" : "Refresh"}
     </Button>
   </div>

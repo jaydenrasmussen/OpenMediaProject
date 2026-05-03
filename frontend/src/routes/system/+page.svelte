@@ -9,9 +9,9 @@
   import { Button } from "$lib/components/ui/button";
   import { systemApi, type TaskInfo } from "$lib/api/index";
 
-  let loading = true;
-  let error = "";
-  let tasks: TaskInfo[] = [];
+  let loading = $state(true);
+  let error = $state("");
+  let tasks: TaskInfo[] = $state([]);
 
   function statusClass(status: string): string {
     if (status === "running") return "text-blue-600 font-semibold";
@@ -44,7 +44,7 @@
 </script>
 
 <svelte:head>
-  <title>System — OpenMedia</title>
+  <title>System — OpenMediaProject</title>
 </svelte:head>
 
 <div class="space-y-8">
@@ -55,7 +55,7 @@
         Background task status and health information.
       </p>
     </div>
-    <Button on:click={load} disabled={loading} variant="outline">
+    <Button onclick={load} disabled={loading} variant="outline">
       {loading ? "Loading…" : "Refresh"}
     </Button>
   </div>

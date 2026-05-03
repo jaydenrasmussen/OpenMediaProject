@@ -9,17 +9,17 @@
   import { Button } from "$lib/components/ui/button";
   import { libraryApi, type LibraryFile } from "$lib/api/index";
 
-  let loading = true;
-  let error = "";
-  let scannedAt = "";
+  let loading = $state(true);
+  let error = $state("");
+  let scannedAt = $state("");
 
-  let moviesMatched: LibraryFile[] = [];
-  let moviesUnmatched: LibraryFile[] = [];
-  let tvMatched: LibraryFile[] = [];
-  let tvUnmatched: LibraryFile[] = [];
+  let moviesMatched: LibraryFile[] = $state([]);
+  let moviesUnmatched: LibraryFile[] = $state([]);
+  let tvMatched: LibraryFile[] = $state([]);
+  let tvUnmatched: LibraryFile[] = $state([]);
 
-  let showMoviesUnmatched = false;
-  let showTVUnmatched = false;
+  let showMoviesUnmatched = $state(false);
+  let showTVUnmatched = $state(false);
 
   function formatSize(bytes: number): string {
     if (bytes >= 1_073_741_824) return (bytes / 1_073_741_824).toFixed(2) + " GB";
@@ -61,7 +61,7 @@
 </script>
 
 <svelte:head>
-  <title>Library — OpenMedia</title>
+  <title>Library — OpenMediaProject</title>
 </svelte:head>
 
 <div class="space-y-8">
@@ -74,7 +74,7 @@
         </p>
       {/if}
     </div>
-    <Button on:click={load} disabled={loading} variant="outline">
+    <Button onclick={load} disabled={loading} variant="outline">
       {loading ? "Scanning…" : "Rescan"}
     </Button>
   </div>
@@ -128,7 +128,7 @@
           <div class="mt-4">
             <button
               class="text-sm text-primary hover:underline flex items-center gap-1"
-              on:click={() => (showMoviesUnmatched = !showMoviesUnmatched)}
+              onclick={() => (showMoviesUnmatched = !showMoviesUnmatched)}
             >
               <span>{showMoviesUnmatched ? "▾" : "▸"}</span>
               {moviesUnmatched.length} unmatched file{moviesUnmatched.length !== 1 ? "s" : ""}
@@ -206,7 +206,7 @@
           <div class="mt-4">
             <button
               class="text-sm text-primary hover:underline flex items-center gap-1"
-              on:click={() => (showTVUnmatched = !showTVUnmatched)}
+              onclick={() => (showTVUnmatched = !showTVUnmatched)}
             >
               <span>{showTVUnmatched ? "▾" : "▸"}</span>
               {tvUnmatched.length} unmatched file{tvUnmatched.length !== 1 ? "s" : ""}

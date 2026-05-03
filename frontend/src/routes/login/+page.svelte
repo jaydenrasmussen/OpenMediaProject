@@ -9,14 +9,14 @@
     CardHeader,
     CardTitle,
   } from "$lib/components/ui/card";
-  import { Button } from "$lib/components/ui/button";
+  import { InteractiveHoverButton } from "$lib/components/magic/interactive-hover-button";
   import { Label } from "$lib/components/ui/label";
   import { Input } from "$lib/components/ui/input";
 
-  let username = "admin";
-  let password = "admin";
-  let submitting = false;
-  let error: string | null = null;
+  let username = $state("admin");
+  let password = $state("admin");
+  let submitting = $state(false);
+  let error: string | null = $state(null);
 
   async function handleLogin() {
     submitting = true;
@@ -47,7 +47,7 @@
 </script>
 
 <svelte:head>
-  <title>Login | OpenMedia Project</title>
+  <title>Login — OpenMediaProject</title>
 </svelte:head>
 
 <div class="flex justify-center items-center min-h-[60vh]">
@@ -58,7 +58,7 @@
       <p class="text-xs text-muted-foreground pt-1">Default credentials on first run: <code>admin</code> / <code>admin</code></p>
     </CardHeader>
 
-    <form on:submit|preventDefault={handleLogin}>
+    <form onsubmit={(e) => { e.preventDefault(); handleLogin(); }}>
       <CardContent class="space-y-4">
         {#if error}
           <div
@@ -95,9 +95,9 @@
       </CardContent>
 
       <CardFooter>
-        <Button type="submit" class="w-full" disabled={submitting}>
+        <InteractiveHoverButton type="submit" class="w-full" disabled={submitting}>
           {submitting ? "Signing in..." : "Sign In"}
-        </Button>
+        </InteractiveHoverButton>
       </CardFooter>
     </form>
   </Card>

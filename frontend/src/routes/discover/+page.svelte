@@ -4,49 +4,43 @@
   import { movieApi, tvApi } from "$lib/api/index";
   import type { Movie, TVShow } from "$lib/api/index";
   import MediaCard from "$lib/components/MediaCard.svelte";
-  import { Button } from "$lib/components/ui/button";
+  import { InteractiveHoverButton } from "$lib/components/magic/interactive-hover-button";
+  import { BlurFade } from "$lib/components/magic/blur-fade";
 
-  // Each category stores pages as separate rows (array of arrays).
-  // Each "More" click appends a new row rather than extending the existing one.
+  let trendingMoviesRows: Movie[][] = $state([]);
+  let trendingMoviesPage = $state(1);
+  let trendingMoviesTotalPages = $state(1);
+  let trendingMoviesLoadingMore = $state(false);
 
-  let trendingMoviesRows: Movie[][] = [];
-  let trendingMoviesPage = 1;
-  let trendingMoviesTotalPages = 1;
-  let trendingMoviesLoadingMore = false;
+  let nowPlayingRows: Movie[][] = $state([]);
+  let nowPlayingPage = $state(1);
+  let nowPlayingTotalPages = $state(1);
+  let nowPlayingLoadingMore = $state(false);
 
-  let nowPlayingRows: Movie[][] = [];
-  let nowPlayingPage = 1;
-  let nowPlayingTotalPages = 1;
-  let nowPlayingLoadingMore = false;
+  let popularMoviesRows: Movie[][] = $state([]);
+  let popularMoviesPage = $state(1);
+  let popularMoviesTotalPages = $state(1);
+  let popularMoviesLoadingMore = $state(false);
 
-  let popularMoviesRows: Movie[][] = [];
-  let popularMoviesPage = 1;
-  let popularMoviesTotalPages = 1;
-  let popularMoviesLoadingMore = false;
+  let topRatedRows: Movie[][] = $state([]);
+  let topRatedPage = $state(1);
+  let topRatedTotalPages = $state(1);
+  let topRatedLoadingMore = $state(false);
 
-  let topRatedRows: Movie[][] = [];
-  let topRatedPage = 1;
-  let topRatedTotalPages = 1;
-  let topRatedLoadingMore = false;
+  let upcomingRows: Movie[][] = $state([]);
+  let upcomingPage = $state(1);
+  let upcomingTotalPages = $state(1);
+  let upcomingLoadingMore = $state(false);
 
-  let upcomingRows: Movie[][] = [];
-  let upcomingPage = 1;
-  let upcomingTotalPages = 1;
-  let upcomingLoadingMore = false;
+  let trendingTVRows: TVShow[][] = $state([]);
+  let trendingTVPage = $state(1);
+  let trendingTVTotalPages = $state(1);
+  let trendingTVLoadingMore = $state(false);
 
-  let trendingTVRows: TVShow[][] = [];
-  let trendingTVPage = 1;
-  let trendingTVTotalPages = 1;
-  let trendingTVLoadingMore = false;
-
-  // Popular TV has no TVDB pagination — single row only.
-  let popularTV: TVShow[] = [];
-
-  let hero: Movie | null = null;
-  let loading = true;
-  let searchQuery = "";
-
-  // ── Helpers ─────────────────────────────────────────────────────────────────
+  let popularTV: TVShow[] = $state([]);
+  let hero: Movie | null = $state(null);
+  let loading = $state(true);
+  let searchQuery = $state("");
 
   function getYear(dateStr: string | undefined) {
     if (!dateStr) return "";
@@ -59,8 +53,6 @@
       goto(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
     }
   }
-
-  // ── Initial load ─────────────────────────────────────────────────────────────
 
   async function loadData() {
     loading = true;
@@ -111,8 +103,6 @@
     hero = (trendingMoviesRows[0]?.[0]) ?? (nowPlayingRows[0]?.[0]) ?? null;
     loading = false;
   }
-
-  // ── Load-more: each call appends a new row ───────────────────────────────────
 
   async function loadMoreTrendingMovies() {
     trendingMoviesLoadingMore = true;
@@ -184,7 +174,7 @@
 </script>
 
 <svelte:head>
-  <title>Discover — OpenMedia</title>
+  <title>Discover — OpenMediaProject</title>
 </svelte:head>
 
 <!-- Break out of container padding for full-width layout -->
@@ -197,12 +187,12 @@
       {#if h.backdrop_url}
         <img src={h.backdrop_url} alt={h.title} class="w-full h-full object-cover opacity-60" />
       {/if}
-      <div class="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
+      <div class="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent"></div>
 
       <!-- Centered search bar overlaid on hero -->
       <div class="absolute inset-0 flex flex-col items-center justify-center gap-4 px-4">
-        <h1 class="text-3xl md:text-4xl font-bold text-white drop-shadow text-center">Discover</h1>
-        <form on:submit={handleSearch} class="w-full max-w-xl">
+        <h1 class="text-3xl md:text-4xl font-bold text-center text-black dark:text-white">Discover</h1>
+        <form onsubmit={handleSearch} class="w-full max-w-xl">
           <input
             type="text"
             bind:value={searchQuery}
@@ -214,9 +204,9 @@
 
       <!-- Hero title at bottom -->
       <div class="absolute bottom-0 left-0 px-6 pb-5">
-        <p class="text-xs text-white/60 uppercase tracking-wider mb-1">Featured</p>
-        <h2 class="text-2xl font-bold text-white drop-shadow">{h.title}</h2>
-        <div class="flex items-center gap-3 mt-1 text-sm text-white/70">
+        <p class="text-xs uppercase tracking-wider mb-1 text-black/60 dark:text-white/60">Featured</p>
+        <h2 class="text-2xl font-bold text-black dark:text-white">{h.title}</h2>
+        <div class="flex items-center gap-3 mt-1 text-sm text-black/70 dark:text-white/70">
           <span>{getYear(h.release_date)}</span>
           {#if h.rating}
             <span>&#11088; {h.rating.toFixed(1)}</span>
@@ -228,7 +218,7 @@
     <!-- No hero yet: show search bar on its own -->
     <div class="px-6 pt-10 pb-6 flex flex-col items-center gap-3">
       <h1 class="text-3xl font-bold">Discover</h1>
-      <form on:submit={handleSearch} class="w-full max-w-xl">
+      <form onsubmit={handleSearch} class="w-full max-w-xl">
         <input
           type="text"
           bind:value={searchQuery}
@@ -244,7 +234,8 @@
       Loading content…
     </div>
   {:else}
-    <div class="space-y-8 px-6 py-8">
+    <BlurFade>
+      <div class="space-y-8 px-6 py-8">
 
       {#if trendingMoviesRows.length > 0}
         <section>
@@ -258,9 +249,9 @@
           {/each}
           {#if trendingMoviesPage < trendingMoviesTotalPages}
             <div class="mt-3 flex justify-center">
-              <Button variant="outline" size="sm" on:click={loadMoreTrendingMovies} disabled={trendingMoviesLoadingMore}>
+              <InteractiveHoverButton class="text-sm px-4 py-1" onclick={loadMoreTrendingMovies} disabled={trendingMoviesLoadingMore}>
                 {trendingMoviesLoadingMore ? "Loading…" : "More"}
-              </Button>
+              </InteractiveHoverButton>
             </div>
           {/if}
         </section>
@@ -278,9 +269,9 @@
           {/each}
           {#if nowPlayingPage < nowPlayingTotalPages}
             <div class="mt-3 flex justify-center">
-              <Button variant="outline" size="sm" on:click={loadMoreNowPlaying} disabled={nowPlayingLoadingMore}>
+              <InteractiveHoverButton class="text-sm px-4 py-1" onclick={loadMoreNowPlaying} disabled={nowPlayingLoadingMore}>
                 {nowPlayingLoadingMore ? "Loading…" : "More"}
-              </Button>
+              </InteractiveHoverButton>
             </div>
           {/if}
         </section>
@@ -298,9 +289,9 @@
           {/each}
           {#if popularMoviesPage < popularMoviesTotalPages}
             <div class="mt-3 flex justify-center">
-              <Button variant="outline" size="sm" on:click={loadMorePopularMovies} disabled={popularMoviesLoadingMore}>
+              <InteractiveHoverButton class="text-sm px-4 py-1" onclick={loadMorePopularMovies} disabled={popularMoviesLoadingMore}>
                 {popularMoviesLoadingMore ? "Loading…" : "More"}
-              </Button>
+              </InteractiveHoverButton>
             </div>
           {/if}
         </section>
@@ -318,9 +309,9 @@
           {/each}
           {#if topRatedPage < topRatedTotalPages}
             <div class="mt-3 flex justify-center">
-              <Button variant="outline" size="sm" on:click={loadMoreTopRated} disabled={topRatedLoadingMore}>
+              <InteractiveHoverButton class="text-sm px-4 py-1" onclick={loadMoreTopRated} disabled={topRatedLoadingMore}>
                 {topRatedLoadingMore ? "Loading…" : "More"}
-              </Button>
+              </InteractiveHoverButton>
             </div>
           {/if}
         </section>
@@ -338,9 +329,9 @@
           {/each}
           {#if upcomingPage < upcomingTotalPages}
             <div class="mt-3 flex justify-center">
-              <Button variant="outline" size="sm" on:click={loadMoreUpcoming} disabled={upcomingLoadingMore}>
+              <InteractiveHoverButton class="text-sm px-4 py-1" onclick={loadMoreUpcoming} disabled={upcomingLoadingMore}>
                 {upcomingLoadingMore ? "Loading…" : "More"}
-              </Button>
+              </InteractiveHoverButton>
             </div>
           {/if}
         </section>
@@ -358,9 +349,9 @@
           {/each}
           {#if trendingTVPage < trendingTVTotalPages}
             <div class="mt-3 flex justify-center">
-              <Button variant="outline" size="sm" on:click={loadMoreTrendingTV} disabled={trendingTVLoadingMore}>
+              <InteractiveHoverButton class="text-sm px-4 py-1" onclick={loadMoreTrendingTV} disabled={trendingTVLoadingMore}>
                 {trendingTVLoadingMore ? "Loading…" : "More"}
-              </Button>
+              </InteractiveHoverButton>
             </div>
           {/if}
         </section>
@@ -374,10 +365,11 @@
               <MediaCard id={show.id} title={show.name} year={getYear(show.first_aired)} posterUrl={show.poster_url} type="tv" />
             {/each}
           </div>
-          <!-- No pagination: TVDB popular endpoint doesn't support paging -->
         </section>
       {/if}
 
     </div>
+    </BlurFade>
   {/if}
+
 </div>

@@ -9,9 +9,9 @@
   import { Button } from "$lib/components/ui/button";
   import { downloadsApi, type PendingDownload } from "$lib/api/index";
 
-  let loading = true;
-  let error = "";
-  let downloads: PendingDownload[] = [];
+  let loading = $state(true);
+  let error = $state("");
+  let downloads: PendingDownload[] = $state([]);
 
   function statusClass(status: string): string {
     switch (status?.toLowerCase()) {
@@ -44,7 +44,6 @@
     if (res.error || !res.data) {
       error = res.message || "Failed to load downloads";
     } else {
-      // Sort newest first
       downloads = [...(res.data.downloads ?? [])].sort(
         (a, b) => new Date(b.added_at).getTime() - new Date(a.added_at).getTime(),
       );
@@ -56,7 +55,7 @@
 </script>
 
 <svelte:head>
-  <title>Downloads — OpenMedia</title>
+  <title>Downloads — OpenMediaProject</title>
 </svelte:head>
 
 <div class="space-y-8">
@@ -67,7 +66,7 @@
         Active and completed download records tracked by the system.
       </p>
     </div>
-    <Button on:click={load} disabled={loading} variant="outline">
+    <Button onclick={load} disabled={loading} variant="outline">
       {loading ? "Loading…" : "Refresh"}
     </Button>
   </div>
