@@ -73,7 +73,7 @@ Each of these is a separate application, with its own database, its own configur
 | Embedded NutsDB — no external database required | ✅ |
 
 ---
-
+```
 ## High-Level Architecture
 
 ```
