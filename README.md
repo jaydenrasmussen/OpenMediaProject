@@ -15,7 +15,7 @@ docker run -d \
   -p 8080:8080 \
   -v /your/data:/app/data \
   ghcr.io/jaydenrasmussen/openmediaproject:latest
-
+```
 Open `http://localhost:8080` and log in with username `admin`. The generated password is printed once in the startup logs (`docker logs openmedia | grep password`).
 
 Configure your TMDB/TVDB API keys, torrent client, media library paths, and notifications through the **Settings** UI — no environment variables required.
@@ -73,7 +73,7 @@ Each of these is a separate application, with its own database, its own configur
 | Embedded NutsDB — no external database required | ✅ |
 
 ---
-```
+
 ## High-Level Architecture
 
 ```
