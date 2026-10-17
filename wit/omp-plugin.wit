@@ -1,0 +1,39 @@
+package omp:plugin@0.1.0;
+
+/// Services the host gives to every plugin. Plugins have no ambient network
+/// or filesystem access; everything goes through here and is checked against
+/// the permissions declared in plugin.toml.
+interface host {
+    enum log-level { debug, info, warn, error }
+    log: func(level: log-level, message: string);
+
+    /// GET a URL. Fails if the host is not in the plugin's allowed list.
+    http-get: func(url: string) -> result<string, string>;
+}
+
+interface indexer {
+    record search-query {
+        term: string,
+        season: option<u32>,
+        episode: option<u32>,
+    }
+
+    record release {
+        guid: string,
+        title: string,
+        size: u64,
+        download-url: string,
+        /// Unix seconds.
+        publish-date: s64,
+    }
+
+    /// JSON Schema describing this plugin's settings; the UI renders the form from it.
+    settings-schema: func() -> string;
+
+    search: func(query: search-query, settings-json: string) -> result<list<release>, string>;
+}
+
+world indexer-plugin {
+    import host;
+    export indexer;
+}

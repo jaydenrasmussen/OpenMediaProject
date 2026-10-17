@@ -1,0 +1,19 @@
+[package]
+name = "omp-plugin-host"
+description = "WASM plugin runtime for OpenMediaProject"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait = "0.1.92"
+tokio.workspace = true
+tracing.workspace = true
+url = "2.5.8"
+wasmtime = "41.0.4"
+wasmtime-wasi = "41.0.4"
+
+[lints]
+workspace = true
