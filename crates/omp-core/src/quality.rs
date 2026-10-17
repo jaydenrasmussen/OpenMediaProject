@@ -10,6 +10,8 @@
 use std::cmp::Ordering;
 use std::fmt;
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 /// Declaration order matters: `QualityFinder` compares sources with `>=`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum QualitySource {
@@ -58,6 +60,21 @@ impl std::hash::Hash for Quality {
         self.id.hash(state);
     }
 }
+/// Stored and sent as the quality id, like Radarr's JSON.
+impl Serialize for Quality {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u32(self.id)
+    }
+}
+
+impl<'de> Deserialize<'de> for Quality {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let id = u32::deserialize(deserializer)?;
+        Quality::from_id(id)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown quality id {id}")))
+    }
+}
+
 impl fmt::Display for Quality {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name)
@@ -200,7 +217,7 @@ impl Quality {
 }
 
 /// Release revision: proper/repack/real counters. Higher wins.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Revision {
     pub version: u32,
     pub real: u32,
@@ -247,6 +264,36 @@ pub struct QualityModel {
     pub revision_detection: DetectionSource,
 }
 
+/// Only the quality and revision are stored; where each part was detected
+/// from is a parsing detail.
+#[derive(Serialize, Deserialize)]
+struct StoredQualityModel {
+    quality: Quality,
+    #[serde(default)]
+    revision: Revision,
+}
+
+impl Serialize for QualityModel {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        StoredQualityModel {
+            quality: self.quality,
+            revision: self.revision,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for QualityModel {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let stored = StoredQualityModel::deserialize(deserializer)?;
+        Ok(QualityModel {
+            quality: stored.quality,
+            revision: stored.revision,
+            ..Default::default()
+        })
+    }
+}
+
 impl Default for QualityModel {
     fn default() -> Self {
         Self {
@@ -290,6 +337,34 @@ mod tests {
             Quality::find_by_source_and_resolution(S::Dvd, 480, M::None),
             Quality::DVD
         );
+    }
+
+    #[test]
+    fn quality_model_round_trips_through_json() {
+        let model = QualityModel {
+            quality: Quality::REMUX_1080P,
+            revision: Revision {
+                version: 2,
+                real: 1,
+                is_repack: true,
+            },
+            source_detection: DetectionSource::Name,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&model).unwrap();
+        assert_eq!(
+            json,
+            r#"{"quality":30,"revision":{"version":2,"real":1,"is_repack":true}}"#
+        );
+        let back: QualityModel = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.quality, Quality::REMUX_1080P);
+        assert_eq!(back.revision, model.revision);
+        assert_eq!(
+            back.source_detection,
+            DetectionSource::Unknown,
+            "detection is not stored"
+        );
+        assert!(serde_json::from_str::<Quality>("999").is_err());
     }
 
     #[test]

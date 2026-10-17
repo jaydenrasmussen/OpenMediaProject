@@ -4,8 +4,9 @@
 //! written `/pattern/flags`, as in Radarr.
 
 use omp_parser::re::Re;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReleaseProfile {
     pub id: i32,
     pub name: String,

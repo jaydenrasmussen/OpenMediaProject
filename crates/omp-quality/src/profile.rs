@@ -3,13 +3,15 @@
 
 use std::cmp::Ordering;
 
+use serde::{Deserialize, Serialize};
+
 use omp_core::{
     language::Language,
     quality::{Quality, QualityModel},
 };
 
 /// One row of a profile: a single quality, or a named group that ranks as one.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ProfileItem {
     Quality {
         quality: Quality,
@@ -41,7 +43,7 @@ impl ProfileItem {
 }
 
 /// A custom format and the score this profile gives it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProfileFormatItem {
     pub format_id: i32,
     pub score: i32,

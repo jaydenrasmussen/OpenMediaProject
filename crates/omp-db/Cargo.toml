@@ -1,0 +1,25 @@
+[package]
+name = "omp-db"
+description = "SQLite storage for OpenMediaProject"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omp-core = { path = "../omp-core" }
+omp-quality = { path = "../omp-quality" }
+anyhow.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros", "chrono", "json"] }
+thiserror = "2"
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

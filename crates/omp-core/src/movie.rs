@@ -2,6 +2,20 @@
 //! `Movie.IsAvailable` (GPL-3.0).
 
 use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Serialize};
+
+impl MovieStatus {
+    pub fn from_i32(value: i32) -> Option<MovieStatus> {
+        Some(match value {
+            -1 => MovieStatus::Deleted,
+            0 => MovieStatus::Tba,
+            1 => MovieStatus::Announced,
+            2 => MovieStatus::InCinemas,
+            3 => MovieStatus::Released,
+            _ => return None,
+        })
+    }
+}
 
 /// How far along a movie is. Order matters: a later status is "more released".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -18,38 +32,38 @@ pub enum MovieStatus {
     Released = 3,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MediaCover {
     pub kind: CoverKind,
     pub url: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CoverKind {
     Poster,
     Fanart,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Rating {
     pub votes: u32,
     pub value: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlternativeTitle {
     pub title: String,
     /// ISO 3166-1 country code, if known.
     pub country: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CreditKind {
     Cast,
     Crew,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Credit {
     pub person_tmdb_id: i64,
     pub name: String,

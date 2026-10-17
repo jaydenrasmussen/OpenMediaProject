@@ -6,6 +6,8 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 use omp_core::{language::Language, quality::Quality, release::IndexerFlags};
 use omp_parser::re::Re;
 
@@ -409,5 +411,174 @@ mod tests {
             .map(|f| f.name.clone())
             .collect();
         assert_eq!(names, ["Alpha", "Zed"]);
+    }
+}
+
+/// The storable form of a condition. Radarr stores the implementation name
+/// and a few fields; this keeps that shape so imports are straightforward.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "implementation", rename_all = "snake_case")]
+pub enum ConditionDef {
+    ReleaseTitle { value: String },
+    Edition { value: String },
+    ReleaseGroup { value: String },
+    Language { value: i32, except_language: bool },
+    IndexerFlag { value: u32 },
+    Source { value: i32 },
+    Resolution { value: i32 },
+    QualityModifier { value: i32 },
+    Size { min: f64, max: f64 },
+    Year { min: i32, max: i32 },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpecificationDef {
+    pub name: String,
+    #[serde(default)]
+    pub negate: bool,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(flatten)]
+    pub condition: ConditionDef,
+}
+
+impl SpecificationDef {
+    /// Compiles the condition. Fails when a regex is empty or invalid.
+    pub fn build(&self) -> Result<Specification, String> {
+        let condition = match &self.condition {
+            ConditionDef::ReleaseTitle { value } => Condition::ReleaseTitle(Pattern::new(value)?),
+            ConditionDef::Edition { value } => Condition::Edition(Pattern::new(value)?),
+            ConditionDef::ReleaseGroup { value } => Condition::ReleaseGroup(Pattern::new(value)?),
+            ConditionDef::Language {
+                value,
+                except_language,
+            } => Condition::Language {
+                value: *value,
+                except_language: *except_language,
+            },
+            ConditionDef::IndexerFlag { value } => Condition::IndexerFlag(IndexerFlags(*value)),
+            ConditionDef::Source { value } => Condition::Source(*value),
+            ConditionDef::Resolution { value } => Condition::Resolution(*value),
+            ConditionDef::QualityModifier { value } => Condition::QualityModifier(*value),
+            ConditionDef::Size { min, max } => {
+                if *min < 0.0 || max <= min {
+                    return Err("Size: max must be greater than min, and min at least 0".to_owned());
+                }
+                Condition::Size {
+                    min: *min,
+                    max: *max,
+                }
+            }
+            ConditionDef::Year { min, max } => {
+                if *min <= 0 || max < min {
+                    return Err("Year: min must be positive and max at least min".to_owned());
+                }
+                Condition::Year {
+                    min: *min,
+                    max: *max,
+                }
+            }
+        };
+        Ok(Specification {
+            name: self.name.clone(),
+            negate: self.negate,
+            required: self.required,
+            condition,
+        })
+    }
+}
+
+/// The storable form of a custom format.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CustomFormatDef {
+    pub id: i32,
+    pub name: String,
+    #[serde(default)]
+    pub include_when_renaming: bool,
+    pub specifications: Vec<SpecificationDef>,
+}
+
+impl CustomFormatDef {
+    pub fn build(&self) -> Result<CustomFormat, String> {
+        let specifications = self
+            .specifications
+            .iter()
+            .map(|s| s.build().map_err(|e| format!("{}: {e}", s.name)))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(CustomFormat {
+            id: self.id,
+            name: self.name.clone(),
+            include_when_renaming: self.include_when_renaming,
+            specifications,
+        })
+    }
+}
+
+#[cfg(test)]
+mod def_tests {
+    use super::*;
+
+    #[test]
+    fn definitions_round_trip_and_build() {
+        let def = CustomFormatDef {
+            id: 7,
+            name: "Remux".into(),
+            include_when_renaming: true,
+            specifications: vec![
+                SpecificationDef {
+                    name: "title".into(),
+                    negate: false,
+                    required: true,
+                    condition: ConditionDef::ReleaseTitle {
+                        value: "remux".into(),
+                    },
+                },
+                SpecificationDef {
+                    name: "1080".into(),
+                    negate: false,
+                    required: false,
+                    condition: ConditionDef::Resolution { value: 1080 },
+                },
+            ],
+        };
+        let json = serde_json::to_string(&def).unwrap();
+        assert!(
+            json.contains(r#""implementation":"release_title""#),
+            "{json}"
+        );
+        let back: CustomFormatDef = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, def);
+
+        let format = back.build().unwrap();
+        let input = CustomFormatInput {
+            simple_release_title: Some("Movie 2020 REMUX".into()),
+            quality: Some(omp_core::quality::Quality::REMUX_1080P),
+            ..Default::default()
+        };
+        assert!(format.matches(&input));
+    }
+
+    #[test]
+    fn invalid_definitions_name_the_failing_condition() {
+        let mut def = CustomFormatDef {
+            id: 1,
+            name: "bad".into(),
+            include_when_renaming: false,
+            specifications: vec![SpecificationDef {
+                name: "broken regex".into(),
+                negate: false,
+                required: false,
+                condition: ConditionDef::ReleaseTitle {
+                    value: "(oops".into(),
+                },
+            }],
+        };
+        let err = def.build().unwrap_err();
+        assert!(err.starts_with("broken regex:"), "{err}");
+
+        def.specifications[0].condition = ConditionDef::Size { min: 5.0, max: 1.0 };
+        assert!(def.build().is_err());
+        def.specifications[0].condition = ConditionDef::Year { min: 0, max: 2000 };
+        assert!(def.build().is_err());
     }
 }

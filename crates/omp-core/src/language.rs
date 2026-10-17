@@ -3,6 +3,8 @@
 //! Ids and names match Radarr. `ANY` (-1) and `ORIGINAL` (-2) are special:
 //! "any language" in profiles and "the movie's original language" in releases.
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 /// A language. Equality and hashing use the id only.
 #[derive(Debug, Clone, Copy)]
 pub struct Language {
@@ -21,6 +23,21 @@ impl std::hash::Hash for Language {
         self.id.hash(state);
     }
 }
+/// Stored and sent as the language id.
+impl Serialize for Language {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_i32(self.id)
+    }
+}
+
+impl<'de> Deserialize<'de> for Language {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let id = i32::deserialize(deserializer)?;
+        Language::from_id(id)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown language id {id}")))
+    }
+}
+
 impl std::fmt::Display for Language {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.name)

@@ -1,9 +1,10 @@
 //! Release-level types shared by indexers, decisions and downloads.
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 /// Which kind of downloader a release is for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum DownloadProtocol {
     #[default]
     Unknown,
@@ -12,7 +13,8 @@ pub enum DownloadProtocol {
 }
 
 /// Flags an indexer attaches to a release (Radarr `IndexerFlags`, GPL-3.0).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct IndexerFlags(pub u32);
 
 impl IndexerFlags {
@@ -57,7 +59,7 @@ impl std::ops::BitOr for IndexerFlags {
 }
 
 /// Torrent-only details of a release.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TorrentRelease {
     pub magnet_url: Option<String>,
     pub info_hash: Option<String>,
@@ -66,7 +68,7 @@ pub struct TorrentRelease {
 }
 
 /// A release offered by an indexer (Radarr `ReleaseInfo`/`TorrentInfo`).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReleaseInfo {
     pub guid: String,
     pub title: String,

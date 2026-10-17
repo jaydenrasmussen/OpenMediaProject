@@ -1,8 +1,9 @@
 //! Delay profiles: wait a while for a better release, per protocol, per tag set.
 
 use omp_core::release::DownloadProtocol;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DelayProfile {
     pub id: i32,
     pub enable_usenet: bool,
