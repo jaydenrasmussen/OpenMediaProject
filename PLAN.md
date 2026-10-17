@@ -245,7 +245,10 @@ Findings from the spikes:
 |---|---|---|
 | `omp-core` quality types | Done | 30 qualities, revision, detection sources, `find_by_source_and_resolution`. |
 | `omp-parser` quality parser | Done | Port of Radarr `QualityParser`. Runs 244 name cases + repack + detection-source cases extracted from Radarr's own tests (`crates/omp-parser/tests/data/*.tsv`, header names the source commit). All pass. The harness was checked to fail on a wrong expectation. |
-| Title/year/edition parser, release group, language, `ParsingService` | Not started | Next. |
+| `omp-parser` title/year/edition/hardcoded-subs/AKA parser | Done | Port of `Parser.ParseMovieTitle` and `ParseMoviePath`. ~190 cases from Radarr's `ParserFixture`, `EditionParserFixture`, `CrapParserFixture` and `HashedReleaseFixture` pass, plus 1000 random hashes are rejected. Extracted data is in `tests/data/radarr_parser_cases.json` (all Radarr parser fixtures, including language and slug cases not yet used). |
+| `omp-parser` release group | Done | 154 cases pass. |
+| `omp-parser` regex layer | Done | `re.rs`: fancy-regex first, `regress` fallback with Unicode translation for variable-length look-behind. 3 title/release-group patterns need the fallback. |
+| Language parser, `ParsingService` (match to library), title normalization | Not started | Next. |
 | Naming-token engine | Not started | |
 
 ### Phase 1 — Movies vertical slice (Radarr core) (6–8 weeks)
