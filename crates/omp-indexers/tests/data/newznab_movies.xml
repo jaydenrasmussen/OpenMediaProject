@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+<channel>
+  <title>Example NZB</title>
+  <newznab:response offset="0" total="4"/>
+  <item>
+    <title>The.Matrix.1999.1080p.BluRay.x264-GRP</title>
+    <guid isPermaLink="true">https://idx.example/details/aaa</guid>
+    <link>https://idx.example/getnzb/aaa.nzb?i=1&amp;r=KEY</link>
+    <comments>https://idx.example/details/aaa#comments</comments>
+    <pubDate>Sat, 03 Oct 2026 10:00:00 +0000</pubDate>
+    <category>Movies &gt; HD</category>
+    <enclosure url="https://idx.example/getnzb/aaa.nzb?i=1&amp;r=KEY" length="111" type="application/x-nzb"/>
+    <newznab:attr name="category" value="2000"/>
+    <newznab:attr name="category" value="2040"/>
+    <newznab:attr name="size" value="9876543210"/>
+    <newznab:attr name="imdb" value="133093"/>
+    <newznab:attr name="tmdbid" value="603"/>
+    <newznab:attr name="usenetdate" value="Fri, 02 Oct 2026 22:00:00 +0000"/>
+    <newznab:attr name="prematch" value="1"/>
+  </item>
+  <item>
+    <title>The.Matrix.1999.720p.WEB-DL-OTHER</title>
+    <guid>bbb</guid>
+    <link>/getnzb/bbb.nzb</link>
+    <pubDate>Sat, 03 Oct 2026 09:00:00 +0000</pubDate>
+    <enclosure url="/getnzb/bbb.nzb" length="2222222" type="application/x-nzb"/>
+    <newznab:attr name="nuked" value="1"/>
+  </item>
+  <item>
+    <title>Fish &amp; Chips&nbsp;(2020) 1080p WEB-DL</title>
+    <guid>ccc</guid>
+    <pubDate>Sat, 03 Oct 2026 08:00:00 +0000</pubDate>
+    <enclosure url="https://idx.example/getnzb/ccc.nzb" length="3333" type="application/x-nzb"/>
+  </item>
+  <item>
+    <title>No.Download.Link.2020</title>
+    <guid>ddd</guid>
+    <pubDate>Sat, 03 Oct 2026 07:00:00 +0000</pubDate>
+  </item>
+</channel>
+</rss>

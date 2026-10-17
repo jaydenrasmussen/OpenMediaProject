@@ -1,0 +1,27 @@
+[package]
+name = "omp-indexers"
+description = "Newznab and Torznab indexer client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omp-core = { path = "../omp-core" }
+omp-parser = { path = "../omp-parser" }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+html-escape = "0.2"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "query"] }
+roxmltree = "0.20"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+tokio.workspace = true
+tracing.workspace = true
+url = "2"
+
+[dev-dependencies]
+axum.workspace = true
+serde_json = "1"
+
+[lints]
+workspace = true
