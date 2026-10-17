@@ -154,6 +154,12 @@ impl std::fmt::Display for ParsedMovieInfo {
     }
 }
 
+/// Removes characters indexers add that are not part of the name
+/// (`<>?*|` and the whitespace before them).
+pub fn simplify_release_title(title: &str) -> String {
+    SIMPLE_RELEASE_TITLE.replace_all(title, "")
+}
+
 fn validate_before_parsing(title: &str) -> bool {
     let lower = title.to_lowercase();
     if lower.contains("password") && lower.contains("yenc") {

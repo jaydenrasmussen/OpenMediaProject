@@ -1,0 +1,29 @@
+[package]
+name = "omp-services"
+description = "Services that tie indexers, decisions and storage together"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omp-core = { path = "../omp-core" }
+omp-db = { path = "../omp-db" }
+omp-decision = { path = "../omp-decision" }
+omp-indexers = { path = "../omp-indexers" }
+omp-library = { path = "../omp-library" }
+omp-parser = { path = "../omp-parser" }
+omp-quality = { path = "../omp-quality" }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+serde_json = "1"
+thiserror = "2"
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }
+serde_json = "1"
+
+[lints]
+workspace = true

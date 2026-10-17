@@ -14,6 +14,7 @@ use omp_quality::{
     definition::QualityDefinitions, delay::DelayProfile, profile::QualityProfile,
     release_profile::ReleaseProfile, upgrade::ProperDownloadTypes,
 };
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReleaseSource {
@@ -61,8 +62,9 @@ impl DecisionInfo {
     }
 }
 
-/// Settings the specs read.
-#[derive(Debug, Clone)]
+/// Settings the specs read. Stored as JSON; missing fields take defaults.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DecisionConfig {
     pub propers_and_repacks: ProperDownloadTypes,
     /// Minutes a usenet release must age before it is grabbed. 0 disables.

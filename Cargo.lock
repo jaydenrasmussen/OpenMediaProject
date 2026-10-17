@@ -2790,6 +2790,7 @@ dependencies = [
  "omp-core",
  "omp-parser",
  "omp-quality",
+ "serde",
 ]
 
 [[package]]
@@ -2886,6 +2887,25 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "omp-services"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "omp-core",
+ "omp-db",
+ "omp-decision",
+ "omp-indexers",
+ "omp-library",
+ "omp-parser",
+ "omp-quality",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

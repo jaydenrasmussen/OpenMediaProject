@@ -5,6 +5,7 @@
 use std::cmp::Ordering;
 
 use omp_core::quality::QualityModel;
+use serde::{Deserialize, Serialize};
 
 use crate::profile::QualityProfile;
 
@@ -22,7 +23,8 @@ pub enum UpgradeRejectReason {
 }
 
 /// Media-management setting for propers and repacks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ProperDownloadTypes {
     #[default]
     PreferAndUpgrade,
