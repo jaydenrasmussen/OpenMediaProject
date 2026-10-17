@@ -88,12 +88,13 @@ pub struct Evaluation {
 }
 
 impl Evaluation {
-    /// Approved releases, grouped by movie and best first within each group.
-    /// Groups come in the order their first release appeared.
-    pub fn approved_best_first(&self) -> Vec<Vec<usize>> {
+    /// Releases grouped by movie, best first within each group. Groups come in
+    /// the order their first release appeared. `include` picks which releases
+    /// take part (only matched ones can).
+    fn ranked_by_movie(&self, include: impl Fn(&EvaluatedRelease) -> bool) -> Vec<Vec<usize>> {
         let mut groups: Vec<(i64, Vec<usize>)> = Vec::new();
         for (i, item) in self.items.iter().enumerate() {
-            let (true, Some(movie)) = (item.decision.approved(), item.movie.as_ref()) else {
+            let Some(movie) = item.movie.as_ref().filter(|_| include(item)) else {
                 continue;
             };
             match groups.iter_mut().find(|(id, _)| *id == movie.movie.id) {
@@ -103,44 +104,56 @@ impl Evaluation {
         }
         groups
             .into_iter()
-            .map(|(_, mut indices)| {
-                // Rank on borrowed subjects built from the stored pieces.
-                let ranked: Vec<usize> = {
-                    let subjects: Vec<(usize, Subject<'_>)> = indices
-                        .iter()
-                        .filter_map(|&i| {
-                            let it = &self.items[i];
-                            Some((
-                                i,
-                                Subject {
-                                    release: &it.release,
-                                    parsed: it.parsed.as_ref()?,
-                                    movie: &it.movie.as_ref()?.movie,
-                                    metadata: &it.movie.as_ref()?.metadata,
-                                    profile: it.profile.as_ref()?,
-                                    existing_file: it.existing_file.as_ref(),
-                                    custom_format_ids: &it.custom_format_ids,
-                                    custom_format_score: it.custom_format_score,
-                                    languages: &it.languages,
-                                    source: it.source,
-                                },
-                            ))
-                        })
-                        .collect();
-                    let mut refs: Vec<&Subject<'_>> = subjects.iter().map(|(_, s)| s).collect();
-                    sort_best_first(&mut refs, &self.snapshot);
-                    refs.iter()
-                        .filter_map(|r| {
-                            subjects
-                                .iter()
-                                .find(|(_, s)| std::ptr::eq(s, *r))
-                                .map(|(i, _)| *i)
-                        })
-                        .collect()
-                };
-                indices = ranked;
-                indices
+            .map(|(_, indices)| self.rank(&indices))
+            .collect()
+    }
+
+    /// Sorts item indices best first with the decision engine's comparer.
+    fn rank(&self, indices: &[usize]) -> Vec<usize> {
+        let subjects: Vec<(usize, Subject<'_>)> = indices
+            .iter()
+            .filter_map(|&i| {
+                let it = &self.items[i];
+                Some((
+                    i,
+                    Subject {
+                        release: &it.release,
+                        parsed: it.parsed.as_ref()?,
+                        movie: &it.movie.as_ref()?.movie,
+                        metadata: &it.movie.as_ref()?.metadata,
+                        profile: it.profile.as_ref()?,
+                        existing_file: it.existing_file.as_ref(),
+                        custom_format_ids: &it.custom_format_ids,
+                        custom_format_score: it.custom_format_score,
+                        languages: &it.languages,
+                        source: it.source,
+                    },
+                ))
             })
+            .collect();
+        let mut refs: Vec<&Subject<'_>> = subjects.iter().map(|(_, s)| s).collect();
+        sort_best_first(&mut refs, &self.snapshot);
+        refs.iter()
+            .filter_map(|r| {
+                subjects
+                    .iter()
+                    .find(|(_, s)| std::ptr::eq(s, *r))
+                    .map(|(i, _)| *i)
+            })
+            .collect()
+    }
+
+    /// Approved releases, grouped by movie and best first within each group.
+    pub fn approved_best_first(&self) -> Vec<Vec<usize>> {
+        self.ranked_by_movie(|it| it.decision.approved())
+    }
+
+    /// Approved and temporarily rejected releases, ranked per movie. These are
+    /// the ones worth grabbing now or holding for later.
+    pub fn qualified_best_first(&self) -> Vec<usize> {
+        self.ranked_by_movie(|it| it.decision.approved() || it.decision.temporarily_rejected())
+            .into_iter()
+            .flatten()
             .collect()
     }
 }

@@ -1,0 +1,16 @@
+[package]
+name = "omp-downloads"
+description = "Download client abstraction and selection"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omp-core = { path = "../omp-core" }
+async-trait = "0.1"
+thiserror = "2"
+tokio.workspace = true
+
+[lints]
+workspace = true

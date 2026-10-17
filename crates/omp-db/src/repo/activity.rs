@@ -281,6 +281,43 @@ impl PendingReleases<'_> {
             .collect()
     }
 
+    /// Adds a pending release unless the same one is already waiting (same
+    /// title, publish date and indexer). A repeat can change the reason, but a
+    /// release waiting on an unavailable client keeps that reason. Extra
+    /// duplicates are removed. Returns the id of the surviving row.
+    pub async fn add_or_update(
+        &self,
+        movie_id: i64,
+        release: &ReleaseInfo,
+        reason: PendingReason,
+    ) -> Result<i64> {
+        let existing: Vec<PendingRelease> = self
+            .for_movie(movie_id)
+            .await?
+            .into_iter()
+            .filter(|p| {
+                p.release.title == release.title
+                    && p.release.publish_date == release.publish_date
+                    && p.release.indexer == release.indexer
+            })
+            .collect();
+
+        let Some(first) = existing.first() else {
+            return self.add(movie_id, release, reason).await;
+        };
+        if first.reason != reason && first.reason != PendingReason::DownloadClientUnavailable {
+            sqlx::query("UPDATE pending_releases SET reason = ? WHERE id = ?")
+                .bind(reason.as_i64())
+                .bind(first.id)
+                .execute(self.0)
+                .await?;
+        }
+        for duplicate in existing.iter().skip(1) {
+            self.remove(duplicate.id).await?;
+        }
+        Ok(first.id)
+    }
+
     pub async fn remove(&self, id: i64) -> Result<()> {
         sqlx::query("DELETE FROM pending_releases WHERE id = ?")
             .bind(id)

@@ -2794,6 +2794,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "omp-downloads"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "omp-core",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "omp-indexers"
 version = "0.1.0"
 dependencies = [
@@ -2897,6 +2907,7 @@ dependencies = [
  "omp-core",
  "omp-db",
  "omp-decision",
+ "omp-downloads",
  "omp-indexers",
  "omp-library",
  "omp-parser",

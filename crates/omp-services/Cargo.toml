@@ -10,6 +10,7 @@ rust-version.workspace = true
 omp-core = { path = "../omp-core" }
 omp-db = { path = "../omp-db" }
 omp-decision = { path = "../omp-decision" }
+omp-downloads = { path = "../omp-downloads" }
 omp-indexers = { path = "../omp-indexers" }
 omp-library = { path = "../omp-library" }
 omp-parser = { path = "../omp-parser" }

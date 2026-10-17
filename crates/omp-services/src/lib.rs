@@ -6,6 +6,7 @@ mod config;
 mod disk;
 mod evaluate;
 mod formats;
+mod grab;
 mod snapshot;
 
 pub use config::{DECISION_CONFIG_KEY, load_decision_config, save_decision_config};
@@ -14,4 +15,5 @@ pub use evaluate::{
     EvaluateRequest, EvaluatedRelease, Evaluation, ServiceError, evaluate_releases,
 };
 pub use formats::{input_for_file, input_for_history, input_for_release, matching_ids};
+pub use grab::{GrabContext, GrabbedRelease, ProcessedDecisions, process_decisions};
 pub use snapshot::{DecisionSnapshot, QueueMap};
