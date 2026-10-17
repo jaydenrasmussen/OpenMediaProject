@@ -25,7 +25,7 @@ const SYNTAX: &str = "^$\\.*+?()[]{}|/";
 ///   `regress` has no set operations.
 /// - Identity escapes of ordinary punctuation (`\-`, `\_`, `\ `) lose the
 ///   backslash outside classes; `u` mode rejects them.
-fn to_es_unicode(pattern: &str) -> String {
+fn to_es_unicode(pattern: &str) -> Result<String, String> {
     let chars: Vec<char> = pattern.chars().collect();
     let mut out = String::with_capacity(pattern.len() * 2);
     let mut i = 0;
@@ -51,7 +51,7 @@ fn to_es_unicode(pattern: &str) -> String {
             continue;
         }
         if c == '[' {
-            let (class, next) = translate_class(&chars, i);
+            let (class, next) = translate_class(&chars, i)?;
             out.push_str(&class);
             i = next;
             continue;
@@ -59,11 +59,11 @@ fn to_es_unicode(pattern: &str) -> String {
         out.push(c);
         i += 1;
     }
-    out
+    Ok(out)
 }
 
 /// Translates one character class starting at `chars[start] == '['`.
-fn translate_class(chars: &[char], start: usize) -> (String, usize) {
+fn translate_class(chars: &[char], start: usize) -> Result<(String, usize), String> {
     let mut i = start + 1;
     let negated = chars.get(i) == Some(&'^');
     if negated {
@@ -100,9 +100,9 @@ fn translate_class(chars: &[char], start: usize) -> (String, usize) {
         (true, false) => format!("[^{body}]"),
         (false, true) if body.is_empty() => format!("[^{WORD}]"),
         (false, true) => format!("(?:[{body}]|[^{WORD}])"),
-        (true, true) => panic!("negated class containing \\W is not supported"),
+        (true, true) => return Err("negated class containing \\W is not supported".to_owned()),
     };
-    (text, end)
+    Ok((text, end))
 }
 
 enum Engine {
@@ -190,17 +190,22 @@ fn scan_names(pattern: &str) -> (String, Vec<String>) {
 }
 
 impl Re {
-    /// Case-sensitive.
+    /// Case-sensitive. Panics if the pattern does not compile; use for constants.
     pub fn new(pattern: &str) -> Self {
-        Self::build(pattern, false)
+        Self::build(pattern, false).unwrap_or_else(|e| panic!("{e}"))
     }
 
-    /// Case-insensitive (`RegexOptions.IgnoreCase`).
+    /// Case-insensitive (`RegexOptions.IgnoreCase`). Panics on a bad pattern.
     pub fn ci(pattern: &str) -> Self {
+        Self::build(pattern, true).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Case-insensitive, for patterns that come from users (custom formats).
+    pub fn try_ci(pattern: &str) -> Result<Self, String> {
         Self::build(pattern, true)
     }
 
-    fn build(pattern: &str, ignore_case: bool) -> Self {
+    fn build(pattern: &str, ignore_case: bool) -> Result<Self, String> {
         let (fancy_pattern, names) = scan_names(pattern);
         let prefixed = if ignore_case {
             format!("(?i){fancy_pattern}")
@@ -211,15 +216,18 @@ impl Re {
             Ok(r) => Engine::Fancy(r),
             Err(fancy_err) => {
                 let flags = if ignore_case { "iu" } else { "u" };
-                match regress::Regex::with_flags(&to_es_unicode(pattern), flags) {
+                let translated = to_es_unicode(pattern)?;
+                match regress::Regex::with_flags(&translated, flags) {
                     Ok(r) => Engine::Regress(r),
-                    Err(e) => panic!(
-                        "pattern failed in both engines: {pattern}\nfancy: {fancy_err}\nregress: {e}"
-                    ),
+                    Err(e) => {
+                        return Err(format!(
+                            "pattern failed in both engines: {pattern}\nfancy: {fancy_err}\nregress: {e}"
+                        ));
+                    }
                 }
             }
         };
-        Self { engine, names }
+        Ok(Self { engine, names })
     }
 
     /// Which engine compiled the pattern (for tests and diagnostics).
@@ -341,6 +349,12 @@ mod tests {
         let r = Re::ci(r"(?<!a.*)(?<t>.+?)[-_\W]+(?<y>\d{4})");
         let c = r.captures("Енола 2020").unwrap();
         assert_eq!(c.name("t"), Some("Енола"));
+    }
+
+    #[test]
+    fn bad_user_patterns_are_errors_not_panics() {
+        assert!(Re::try_ci(r"(unclosed").is_err());
+        assert!(Re::try_ci(r"fine\d+").is_ok());
     }
 
     #[test]

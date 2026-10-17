@@ -2,3 +2,4 @@
 
 pub mod language;
 pub mod quality;
+pub mod release;

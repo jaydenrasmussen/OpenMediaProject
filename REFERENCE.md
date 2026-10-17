@@ -8,7 +8,7 @@ Facts extracted from the Sonarr and Radarr source so we do not need to re-scan i
 - Both GPL-3.0. Paths below are under `src/NzbDrone.Core/` unless noted.
 - To read a file, fetch it at the pinned SHA, for example `https://raw.githubusercontent.com/Sonarr/Sonarr/<sha>/src/NzbDrone.Core/Parser/Parser.cs`, or re-clone with `git clone --depth 1`. Only do this for the big files listed in §14 (parser regexes, naming builder). Everything else is below.
 
-**Verification status.** Sections 2, 3, 4.1–4.3, 5.1–5.4, 5.5 (call structure), 8 (settings list), 9.1, 9.2 (token list), 10 (hosts), 11.1 (intervals), and 13 were read from the source. Items marked **(unverified)** were summarized from memory or inferred from file/folder names; read the file listed in §14 before relying on them.
+**Verification status.** Sections 2, 3, 4.1–4.4, 5.1–5.5, 8 (settings list), 9.1, 9.2 (token list), 10 (hosts), 11.1 (intervals), and 13 were read from the source. Items marked **(unverified)** were summarized from memory or inferred from file/folder names; read the file listed in §14 before relying on them.
 
 ---
 
@@ -167,17 +167,27 @@ Import-side `ImportRejectionReason` — Sonarr: `Unknown, FileLocked, UnknownSer
 8. Reject (`MinimumAgeDelay`, "Waiting for better quality release") if `release.ageMinutes < delay`; otherwise accept.
 Rejected releases are stored as pending releases (`PendingReleaseReason.Delay`) and re-evaluated on each sync.
 
-### 5.5 Upgrade rules (`UpgradableSpecification.IsUpgradable`)
-Return reasons (`UpgradeableRejectReason`): None, BetterQuality, BetterRevision, QualityCutoff, CustomFormatScore, CustomFormatCutoff, MinCustomFormatScore, UpgradesNotAllowed.
-Check order (existing file vs new release), read from the call structure; exact conditions on steps 3–6 are **(unverified)**, re-read the file before porting:
-1. `qualityCompare > 0` (new is higher) and the quality cutoff is not met → upgrade (None).
-2. `qualityCompare < 0` → reject `BetterQuality` (existing is better).
-3. Same quality, propers not disabled, and new revision is higher → upgrade.
-4. If `profile.upgradeAllowed` is false → reject `UpgradesNotAllowed`.
-5. Propers enabled and existing revision ≥ new → reject `BetterRevision`.
-6. New quality higher but cutoff already met → reject `QualityCutoff`.
-7. Custom formats: new score ≤ current → reject `CustomFormatScore`; current ≥ `cutoffFormatScore` → reject `CustomFormatCutoff`; new < current + `minUpgradeFormatScore` → reject `MinCustomFormatScore`; else upgrade.
-`CutoffNotMet` = quality below cutoff, or a revision upgrade is available, or custom-format score below `cutoffFormatScore`. The same function is applied to **history** (recent grabs), **queue** and **disk**, giving the three families of reasons in §5.2.
+### 5.5 Upgrade rules (`UpgradableSpecification`) — verified, ported to `omp-quality/src/upgrade.rs`
+`IsUpgradable(profile, current, new)` returns a reason; `None` means "upgrade". Checks in order:
+1. New quality ranks higher **and** `QualityCutoffNotMet(profile, current, new)` → `None`.
+2. New quality ranks lower → `BetterQuality`.
+3. Propers setting is not `DoNotPrefer` and new revision > current → `None`.
+4. Profile `upgradeAllowed` is false → `UpgradesNotAllowed`.
+5. Propers setting is not `DoNotPrefer` and new revision < current → `BetterRevision`.
+6. New quality ranks higher (cutoff already met) → `QualityCutoff`.
+7. `newScore <= currentScore` → `CustomFormatScore`.
+8. `currentScore >= cutoffFormatScore` → `CustomFormatCutoff`.
+9. `newScore < currentScore + minUpgradeFormatScore` → `MinCustomFormatScore`.
+10. otherwise `None`.
+
+Helpers:
+- `QualityCutoffNotMet`: cutoff = `profile.cutoff` if upgrades allowed, else the **first allowed quality**. True if current ranks below the cutoff, or if `new` is a revision upgrade of `current`.
+- `CustomFormatCutoffNotMet`: score < (`cutoffFormatScore` if upgrades allowed, else `minFormatScore`).
+- `CutoffNotMet` = either of the above.
+- `IsRevisionUpgrade`: **same quality** (not just same rank) and revision compares greater (`real` first, then `version`).
+- `IsUpgradeAllowed`: true if revision upgrade; else if quality or format-score upgrade, returns `profile.upgradeAllowed`; else true (non-upgrades are not this rule's business).
+- Profile quirk: `GetIndex` returns index 0 for a quality the profile does not mention, so unknown qualities rank lowest. Group ids (> 0) can be used as the cutoff and resolve to the group's row.
+- Custom-format match: conditions are grouped **by kind**; a kind passes when no `required` condition in it failed and at least one in it matched; the format matches when all kinds pass. Language conditions apply `negate` themselves; "Original" resolves to the movie's original language when known.
 
 ---
 

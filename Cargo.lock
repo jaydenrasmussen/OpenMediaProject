@@ -2584,6 +2584,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "omp-quality"
+version = "0.1.0"
+dependencies = [
+ "omp-core",
+ "omp-parser",
+]
+
+[[package]]
 name = "omp-server"
 version = "0.1.0"
 dependencies = [
