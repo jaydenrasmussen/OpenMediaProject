@@ -5,11 +5,15 @@
 
 use std::sync::LazyLock;
 
-use omp_core::quality::{Quality, QualityModel};
+use omp_core::{
+    language::Language,
+    quality::{Quality, QualityModel},
+};
 
 use crate::{
     common::{CLEAN_TORRENT_SUFFIX, WEBSITE_POSTFIX, WEBSITE_PREFIX},
     files::remove_file_extension,
+    language::parse_languages,
     quality::{parse_quality, parse_quality_name},
     re::{Caps, Re},
     release_group::parse_release_group,
@@ -122,6 +126,7 @@ pub struct ParsedMovieInfo {
     pub release_title: String,
     pub simple_release_title: String,
     pub quality: QualityModel,
+    pub languages: Vec<Language>,
     pub release_group: Option<String>,
     pub release_hash: String,
     pub edition: String,
@@ -261,6 +266,13 @@ pub fn parse_movie_title(title: &str, is_dir: bool) -> Option<ParsedMovieInfo> {
         }
 
         result.hardcoded_subs = parse_hardcode_subs(&title);
+        // The release group is masked so a group named e.g. "GERMAN" is not read as a language.
+        result.languages = parse_languages(&match result.release_group.as_deref() {
+            Some(group) if !group.trim().is_empty() => {
+                simple_release_title.replace(group, "RlsGrp")
+            }
+            _ => simple_release_title.clone(),
+        });
         result.quality = parse_quality(&title);
 
         if result.edition.trim().is_empty() {

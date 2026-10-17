@@ -237,3 +237,15 @@ fn hashed_releases_via_path() {
         eq(p.quality.quality, want)
     });
 }
+
+#[test]
+fn language_words_inside_titles_are_not_languages() {
+    check_all(
+        "wrong language",
+        cases("ParserFixture", "should_not_parse_wrong_language_in_title"),
+        |a| {
+            let p = parse_movie_title(s(&a[0]), true).ok_or("did not parse")?;
+            eq(p.languages, vec![omp_core::language::Language::UNKNOWN])
+        },
+    );
+}
