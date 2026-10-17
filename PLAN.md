@@ -253,6 +253,9 @@ Findings from the spikes:
 | `omp-quality`: profiles, custom formats, upgrade rules | Done | Quality profile index/compare (with groups), all 10 custom-format condition types with required/negate/grouping semantics, `is_upgradable`, `cutoff_not_met`, `is_upgrade_allowed` ported branch for branch; 27 tests cover every branch. User regexes compile through the fallible `Re::try_ci`. |
 | Decision engine specs (`omp-decision`) | Not started | Next. |
 | `ParsingService` (match a parsed release to a library movie) | Not started | Needs the DB layer. |
+| `omp-core` movie metadata + `is_available` | Done | Port of Radarr's `Movie.IsAvailable` (min-availability, 90-day fallback, delay days). |
+| `omp-metadata`: provider trait + TMDB provider | Done | Uses `TMDB_READ_TOKEN` (a TMDB v4 read token, from `.env`, gitignored). Maps release dates (earliest worldwide per kind), certification (US by default), collection, studio, ratings, images, alternative titles, credits. Status is derived from dates (our rule; Radarr's server is closed). 8 unit tests on a real captured response; 3 live tests (`--ignored`) and `examples/lookup.rs` verified against the real API. |
+| SkyHook / Radarr metadata-server providers | Not started | Primary providers per Q4/Q10; TMDB is the fallback that now exists. |
 | Naming-token engine | Not started | |
 
 ### Phase 1 — Movies vertical slice (Radarr core) (6–8 weeks)
