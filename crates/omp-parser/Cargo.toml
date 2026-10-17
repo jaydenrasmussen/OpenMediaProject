@@ -10,6 +10,7 @@ rust-version.workspace = true
 omp-core = { path = "../omp-core" }
 fancy-regex = "0.14"
 regress = "0.12.0"
+unicode-normalization = "0.1.26"
 
 [lints]
 workspace = true

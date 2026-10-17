@@ -249,7 +249,8 @@ Findings from the spikes:
 | `omp-parser` release group | Done | 154 cases pass. |
 | `omp-parser` regex layer | Done | `re.rs`: fancy-regex first, `regress` fallback with Unicode translation for variable-length look-behind. 3 title/release-group patterns need the fallback. |
 | `omp-core` languages + `omp-parser` language detection | Done | 60 languages (Radarr ids). `parse_languages` passes all 57 release-name test methods from Radarr's `LanguageParserFixture`. Subtitle-file language/tag parsing is not ported yet (needs repeated-group captures; do it with the extras/subtitle work). |
-| Title normalization (`CleanMovieTitle`, slugs), `ParsingService` (match to library) | Not started | Next. |
+| Title normalization (`clean_movie_title`, `normalize_*`, `to_url_slug`) | Done | All Radarr slug cases pass; normalization tests written to mirror `NormalizeTitleFixture`. |
+| `ParsingService` (match a parsed release to a library movie) | Not started | Needs the DB layer; next. |
 | Naming-token engine | Not started | |
 
 ### Phase 1 — Movies vertical slice (Radarr core) (6–8 weeks)
