@@ -1,0 +1,14 @@
+[package]
+name = "omp-parser"
+description = "Release and file name parsing for OpenMediaProject"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omp-core = { path = "../omp-core" }
+fancy-regex = "0.14"
+
+[lints]
+workspace = true

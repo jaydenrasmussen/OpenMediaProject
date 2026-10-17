@@ -240,6 +240,14 @@ Findings from the spikes:
 - **Plugin limits:** fuel bounds CPU per call. Still to add: memory limit, wall-clock timeout (epoch interruption), and cap on result size.
 - **Static UI caveats:** (1) `next build` bakes absolute `/_next/...` paths, so a runtime URL base (reverse-proxy prefix) needs the server to rewrite HTML at startup. (2) ~~The SPA fallback returned HTML with a 200 for missing assets~~ — fixed: the fallback now applies only to paths without a file extension, and missing assets return 404 (tested). (3) Dynamic routes like `/movies/[id]` cannot be pre-rendered, so we use the shell-plus-client-routing approach in §8.
 
+#### Phase 1 progress
+| Item | Status | Notes |
+|---|---|---|
+| `omp-core` quality types | Done | 30 qualities, revision, detection sources, `find_by_source_and_resolution`. |
+| `omp-parser` quality parser | Done | Port of Radarr `QualityParser`. Runs 244 name cases + repack + detection-source cases extracted from Radarr's own tests (`crates/omp-parser/tests/data/*.tsv`, header names the source commit). All pass. The harness was checked to fail on a wrong expectation. |
+| Title/year/edition parser, release group, language, `ParsingService` | Not started | Next. |
+| Naming-token engine | Not started | |
+
 ### Phase 1 — Movies vertical slice (Radarr core) (6–8 weeks)
 Do movies first: simpler model than TV. This proves the whole pipeline.
 - DB schema, TMDB client, add/search movie, root folders.
@@ -384,7 +392,7 @@ Specification list (Sonarr; Radarr has a near-identical subset). Port each as it
 - Sonarr `Parser.cs` has ~149 regex patterns (series/episode forms, daily, anime, absolute, season packs, multi-episode, specials) plus `QualityParser` (~790 lines), `LanguageParser`, `ReleaseGroupParser`, `SceneChecker`, `ParsingService` (matches a parsed title to a library item, including alternate and scene titles). Radarr's is much smaller (44 patterns, a ~640-line `Parser.cs`) because movies are simpler.
 - They keep 31 parser test files in Sonarr (`NzbDrone.Core.Test/ParserTests`) of real-world release names.
 - **Plan:** build `omp-parser` as a table-driven test corpus first. Generate test cases from their tests' *inputs and expected outputs* (facts about release names, not code) and from our own captured release names. Port patterns using Rust's `regex` crate where possible; where they need look-around or backreferences, use `fancy-regex` or rewrite. Keep a regression corpus that grows with every bug.
-- Quality model: 22 qualities with IDs and a (source, resolution) pair, e.g. `WEBDL-1080p`, `Bluray-2160p Remux`, `Raw-HD`. Quality plus **revision** (real/proper/version) is the unit of comparison. Keep their quality names and IDs so users' mental model and any future importer line up.
+- Quality model: 22 qualities with IDs and a (source, resolution) pair, e.g. `WEBDL-1080p`, `Bluray-2160p Remux`, `Raw-HD`. Quality plus **revision** (real/proper/version) is the unit of comparison. Radarr and Sonarr use different ids for qualities 20 to 22, so we cannot keep both. We use Radarr's table (it is a superset; Sonarr's "Bluray-1080p Remux" is our `Remux-1080p`) and its names. No importer exists (Q8), so id compatibility does not matter beyond that.
 - Custom-format condition types: edition, indexer flag, language, quality modifier, release group, release title, resolution, size, source, year (Radarr); Sonarr adds series-specific ones. All regex-based specs share one base class.
 - Indexer flags are a bitfield (freeleech, halfleech, double upload, PTP golden, etc.). Torznab exposes these; keep the bitfield.
 
