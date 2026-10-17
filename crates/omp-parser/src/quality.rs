@@ -9,6 +9,8 @@ use std::sync::LazyLock;
 use fancy_regex::Regex;
 use omp_core::quality::{DetectionSource, Modifier, Quality, QualityModel, QualitySource};
 
+use crate::files::{path_extension, quality_for_extension};
+
 /// Compiles a pattern; all patterns here are constants, so failure is a bug.
 fn re(pattern: &str) -> Regex {
     Regex::new(pattern).unwrap_or_else(|e| panic!("bad regex {pattern}: {e}"))
@@ -153,30 +155,6 @@ fn has(caps: &fancy_regex::Captures<'_>, group: &str) -> bool {
 
 fn contains_ci(haystack: &str, needle: &str) -> bool {
     haystack.to_lowercase().contains(&needle.to_lowercase())
-}
-
-/// File extension including the dot, like .NET `Path.GetExtension`.
-fn path_extension(name: &str) -> &str {
-    let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
-    match file.rfind('.') {
-        Some(i) if i + 1 < file.len() => &file[i..],
-        _ => "",
-    }
-}
-
-/// Default quality for a file extension (`MediaFileExtensions`).
-pub fn quality_for_extension(extension: &str) -> Quality {
-    match extension.to_ascii_lowercase().as_str() {
-        ".m4v" | ".3gp" | ".nsv" | ".ty" | ".strm" | ".rm" | ".rmvb" | ".m3u" | ".ifo" | ".mov"
-        | ".qt" | ".divx" | ".xvid" | ".bivx" | ".nrg" | ".pva" | ".wmv" | ".asf" | ".asx"
-        | ".ogm" | ".ogv" | ".m2v" | ".avi" | ".bin" | ".dat" | ".dvr-ms" | ".mpg" | ".mpeg"
-        | ".mp4" | ".avc" | ".vp3" | ".svq3" | ".nuv" | ".viv" | ".dv" | ".fli" | ".flv"
-        | ".wpl" | ".ts" | ".wtv" => Quality::SDTV,
-        ".img" | ".iso" | ".vob" => Quality::DVD,
-        ".mkv" | ".mk3d" => Quality::WEBDL_720P,
-        ".m2ts" => Quality::BLURAY_720P,
-        _ => Quality::UNKNOWN,
-    }
 }
 
 /// Parses quality from a release name or file name, falling back to the file
