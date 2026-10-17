@@ -215,7 +215,10 @@ CREATE TABLE provider_status (
     initial_failure TEXT,
     most_recent_failure TEXT,
     escalation_level INTEGER NOT NULL DEFAULT 0,
-    disabled_till   TEXT
+    disabled_till   TEXT,
+    -- The newest release the last RSS sync saw, so the next one knows where to stop.
+    last_rss_publish_date TEXT,
+    last_rss_download_url TEXT
 );
 
 -- ---- queue and scheduling ------------------------------------------------------------

@@ -8,6 +8,7 @@ mod evaluate;
 mod formats;
 mod grab;
 mod snapshot;
+mod sync;
 
 pub use config::{DECISION_CONFIG_KEY, load_decision_config, save_decision_config};
 pub use disk::{DiskSpace, NoDiskCheck};
@@ -17,3 +18,7 @@ pub use evaluate::{
 pub use formats::{input_for_file, input_for_history, input_for_release, matching_ids};
 pub use grab::{GrabContext, GrabbedRelease, ProcessedDecisions, process_decisions};
 pub use snapshot::{DecisionSnapshot, QueueMap};
+pub use sync::{
+    IndexerFailure, IndexerPool, RssSyncResult, SearchMode, SearchResult, SyncContext, rss_sync,
+    search_movie,
+};

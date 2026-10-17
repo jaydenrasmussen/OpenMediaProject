@@ -216,6 +216,41 @@ impl Providers<'_> {
         Ok(status)
     }
 
+    /// The newest release the last RSS sync saw: (publish date, download URL).
+    pub async fn last_rss_sync(&self, provider_id: i64) -> Result<Option<(DateTime<Utc>, String)>> {
+        let row = sqlx::query(
+            "SELECT last_rss_publish_date, last_rss_download_url FROM provider_status WHERE provider_id = ?",
+        )
+        .bind(provider_id)
+        .fetch_optional(self.0)
+        .await?;
+        let Some(r) = row else { return Ok(None) };
+        let date: Option<DateTime<Utc>> = r.try_get("last_rss_publish_date")?;
+        let url: Option<String> = r.try_get("last_rss_download_url")?;
+        Ok(date.zip(url))
+    }
+
+    pub async fn set_last_rss_sync(
+        &self,
+        provider_id: i64,
+        publish_date: DateTime<Utc>,
+        download_url: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO provider_status (provider_id, last_rss_publish_date, last_rss_download_url)
+             VALUES (?, ?, ?)
+             ON CONFLICT(provider_id) DO UPDATE SET
+               last_rss_publish_date = excluded.last_rss_publish_date,
+               last_rss_download_url = excluded.last_rss_download_url",
+        )
+        .bind(provider_id)
+        .bind(publish_date)
+        .bind(download_url)
+        .execute(self.0)
+        .await?;
+        Ok(())
+    }
+
     /// Providers of a kind that are blocked at `now`, with when they recover.
     pub async fn blocked(
         &self,
