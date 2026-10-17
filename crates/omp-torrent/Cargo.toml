@@ -1,0 +1,19 @@
+[package]
+name = "omp-torrent"
+description = "Built-in BitTorrent client for OpenMediaProject"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+librqbit = "9.0.1"
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true
