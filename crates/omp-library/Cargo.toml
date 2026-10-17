@@ -1,0 +1,20 @@
+[package]
+name = "omp-library"
+description = "Library lookups: matching releases to movies"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omp-core = { path = "../omp-core" }
+omp-db = { path = "../omp-db" }
+omp-parser = { path = "../omp-parser" }
+thiserror = "2"
+
+[dev-dependencies]
+tokio.workspace = true
+omp-quality = { path = "../omp-quality" }
+
+[lints]
+workspace = true

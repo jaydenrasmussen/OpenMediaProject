@@ -85,6 +85,8 @@ pub struct MovieMetadata {
     pub original_language: String,
     pub overview: Option<String>,
     pub year: i32,
+    /// A second year a release may carry (a re-release, say). Not from TMDB.
+    pub secondary_year: Option<i32>,
     /// Minutes; 0 when unknown.
     pub runtime: u32,
     pub status: MovieStatus,

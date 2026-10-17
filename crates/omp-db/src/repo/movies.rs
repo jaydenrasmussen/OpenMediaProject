@@ -67,6 +67,7 @@ fn metadata_from_row(r: &SqliteRow) -> Result<MovieMetadata> {
         original_language: r.try_get("original_language")?,
         overview: r.try_get("overview")?,
         year: r.try_get("year")?,
+        secondary_year: r.try_get("secondary_year")?,
         runtime: r.try_get::<i64, _>("runtime")? as u32,
         status: status(r.try_get("status")?),
         certification: r.try_get("certification")?,
@@ -121,15 +122,15 @@ impl Movies<'_> {
         sqlx::query(
             "INSERT INTO movie_metadata
              (tmdb_id, imdb_id, title, clean_title, sort_title, original_title, original_language,
-              overview, year, runtime, status, certification, genres, in_cinemas, physical_release,
+              overview, year, secondary_year, runtime, status, certification, genres, in_cinemas, physical_release,
               digital_release, collection_tmdb_id, collection_title, website, studio, rating_votes,
               rating_value, images, alternative_titles, credits, popularity, last_info_sync)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(tmdb_id) DO UPDATE SET
                imdb_id = excluded.imdb_id, title = excluded.title, clean_title = excluded.clean_title,
                sort_title = excluded.sort_title, original_title = excluded.original_title,
                original_language = excluded.original_language, overview = excluded.overview,
-               year = excluded.year, runtime = excluded.runtime, status = excluded.status,
+               year = excluded.year, secondary_year = excluded.secondary_year, runtime = excluded.runtime, status = excluded.status,
                certification = excluded.certification, genres = excluded.genres,
                in_cinemas = excluded.in_cinemas, physical_release = excluded.physical_release,
                digital_release = excluded.digital_release,
@@ -149,6 +150,7 @@ impl Movies<'_> {
         .bind(&m.original_language)
         .bind(&m.overview)
         .bind(m.year)
+        .bind(m.secondary_year)
         .bind(i64::from(m.runtime))
         .bind(m.status as i32)
         .bind(&m.certification)
@@ -169,12 +171,76 @@ impl Movies<'_> {
         .bind(Utc::now())
         .execute(self.0)
         .await?;
-        Ok(
-            sqlx::query_scalar("SELECT id FROM movie_metadata WHERE tmdb_id = ?")
-                .bind(m.tmdb_id)
-                .fetch_one(self.0)
-                .await?,
-        )
+        let id: i64 = sqlx::query_scalar("SELECT id FROM movie_metadata WHERE tmdb_id = ?")
+            .bind(m.tmdb_id)
+            .fetch_one(self.0)
+            .await?;
+        self.replace_titles(id, m).await?;
+        Ok(id)
+    }
+
+    /// Rebuilds the searchable titles of one movie.
+    async fn replace_titles(&self, metadata_id: i64, m: &MovieMetadata) -> Result<()> {
+        sqlx::query("DELETE FROM movie_titles WHERE movie_metadata_id = ?")
+            .bind(metadata_id)
+            .execute(self.0)
+            .await?;
+        let mut titles: Vec<(String, &str)> = vec![(clean_movie_title(&m.title), "title")];
+        if !m.original_title.trim().is_empty() {
+            titles.push((clean_movie_title(&m.original_title), "original"));
+        }
+        titles.extend(
+            m.alternative_titles
+                .iter()
+                .map(|t| (clean_movie_title(&t.title), "alternative")),
+        );
+        for (clean, kind) in titles.into_iter().filter(|(c, _)| !c.is_empty()) {
+            sqlx::query(
+                "INSERT OR IGNORE INTO movie_titles (movie_metadata_id, clean_title, kind) VALUES (?, ?, ?)",
+            )
+            .bind(metadata_id)
+            .bind(clean)
+            .bind(kind)
+            .execute(self.0)
+            .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn find_by_imdb_id(&self, imdb_id: &str) -> Result<Option<MovieRecord>> {
+        sqlx::query(&format!("{SELECT_MOVIE} WHERE md.imdb_id = ?"))
+            .bind(imdb_id)
+            .fetch_optional(self.0)
+            .await?
+            .as_ref()
+            .map(movie_from_row)
+            .transpose()
+    }
+
+    /// Library movies that have any of these cleaned titles (main, original or
+    /// alternative). The first step of matching a release to the library.
+    pub async fn find_by_any_clean_title(&self, titles: &[String]) -> Result<Vec<MovieRecord>> {
+        if titles.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut distinct: Vec<&String> = titles.iter().collect();
+        distinct.sort();
+        distinct.dedup();
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(format!(
+            "{SELECT_MOVIE} WHERE md.id IN (SELECT movie_metadata_id FROM movie_titles WHERE clean_title IN ("
+        ));
+        let mut separated = query.separated(", ");
+        for t in distinct {
+            separated.push_bind(t.as_str());
+        }
+        separated.push_unseparated(")) ORDER BY m.id");
+        query
+            .build()
+            .fetch_all(self.0)
+            .await?
+            .iter()
+            .map(movie_from_row)
+            .collect()
     }
 
     /// Adds a movie. A TMDB id can be in the library once: adding it again is

@@ -2812,6 +2812,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "omp-library"
+version = "0.1.0"
+dependencies = [
+ "omp-core",
+ "omp-db",
+ "omp-parser",
+ "omp-quality",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "omp-metadata"
 version = "0.1.0"
 dependencies = [

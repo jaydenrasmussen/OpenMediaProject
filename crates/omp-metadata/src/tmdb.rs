@@ -428,6 +428,8 @@ fn map_movie(raw: RawMovie, certification_region: &str, now: DateTime<Utc>) -> M
         original_language: raw.original_language,
         overview: nonempty(raw.overview),
         year,
+        // TMDB has one release year; a secondary one comes from other providers.
+        secondary_year: None,
         runtime: raw.runtime.unwrap_or(0),
         status: derive_status(&raw.status, in_cinemas, physical, digital, now),
         certification,

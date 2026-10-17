@@ -90,6 +90,7 @@ CREATE TABLE movie_metadata (
     original_language  TEXT NOT NULL DEFAULT '',
     overview           TEXT,
     year               INTEGER NOT NULL DEFAULT 0,
+    secondary_year     INTEGER,
     runtime            INTEGER NOT NULL DEFAULT 0,
     status             INTEGER NOT NULL DEFAULT 0,
     certification      TEXT,
@@ -110,6 +111,17 @@ CREATE TABLE movie_metadata (
     last_info_sync     TEXT
 );
 CREATE INDEX movie_metadata_clean_title ON movie_metadata(clean_title);
+CREATE INDEX movie_metadata_imdb ON movie_metadata(imdb_id);
+
+-- Every cleaned title a movie can be found by, for matching releases to the
+-- library without loading every movie.
+CREATE TABLE movie_titles (
+    movie_metadata_id INTEGER NOT NULL REFERENCES movie_metadata(id) ON DELETE CASCADE,
+    clean_title       TEXT NOT NULL,
+    kind              TEXT NOT NULL CHECK (kind IN ('title','original','alternative')),
+    PRIMARY KEY (movie_metadata_id, clean_title, kind)
+);
+CREATE INDEX movie_titles_clean ON movie_titles(clean_title);
 
 CREATE TABLE movies (
     id                   INTEGER PRIMARY KEY,
