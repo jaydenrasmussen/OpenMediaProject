@@ -200,6 +200,11 @@ impl Re {
         Self::build(pattern, true).unwrap_or_else(|e| panic!("{e}"))
     }
 
+    /// Case-sensitive, for patterns that come from users.
+    pub fn try_new(pattern: &str) -> Result<Self, String> {
+        Self::build(pattern, false)
+    }
+
     /// Case-insensitive, for patterns that come from users (custom formats).
     pub fn try_ci(pattern: &str) -> Result<Self, String> {
         Self::build(pattern, true)

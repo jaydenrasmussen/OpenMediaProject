@@ -2569,6 +2569,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "omp-decision"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "omp-core",
+ "omp-parser",
+ "omp-quality",
+]
+
+[[package]]
 name = "omp-metadata"
 version = "0.1.0"
 dependencies = [

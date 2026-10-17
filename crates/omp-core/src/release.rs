@@ -1,5 +1,7 @@
 //! Release-level types shared by indexers, decisions and downloads.
 
+use chrono::{DateTime, Utc};
+
 /// Which kind of downloader a release is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum DownloadProtocol {
@@ -54,9 +56,88 @@ impl std::ops::BitOr for IndexerFlags {
     }
 }
 
+/// Torrent-only details of a release.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TorrentRelease {
+    pub magnet_url: Option<String>,
+    pub info_hash: Option<String>,
+    pub seeders: Option<i32>,
+    pub peers: Option<i32>,
+}
+
+/// A release offered by an indexer (Radarr `ReleaseInfo`/`TorrentInfo`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReleaseInfo {
+    pub guid: String,
+    pub title: String,
+    /// Bytes; 0 when the indexer does not say.
+    pub size: u64,
+    pub download_url: String,
+    pub indexer_id: i32,
+    pub indexer: String,
+    /// 1 (best) to 50. Lower number wins.
+    pub indexer_priority: i32,
+    pub protocol: DownloadProtocol,
+    pub publish_date: DateTime<Utc>,
+    pub container: Option<String>,
+    pub indexer_flags: IndexerFlags,
+    pub imdb_id: Option<String>,
+    pub tmdb_id: i32,
+    pub torrent: Option<TorrentRelease>,
+}
+
+impl ReleaseInfo {
+    pub fn age_minutes(&self, now: DateTime<Utc>) -> f64 {
+        (now - self.publish_date).num_milliseconds() as f64 / 60_000.0
+    }
+
+    pub fn age_hours(&self, now: DateTime<Utc>) -> f64 {
+        (now - self.publish_date).num_milliseconds() as f64 / 3_600_000.0
+    }
+
+    /// Whole days, truncated (.NET `TimeSpan.Days`).
+    pub fn age_days(&self, now: DateTime<Utc>) -> i64 {
+        (now - self.publish_date).num_days()
+    }
+
+    pub fn seeders(&self) -> Option<i32> {
+        self.torrent.as_ref().and_then(|t| t.seeders)
+    }
+
+    pub fn peers(&self) -> Option<i32> {
+        self.torrent.as_ref().and_then(|t| t.peers)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ages() {
+        use chrono::{Duration, TimeZone};
+        let now = Utc.with_ymd_and_hms(2026, 1, 10, 12, 0, 0).unwrap();
+        let r = ReleaseInfo {
+            guid: String::new(),
+            title: String::new(),
+            size: 0,
+            download_url: String::new(),
+            indexer_id: 1,
+            indexer: String::new(),
+            indexer_priority: 25,
+            protocol: DownloadProtocol::Usenet,
+            publish_date: now - Duration::hours(30),
+            container: None,
+            indexer_flags: IndexerFlags::NONE,
+            imdb_id: None,
+            tmdb_id: 0,
+            torrent: None,
+        };
+        assert_eq!(r.age_hours(now), 30.0);
+        assert_eq!(r.age_minutes(now), 1800.0);
+        assert_eq!(r.age_days(now), 1, "truncated, like TimeSpan.Days");
+        assert_eq!(r.seeders(), None);
+    }
 
     #[test]
     fn has_flag_semantics() {

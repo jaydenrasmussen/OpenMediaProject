@@ -145,27 +145,30 @@ Radarr differs by: `UnknownMovie, Availability, MovieNotMonitored, WrongMovie, H
 
 Import-side `ImportRejectionReason` — Sonarr: `Unknown, FileLocked, UnknownSeries, DangerousFile, ExecutableFile, UserRejectedExtension, ArchiveFile, SeriesFolder, InvalidFilePath, UnsupportedExtension, PartialSeason, SeasonExtra, InvalidSeasonOrEpisode, UnableToParse, Error, DecisionError, NoEpisodes, MissingAbsoluteEpisodeNumber, EpisodeAlreadyImported, TitleMissing, TitleTba, MinimumFreeSpace, FullSeason, NoAudio, EpisodeUnexpected, EpisodeNotFoundInRelease, Sample, SampleIndeterminate, Unpacking, ExistingFileHasMoreEpisodes, SplitEpisode, UnverifiedSceneMapping, NotQualityUpgrade, NotRevisionUpgrade, NotCustomFormatUpgrade, NotCustomFormatUpgradeAfterRename, MultiSeason`. Radarr: `Unknown, FileLocked, UnknownMovie, DangerousFile, ExecutableFile, ArchiveFile, MovieFolder, InvalidFilePath, UnsupportedExtension, InvalidMovie, UnableToParse, Error, DecisionError, MovieAlreadyImported, MinimumFreeSpace, NoAudio, MovieNotFoundInRelease, Sample, SampleIndeterminate, Unpacking, MultiPartMovie, NotQualityUpgrade, NotRevisionUpgrade, NotCustomFormatUpgrade`.
 
-### 5.3 Ranking order (first difference wins) — verified in `DownloadDecisionComparer.cs`
-1. **Quality**: index in the profile (or group index when grouped), then revision.
-2. **Custom-format score** (higher wins).
-3. **Protocol**: the release whose protocol equals the delay profile's `PreferredProtocol` wins (boolean).
-4. **Episode count** (Sonarr): a full-season pack outranks non-packs; for anime, more episodes wins; otherwise fewer episodes wins.
-5. **Episode number** (Sonarr): lowest minimum episode number wins.
-6. **Indexer priority**: lower priority number wins.
-7. **Torrent only**: `round(log10(seeders))`, then `round(log10(peers))`. (Log buckets, so 90 vs 110 seeders tie.)
-8. **Usenet only**, age bucket: < 1 h → 1000; ≤ 24 h → 100; ≤ 7 d → 10; older → `-round(log10(days))`. Higher wins.
-9. **Size**: if the quality has a `preferredSize` and the runtime is known, the release closest to `runtime × preferredSize` wins (distance rounded to 200 MB); otherwise larger wins (size rounded to 200 MB).
+### 5.3 Ranking order (first difference wins) — verified
+**Radarr** (`DownloadDecisionComparer`, ported to `omp-decision/src/compare.rs`):
+1. **Quality**: index in the profile; then revision, unless propers are set to `DoNotPrefer`.
+2. **Custom-format score** (higher).
+3. **Protocol**: the release matching the delay profile's `PreferredProtocol` wins.
+4. **Indexer priority**: lower number wins.
+5. **Indexer flags**, only when the `PreferIndexerFlags` setting is on: +2 each for DoubleUpload, Freeleech, PTP Approved, PTP Golden, Internal; +1 for Halfleech.
+6. **Torrent only**: `round(log10(seeders))`, then `round(log10(peers))` (round half to even, so 90 and 110 seeders tie).
+7. **Usenet only**, age bucket: < 1 h → 1000; ≤ 24 h → 100; ≤ 7 days → 10; older → `-round(log10(days))`.
+8. **Size**: with a `preferredSize` and a known runtime, the release closest to `runtime × preferredSize` wins (distance truncated to a multiple of 200 MB); otherwise bigger wins (size truncated to 200 MB).
+
+**Sonarr** adds, after protocol: episode count (full-season pack first; for anime more episodes wins, otherwise fewer), then lowest episode number, before indexer priority; and it has no indexer-flags step.
 
 ### 5.4 Delay logic (`DelaySpecification`, priority Database, **Temporary**) — verified
-1. Accept if the search was user-invoked (interactive search ignores delay).
-2. Pick the delay profile via `BestForTags(series/movie tags)`; `delay = profile.GetProtocolDelay(release.protocol)`.
+Radarr's version (ported to `omp-decision/src/specs/upgrade.rs`):
+1. Accept if the search was user-invoked.
+2. Pick the delay profile for the movie's tags; `delay` = that profile's delay for the release's protocol; `preferred` = release protocol equals the profile's preferred protocol.
 3. Accept if `delay == 0`.
-4. Accept if the release is on the preferred protocol, `DownloadPropersAndRepacks == PreferAndUpgrade`, and it is a same-quality, higher-revision upgrade of an existing file.
-5. Accept if `BypassIfHighestQuality` and the release quality is ≥ the best allowed quality in the profile **and** it is on the preferred protocol.
-6. Accept if `BypassIfAboveCustomFormatScore`, score ≥ `MinimumCustomFormatScore`, and it is on the preferred protocol.
-7. Accept if the oldest pending release for the same target is already older than `delay` (the wait is over).
-8. Reject (`MinimumAgeDelay`, "Waiting for better quality release") if `release.ageMinutes < delay`; otherwise accept.
-Rejected releases are stored as pending releases (`PendingReleaseReason.Delay`) and re-evaluated on each sync.
+4. If `preferred` and the movie has a file: accept when `IsUpgradable(file, release)` is `None` **and** the release is a revision upgrade of the file (a proper that really upgrades never waits).
+5. Accept if `BypassIfHighestQuality`, `preferred`, and the release quality ranks ≥ the last allowed quality in the profile.
+6. Accept if `BypassIfAboveCustomFormatScore`, `preferred`, and score ≥ `MinimumCustomFormatScore`.
+7. Accept if the oldest pending release for the movie is already older than `delay` minutes.
+8. Reject (`MinimumAgeDelay`, "Waiting for better quality release") if the release is younger than `delay`; otherwise accept.
+Sonarr's differs in step 4: it accepts a same-quality higher-revision release when propers are set to `PreferAndUpgrade`, without calling `IsUpgradable`.
 
 ### 5.5 Upgrade rules (`UpgradableSpecification`) — verified, ported to `omp-quality/src/upgrade.rs`
 `IsUpgradable(profile, current, new)` returns a reason; `None` means "upgrade". Checks in order:

@@ -1,0 +1,16 @@
+[package]
+name = "omp-decision"
+description = "Release decision engine: which releases to grab, and in what order"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omp-core = { path = "../omp-core" }
+omp-parser = { path = "../omp-parser" }
+omp-quality = { path = "../omp-quality" }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+
+[lints]
+workspace = true

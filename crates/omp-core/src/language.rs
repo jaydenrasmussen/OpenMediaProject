@@ -337,6 +337,67 @@ impl Language {
         Self::ALL.iter().copied().find(|l| l.id == id)
     }
 
+    /// Language for an ISO 639-1 code as TMDB reports it ("en", "zh", "cn").
+    pub fn from_iso639_1(code: &str) -> Option<Language> {
+        Some(match code.to_ascii_lowercase().as_str() {
+            "en" => Self::ENGLISH,
+            "fr" => Self::FRENCH,
+            "es" => Self::SPANISH,
+            "de" => Self::GERMAN,
+            "it" => Self::ITALIAN,
+            "da" => Self::DANISH,
+            "nl" => Self::DUTCH,
+            "ja" => Self::JAPANESE,
+            "is" => Self::ICELANDIC,
+            "zh" | "cn" => Self::CHINESE,
+            "ru" => Self::RUSSIAN,
+            "pl" => Self::POLISH,
+            "vi" => Self::VIETNAMESE,
+            "sv" => Self::SWEDISH,
+            "no" | "nb" | "nn" => Self::NORWEGIAN,
+            "fi" => Self::FINNISH,
+            "tr" => Self::TURKISH,
+            "pt" => Self::PORTUGUESE,
+            "el" => Self::GREEK,
+            "ko" => Self::KOREAN,
+            "hu" => Self::HUNGARIAN,
+            "he" => Self::HEBREW,
+            "lt" => Self::LITHUANIAN,
+            "cs" => Self::CZECH,
+            "hi" => Self::HINDI,
+            "ro" => Self::ROMANIAN,
+            "th" => Self::THAI,
+            "bg" => Self::BULGARIAN,
+            "ar" => Self::ARABIC,
+            "uk" => Self::UKRAINIAN,
+            "fa" => Self::PERSIAN,
+            "bn" => Self::BENGALI,
+            "sk" => Self::SLOVAK,
+            "lv" => Self::LATVIAN,
+            "ca" => Self::CATALAN,
+            "hr" => Self::CROATIAN,
+            "sr" => Self::SERBIAN,
+            "bs" => Self::BOSNIAN,
+            "et" => Self::ESTONIAN,
+            "ta" => Self::TAMIL,
+            "id" => Self::INDONESIAN,
+            "te" => Self::TELUGU,
+            "mk" => Self::MACEDONIAN,
+            "sl" => Self::SLOVENIAN,
+            "ml" => Self::MALAYALAM,
+            "kn" => Self::KANNADA,
+            "sq" => Self::ALBANIAN,
+            "af" => Self::AFRIKAANS,
+            "mr" => Self::MARATHI,
+            "tl" => Self::TAGALOG,
+            "ur" => Self::URDU,
+            "rm" => Self::ROMANSH,
+            "mn" => Self::MONGOLIAN,
+            "ka" => Self::GEORGIAN,
+            _ => return None,
+        })
+    }
+
     /// Case-insensitive lookup by display name ("Spanish (Latino)").
     pub fn from_name(name: &str) -> Option<Language> {
         Self::ALL
@@ -362,5 +423,7 @@ mod tests {
             Some(Language::PORTUGUESE_BR)
         );
         assert_eq!(Language::from_name("Klingon"), None);
+        assert_eq!(Language::from_iso639_1("EN"), Some(Language::ENGLISH));
+        assert_eq!(Language::from_iso639_1("xx"), None);
     }
 }
