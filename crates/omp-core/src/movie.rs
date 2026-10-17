@@ -108,10 +108,10 @@ impl MovieMetadata {
         if matches!(minimum, MovieStatus::Tba | MovieStatus::Announced) {
             return Availability::Always;
         }
-        if minimum == MovieStatus::InCinemas {
-            if let Some(d) = self.in_cinemas {
-                return Availability::From(d);
-            }
+        if minimum == MovieStatus::InCinemas
+            && let Some(d) = self.in_cinemas
+        {
+            return Availability::From(d);
         }
         match (self.physical_release, self.digital_release) {
             (Some(p), Some(d)) => Availability::From(p.min(d)),
