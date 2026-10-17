@@ -297,20 +297,16 @@ fn parse_match(m: &Caps<'_>) -> Option<ParsedMovieInfo> {
         let is_number = |s: &str| s.trim().parse::<i32>().is_ok();
         let lower = part.to_lowercase();
 
-        if part.chars().count() == 1
+        // Single letters ("U.N.C.L.E."), a lone "a" next to one, and "Dr." keep their dot.
+        let single_letter = part.chars().count() == 1
             && lower != "a"
             && !is_number(part)
             && (previous_acronym || n < parts.len() - 1)
-            && (previous_acronym || next_part.chars().count() != 1 || !is_number(next_part))
-        {
-            movie_name.push_str(part);
-            movie_name.push('.');
-            previous_acronym = true;
-        } else if lower == "a" && (previous_acronym || next_part.chars().count() == 1) {
-            movie_name.push_str(part);
-            movie_name.push('.');
-            previous_acronym = true;
-        } else if lower == "dr" {
+            && (previous_acronym || next_part.chars().count() != 1 || !is_number(next_part));
+        let article_in_acronym =
+            lower == "a" && (previous_acronym || next_part.chars().count() == 1);
+
+        if single_letter || article_in_acronym || lower == "dr" {
             movie_name.push_str(part);
             movie_name.push('.');
             previous_acronym = true;
