@@ -202,7 +202,13 @@ Helpers:
 - **Wanted/Missing** **(unverified details)** = monitored, aired (or available), no file. **Cutoff Unmet** = has file below cutoff (quality or format score). Both are searchable in bulk; `LastSearchTime` is stored per item to throttle.
 - **Newznab/Torznab**: Sonarr default categories `5030, 5040` (TV SD/HD) plus anime categories; Radarr uses the `2000` movie category family **(unverified)**. Indexer settings: URL, API path (`/api`), API key, categories, anime categories, additional params, multi-language, minimum seeders, seed ratio, seed time, season-pack seed time, RSS/automatic search/interactive search toggles, priority (1–50, default 25), download-client override, tags.
 - **Indexer request flow**: `IIndexerRequestGenerator` builds a *pageable request chain* (tiers; later tiers only run if earlier return nothing) → HTTP → `IParseIndexerResponse` → `ReleaseInfo[]`. Plugin interface should mirror this: `generate_requests(criteria) → request chains` and `parse(response) → releases` so the host does HTTP, rate-limiting, and back-off.
-- **Provider status/back-off** (`EscalationBackOff.Periods`, seconds, by consecutive-failure level): 0, 60, 300, 900, 1800, 3600, 10 800, 21 600, 43 200, 86 400. Failures raise the level and set `disabledTill = now + period`; success resets the level. The same table applies to indexers, download clients, import lists and notifications.
+- **Provider status/back-off** (`EscalationBackOff.Periods`, seconds, by consecutive-failure level): 0, 60, 300, 900, 1800, 3600, 10 800, 21 600, 43 200, 86 400. Verified in `ProviderStatusServiceBase` and ported to `omp-core/src/backoff.rs`:
+  - First failure (level 0): level becomes 1, `initialFailure = now`, no escalation.
+  - Later failures escalate by one level (max 9) and set `disabledTill = now + period(level)`. A plain connection failure (`escalate = false`) holds the level.
+  - A server-supplied minimum back-off (Retry-After) raises the level until the period is at least that long.
+  - **Startup grace:** for the first 15 minutes after the process starts, failures do not escalate and the window is capped at the 5-minute period (unless a minimum back-off was given).
+  - **A success steps the level down by one** (it does not reset it) and clears `disabledTill`.
+  - A provider is disabled while `disabledTill > now`. The same table applies to indexers, download clients, import lists and notifications.
 
 ---
 

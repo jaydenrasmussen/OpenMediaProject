@@ -117,15 +117,7 @@ pub struct TorrentIndexerSettings {
     pub required_flags: Vec<IndexerFlags>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HistoryEvent {
-    Grabbed,
-    DownloadFolderImported,
-    DownloadFailed,
-    MovieFileDeleted,
-    MovieFileRenamed,
-    DownloadIgnored,
-}
+pub use omp_core::history::HistoryEvent;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {

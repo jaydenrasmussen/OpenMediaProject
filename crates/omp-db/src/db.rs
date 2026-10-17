@@ -8,8 +8,9 @@ use sqlx::{
 use crate::{
     Result,
     repo::{
-        Config, CustomFormats, DelayProfiles, QualityDefinitionsRepo, QualityProfiles,
-        ReleaseProfiles, RootFolders, Tags,
+        Blocklist, Config, CustomFormats, DelayProfiles, History, MovieFiles, Movies,
+        PendingReleases, Providers, QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles,
+        RootFolders, Tags,
     },
 };
 
@@ -120,5 +121,29 @@ impl Db {
 
     pub fn release_profiles(&self) -> ReleaseProfiles<'_> {
         ReleaseProfiles(&self.main)
+    }
+
+    pub fn movies(&self) -> Movies<'_> {
+        Movies(&self.main)
+    }
+
+    pub fn movie_files(&self) -> MovieFiles<'_> {
+        MovieFiles(&self.main)
+    }
+
+    pub fn history(&self) -> History<'_> {
+        History(&self.main)
+    }
+
+    pub fn blocklist(&self) -> Blocklist<'_> {
+        Blocklist(&self.main)
+    }
+
+    pub fn pending_releases(&self) -> PendingReleases<'_> {
+        PendingReleases(&self.main)
+    }
+
+    pub fn providers(&self) -> Providers<'_> {
+        Providers(&self.main)
     }
 }

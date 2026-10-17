@@ -2766,6 +2766,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "omp-core",
+ "omp-parser",
  "omp-quality",
  "serde",
  "serde_json",

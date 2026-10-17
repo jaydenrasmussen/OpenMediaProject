@@ -1,11 +1,19 @@
 //! One small struct per table group, borrowed from [`crate::Db`].
 
+mod activity;
 mod config;
+mod movies;
 mod profiles;
+mod providers;
 mod simple;
 
+pub use activity::{
+    Blocklist, History, HistoryRecord, PendingReason, PendingRelease, PendingReleases,
+};
 pub use config::Config;
+pub use movies::{MovieFileRecord, MovieFiles, MovieRecord, MovieUpdate, Movies, NewMovie};
 pub use profiles::{
     CustomFormats, DelayProfiles, QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles,
 };
-pub use simple::{RootFolders, Tags};
+pub use providers::{Provider, ProviderKind, Providers};
+pub use simple::{RootFolder, RootFolders, Tag, Tags};
