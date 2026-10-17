@@ -2,110 +2,47 @@ name: PR
 
 on:
   pull_request:
+  push:
+    branches: [main]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  ci:
+  rust:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          # Check out the actual PR branch so we can push fmt changes back.
-          # For fork PRs this ref is still read-only; the commit step is gated below.
-          ref: ${{ github.head_ref }}
+          components: rustfmt, clippy
+          targets: wasm32-wasip2
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: backend/go.mod
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
 
+  ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend deps
-        working-directory: frontend
-        run: npm install --legacy-peer-deps
-
-      # ── fmt ────────────────────────────────────────────────────────────────
-
-      - name: fmt frontend
-        working-directory: frontend
-        run: npm run fmt
-
-      - name: fmt backend
-        working-directory: backend
-        run: gofmt -w .
-
-      - name: Commit fmt changes
-        # Only possible for PRs from branches on this repo (not forks).
-        if: github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: apply fmt"
-            git push
-          fi
-
-      # ── lint ───────────────────────────────────────────────────────────────
-
-      - name: lint frontend
-        working-directory: frontend
-        run: npm run check
-
-      - name: lint backend
-        working-directory: backend
-        run: go vet ./...
-
-      # ── test + coverage ────────────────────────────────────────────────────
-
-      - name: test frontend
-        working-directory: frontend
-        run: npm run test:coverage 2>&1 | tee "$GITHUB_WORKSPACE/fe-coverage.txt"
-
-      - name: test backend
-        working-directory: backend
-        run: |
-          go test -coverprofile="$GITHUB_WORKSPACE/be-coverage.out" ./...
-          go tool cover -func="$GITHUB_WORKSPACE/be-coverage.out" > "$GITHUB_WORKSPACE/be-coverage.txt"
-
-      # ── coverage comment ───────────────────────────────────────────────────
-
-      - name: Build coverage comment
-        id: coverage
-        run: |
-          # Frontend: vitest text reporter prints "All files | % Stmts | % Branch | % Funcs | % Lines |"
-          FE=$(grep -E "^All files" fe-coverage.txt \
-            | awk -F'|' '{
-                gsub(/[[:space:]]/, "", $2); gsub(/[[:space:]]/, "", $3);
-                gsub(/[[:space:]]/, "", $4); gsub(/[[:space:]]/, "", $5);
-                printf "Stmts: %s%% | Branch: %s%% | Funcs: %s%% | Lines: %s%%", $2, $3, $4, $5
-              }' | head -1)
-          [ -z "$FE" ] && FE="n/a"
-
-          # Backend: "total: (statements) 75.2%"
-          BE=$(grep "^total:" be-coverage.txt | awk '{print $3}')
-          [ -z "$BE" ] && BE="n/a"
-
-          {
-            echo 'body<<REPORT_EOF'
-            echo '## Coverage'
-            echo ''
-            echo '| | Result |'
-            echo '|---|---|'
-            echo "| **Frontend** | $FE |"
-            echo "| **Backend** | $BE |"
-            echo 'REPORT_EOF'
-          } >> "$GITHUB_OUTPUT"
-
-      - uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: coverage
-          message: ${{ steps.coverage.outputs.body }}
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
