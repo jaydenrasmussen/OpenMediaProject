@@ -368,6 +368,8 @@ async fn add_movie(
             tags: req.tags,
         })
         .await?;
+    // The folder may already hold the movie.
+    let _ = tasks::rescan_movie_once(&app, id).await;
     let record = app.db.movies().get(id).await?;
     if req.search_now && req.monitored {
         let app = app.clone();
@@ -518,21 +520,31 @@ async fn command(
                         .map_err(|e| e.to_string()),
                     None => Err("MoviesSearch needs a movie_id".into()),
                 },
+                "RescanMovie" => match movie_id {
+                    Some(id) => tasks::rescan_movie_once(&app, id)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("RescanMovie needs a movie_id".into()),
+                },
                 other => Err(format!("unknown command '{other}'")),
             }
         }
     };
     if !matches!(
         cmd.name.as_str(),
-        "RssSync" | "ProcessDownloads" | "MoviesSearch"
+        "RssSync" | "ProcessDownloads" | "MoviesSearch" | "RescanMovie"
     ) {
         return Err(ApiError::bad_request(format!(
             "unknown command '{}'",
             cmd.name
         )));
     }
-    if cmd.name == "MoviesSearch" && cmd.movie_id.is_none() {
-        return Err(ApiError::bad_request("MoviesSearch needs a movie_id"));
+    if matches!(cmd.name.as_str(), "MoviesSearch" | "RescanMovie") && cmd.movie_id.is_none() {
+        return Err(ApiError::bad_request(format!(
+            "{} needs a movie_id",
+            cmd.name
+        )));
     }
     if cmd.wait {
         return match job.await {
@@ -745,6 +757,145 @@ async fn grab_release(State(app): Shared, Json(req): Json<GrabRelease>) -> ApiRe
         "client": grabbed.client_name,
         "title": evaluation.items[index].release.title,
     })))
+}
+
+// ---- importing an existing library ---------------------------------------------------------
+
+async fn unmapped(State(app): Shared, Path(id): Path<i64>) -> ApiResult {
+    let root = app
+        .db
+        .root_folders()
+        .list()
+        .await?
+        .into_iter()
+        .find(|r| r.id == id)
+        .ok_or_else(|| ApiError::not_found("no such root folder"))?;
+    let folders = omp_services::unmapped_folders(&app.db, std::path::Path::new(&root.path)).await?;
+    Ok(Json(Value::Array(
+        folders
+            .iter()
+            .map(|f| {
+                json!({
+                    "name": f.name,
+                    "path": f.path,
+                    "title": f.title,
+                    "year": f.year,
+                    "has_media": f.has_media,
+                })
+            })
+            .collect(),
+    )))
+}
+
+#[derive(Deserialize)]
+struct ImportItem {
+    /// An existing folder inside a root folder.
+    path: String,
+    tmdb_id: i64,
+}
+
+#[derive(Deserialize)]
+struct ImportBatch {
+    items: Vec<ImportItem>,
+    quality_profile_id: i32,
+    #[serde(default = "yes")]
+    monitored: bool,
+    minimum_availability: Option<String>,
+}
+
+/// Adds movies whose folders already exist, keeping the folders where they
+/// are, and picks up the files inside them. Each item succeeds or fails on
+/// its own.
+async fn import_movies(State(app): Shared, Json(req): Json<ImportBatch>) -> ApiResult {
+    let Some(provider) = app.metadata.clone() else {
+        return Err(ApiError::unavailable(
+            "no metadata provider is configured (set TMDB_READ_TOKEN)",
+        ));
+    };
+    if req.items.len() > 500 {
+        return Err(ApiError::bad_request("import at most 500 movies at a time"));
+    }
+    let minimum = match req.minimum_availability.as_deref() {
+        None => MovieStatus::Announced,
+        Some(s) => parse_status(s)
+            .ok_or_else(|| ApiError::bad_request(format!("unknown minimum_availability '{s}'")))?,
+    };
+    app.db
+        .quality_profiles()
+        .get(req.quality_profile_id)
+        .await
+        .map_err(|_| ApiError::bad_request("unknown quality_profile_id"))?;
+    let roots = app.db.root_folders().list().await?;
+
+    let mut results = Vec::new();
+    for item in &req.items {
+        let outcome: Result<i64, String> = async {
+            let path = std::path::Path::new(&item.path);
+            // Only folders directly inside a root folder can be adopted.
+            let root = roots
+                .iter()
+                .find(|r| path.parent() == Some(std::path::Path::new(&r.path)))
+                .ok_or("the folder is not directly inside a root folder")?;
+            if !path.is_dir() {
+                return Err("the folder does not exist".to_owned());
+            }
+            if app
+                .db
+                .movies()
+                .find_by_tmdb_id(item.tmdb_id)
+                .await
+                .map_err(|e| e.to_string())?
+                .is_some()
+            {
+                return Err("this movie is already in the library".into());
+            }
+            if app
+                .db
+                .movies()
+                .list()
+                .await
+                .map_err(|e| e.to_string())?
+                .iter()
+                .any(|m| m.movie.path == item.path)
+            {
+                return Err("another movie already uses this folder".into());
+            }
+            let meta = provider
+                .movie(item.tmdb_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            let metadata_id = app
+                .db
+                .movies()
+                .upsert_metadata(&meta)
+                .await
+                .map_err(|e| e.to_string())?;
+            let id = app
+                .db
+                .movies()
+                .add(&NewMovie {
+                    metadata_id,
+                    monitored: req.monitored,
+                    minimum_availability: minimum,
+                    quality_profile_id: req.quality_profile_id,
+                    path: item.path.clone(),
+                    root_folder_path: Some(root.path.clone()),
+                    tags: Vec::new(),
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+            tasks::rescan_movie_once(&app, id)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(id)
+        }
+        .await;
+        results.push(match outcome {
+            Ok(id) => json!({ "path": item.path, "ok": true, "movie_id": id }),
+            Err(error) => json!({ "path": item.path, "ok": false, "error": error }),
+        });
+    }
+    Ok(Json(json!({ "results": results })))
 }
 
 // ---- settings ----------------------------------------------------------------------------
@@ -1261,6 +1412,8 @@ pub fn router(app: Arc<App>) -> Router {
         )
         .route("/movie", get(list_movies).post(add_movie))
         .route("/movie/lookup", get(movie_lookup))
+        .route("/movie/import", post(import_movies))
+        .route("/rootfolder/{id}/unmapped", get(unmapped))
         .route("/release", get(search_releases).post(grab_release))
         .route(
             "/movie/{id}",

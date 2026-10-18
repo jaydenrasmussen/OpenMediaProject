@@ -10,6 +10,7 @@ mod formats;
 mod grab;
 mod import;
 mod process;
+mod scan;
 mod snapshot;
 mod sync;
 mod tracking;
@@ -28,6 +29,7 @@ pub use import::{
     ImportResult, Importer, MediaProbe, ProbeInfo,
 };
 pub use process::{ProcessOptions, ProcessResult, process_downloads};
+pub use scan::{RescanResult, UnmappedFolder, rescan_movie, unmapped_folders};
 pub use snapshot::{DecisionSnapshot, QueueMap};
 pub use sync::{
     IndexerFailure, IndexerPool, RssSyncResult, SearchMode, SearchResult, SyncContext, rss_sync,

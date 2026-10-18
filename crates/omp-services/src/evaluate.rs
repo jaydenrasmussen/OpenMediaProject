@@ -28,6 +28,8 @@ pub enum ServiceError {
     Db(#[from] DbError),
     #[error("stored settings are unreadable: {0}")]
     Settings(#[from] serde_json::Error),
+    #[error("file system error: {0}")]
+    Io(String),
 }
 
 /// What to evaluate and in what context.

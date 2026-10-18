@@ -14,4 +14,6 @@ mod tasks;
 pub use api::router;
 pub use app::{App, RealDisk};
 pub use config::AppConfig;
-pub use tasks::{process_downloads_once, rss_sync_once, search_movie_once, spawn_scheduler};
+pub use tasks::{
+    process_downloads_once, rescan_movie_once, rss_sync_once, search_movie_once, spawn_scheduler,
+};

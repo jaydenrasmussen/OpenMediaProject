@@ -1122,3 +1122,115 @@ async fn quality_definitions_and_decision_settings() {
         (json!(90), json!(1500))
     );
 }
+
+#[tokio::test]
+async fn an_existing_library_can_be_found_and_imported() {
+    let r = rig().await;
+    let root = add_root(&r).await;
+    let matrix = std::path::Path::new(&root).join("The Matrix (1999)");
+    std::fs::create_dir_all(&matrix).unwrap();
+    std::fs::write(
+        matrix.join("The.Matrix.1999.1080p.BluRay.x264-GRP.mkv"),
+        vec![1u8; 2048],
+    )
+    .unwrap();
+    std::fs::create_dir_all(std::path::Path::new(&root).join("Mystery Folder")).unwrap();
+
+    let (_, roots) = get(&r, "/api/v1/rootfolder").await;
+    let root_id = roots[0]["id"].as_i64().unwrap();
+    let (s, found) = get(&r, &format!("/api/v1/rootfolder/{root_id}/unmapped")).await;
+    assert_eq!(s, StatusCode::OK, "{found}");
+    let names: Vec<_> = found
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["name"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(names, ["Mystery Folder", "The Matrix (1999)"]);
+    let m = found
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["title"] == "The Matrix")
+        .unwrap();
+    assert_eq!(
+        (m["year"].clone(), m["has_media"].clone()),
+        (json!(1999), json!(true))
+    );
+    assert_eq!(
+        get(&r, "/api/v1/rootfolder/999/unmapped").await.0,
+        StatusCode::NOT_FOUND
+    );
+
+    let (_, profiles) = get(&r, "/api/v1/qualityprofile").await;
+    let profile = profiles[0]["id"].clone();
+    let batch = |items: Value| json!({ "items": items, "quality_profile_id": profile });
+    let path = matrix.to_string_lossy().into_owned();
+
+    let (s, out) = call(
+        &r,
+        Method::POST,
+        "/api/v1/movie/import",
+        Some(batch(json!([
+            { "path": path, "tmdb_id": 603 },
+            { "path": "/etc", "tmdb_id": 603 },
+            { "path": format!("{root}/Mystery Folder"), "tmdb_id": 999 },
+        ]))),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{out}");
+    let results = out["results"].as_array().unwrap();
+    assert_eq!(results[0]["ok"], true, "{out}");
+    assert_eq!(
+        results[1]["ok"], false,
+        "outside the root folders is refused: {out}"
+    );
+    assert_eq!(results[2]["ok"], false, "TMDB does not know 999: {out}");
+
+    // The movie uses its existing folder and already has its file.
+    let id = results[0]["movie_id"].as_i64().unwrap();
+    let (_, movie) = get(&r, &format!("/api/v1/movie/{id}")).await;
+    assert_eq!(movie["path"], path);
+    assert_eq!(movie["has_file"], true);
+    assert_eq!(movie["file"]["quality"], "Bluray-1080p");
+
+    // Importing it again is refused, and it no longer shows up as unmapped.
+    let (_, again) = call(
+        &r,
+        Method::POST,
+        "/api/v1/movie/import",
+        Some(batch(json!([{ "path": path, "tmdb_id": 603 }]))),
+    )
+    .await;
+    assert_eq!(again["results"][0]["ok"], false);
+    let (_, left) = get(&r, &format!("/api/v1/rootfolder/{root_id}/unmapped")).await;
+    assert_eq!(left.as_array().unwrap().len(), 1);
+
+    // A rescan notices the file is gone.
+    std::fs::remove_file(matrix.join("The.Matrix.1999.1080p.BluRay.x264-GRP.mkv")).unwrap();
+    let (s, _) = call(
+        &r,
+        Method::POST,
+        "/api/v1/command",
+        Some(json!({ "name": "RescanMovie", "movie_id": id, "wait": true })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(
+        get(&r, &format!("/api/v1/movie/{id}")).await.1["has_file"],
+        false
+    );
+
+    let bare = rig_with(false).await;
+    assert_eq!(
+        call(
+            &bare,
+            Method::POST,
+            "/api/v1/movie/import",
+            Some(batch(json!([])))
+        )
+        .await
+        .0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+}

@@ -166,3 +166,11 @@ pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
     };
     vec![rss, process, backup]
 }
+
+/// Looks at a movie's folder and records or forgets its file.
+pub async fn rescan_movie_once(
+    app: &App,
+    movie_id: i64,
+) -> Result<omp_services::RescanResult, ServiceError> {
+    omp_services::rescan_movie(&app.db, movie_id, chrono::Utc::now()).await
+}

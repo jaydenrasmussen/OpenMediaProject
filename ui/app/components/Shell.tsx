@@ -11,6 +11,7 @@ import { ToastProvider } from "./toast";
 const NAV = [
   { href: "/", label: "Movies" },
   { href: "/add/", label: "Add movie" },
+  { href: "/import/", label: "Import" },
   { href: "/activity/", label: "Activity" },
   { href: "/settings/", label: "Settings" },
   { href: "/system/", label: "System" },
