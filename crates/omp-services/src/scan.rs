@@ -255,6 +255,6 @@ pub async fn unmapped_folders(db: &Db, root: &Path) -> Result<Vec<UnmappedFolder
             has_media,
         });
     }
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|f| f.name.to_lowercase());
     Ok(out)
 }
