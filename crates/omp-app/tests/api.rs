@@ -71,6 +71,11 @@ struct Rig {
 }
 
 async fn rig_with(tmdb: bool) -> Rig {
+    build_rig(tmdb, false).await
+}
+
+/// `on_disk` uses a real database file, which backups need.
+async fn build_rig(tmdb: bool, on_disk: bool) -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let ui = dir.path().join("ui");
     std::fs::create_dir_all(ui.join("_next")).unwrap();
@@ -79,9 +84,14 @@ async fn rig_with(tmdb: bool) -> Rig {
     let mut config = AppConfig::new(dir.path().join("data"));
     config.ui_dir = ui;
     let metadata = tmdb.then(|| Arc::new(FakeTmdb) as Arc<dyn MovieMetadataProvider>);
+    let db = if on_disk {
+        Db::open(&dir.path().join("data")).await.unwrap()
+    } else {
+        Db::in_memory().await.unwrap()
+    };
     let app = App::new(
         config,
-        Db::in_memory().await.unwrap(),
+        db,
         metadata,
         Arc::new(FakeProbe),
         Arc::new(NoDiskCheck),
@@ -728,5 +738,146 @@ async fn provider_settings_can_be_tested_before_saving() {
         get(&r, "/api/v1/indexer").await.1,
         json!([]),
         "testing saves nothing"
+    );
+}
+
+#[tokio::test]
+async fn health_checks_report_what_is_missing_and_clear_as_it_is_fixed() {
+    let r = rig().await;
+    let sources = |v: &Value, level: &str| -> Vec<String> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .filter(|i| i["level"] == level)
+            .map(|i| i["source"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let (s, v) = get(&r, "/api/v1/system/health").await;
+    assert_eq!(s, StatusCode::OK);
+    let errors = sources(&v, "error");
+    for expected in ["RootFolders", "Indexers", "DownloadClients"] {
+        assert!(
+            errors.contains(&expected.to_owned()),
+            "{expected} missing from {v}"
+        );
+    }
+    assert!(
+        !errors.contains(&"Metadata".to_owned()),
+        "TMDB is configured in this rig"
+    );
+    assert_eq!(v[0]["level"], "error", "errors come first");
+
+    add_root(&r).await;
+    let indexer = json!({ "name": "i", "implementation": "newznab", "settings": { "base_url": "http://127.0.0.1:1", "api_key": "k" } });
+    call(&r, Method::POST, "/api/v1/indexer", Some(indexer)).await;
+    let (_, v) = get(&r, "/api/v1/system/health").await;
+    let errors = sources(&v, "error");
+    assert!(
+        !errors.contains(&"RootFolders".to_owned()) && !errors.contains(&"Indexers".to_owned()),
+        "{v}"
+    );
+    assert!(errors.contains(&"DownloadClients".to_owned()));
+
+    // A client that is configured but cannot start is called out by name.
+    let broken =
+        json!({ "name": "Broken", "implementation": "usenet", "settings": { "servers": [] } });
+    call(&r, Method::POST, "/api/v1/downloadclient", Some(broken)).await;
+    let (_, v) = get(&r, "/api/v1/system/health").await;
+    assert!(
+        v.as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["message"].as_str().unwrap().contains("Broken")),
+        "{v}"
+    );
+
+    let bare = rig_with(false).await;
+    let (_, v) = get(&bare, "/api/v1/system/health").await;
+    assert!(sources(&v, "error").contains(&"Metadata".to_owned()));
+}
+
+#[tokio::test]
+async fn backups_can_be_made_listed_downloaded_and_deleted() {
+    let r = build_rig(true, true).await;
+    assert_eq!(get(&r, "/api/v1/system/backup").await.1, json!([]));
+    let (s, made) = call(&r, Method::POST, "/api/v1/system/backup", None).await;
+    assert_eq!(s, StatusCode::CREATED, "{made}");
+    let name = made["name"].as_str().unwrap().to_owned();
+    assert!(name.starts_with("omp_backup_") && name.ends_with(".db"));
+    // Two in the same second do not clash.
+    let (_, second) = call(&r, Method::POST, "/api/v1/system/backup", None).await;
+    assert_ne!(second["name"], made["name"]);
+    assert_eq!(
+        get(&r, "/api/v1/system/backup")
+            .await
+            .1
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    let res = r
+        .router
+        .clone()
+        .oneshot(
+            Request::get(format!("/api/v1/system/backup/{name}"))
+                .header("x-api-key", &r.key)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        bytes.starts_with(b"SQLite format 3"),
+        "it is a database file"
+    );
+
+    // Only names we made are reachable.
+    for bad in [
+        "..%2F..%2Fetc%2Fpasswd",
+        "omp.db",
+        "omp_backup_x.db",
+        "omp_backup_.db",
+    ] {
+        assert_eq!(
+            get(&r, &format!("/api/v1/system/backup/{bad}")).await.0,
+            StatusCode::NOT_FOUND,
+            "{bad}"
+        );
+        assert_eq!(
+            call(
+                &r,
+                Method::DELETE,
+                &format!("/api/v1/system/backup/{bad}"),
+                None
+            )
+            .await
+            .0,
+            StatusCode::NOT_FOUND,
+            "{bad}"
+        );
+    }
+    assert_eq!(
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/system/backup/{name}"),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        get(&r, "/api/v1/system/backup")
+            .await
+            .1
+            .as_array()
+            .unwrap()
+            .len(),
+        1
     );
 }

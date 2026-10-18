@@ -150,5 +150,19 @@ pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
             }
         })
     };
-    vec![rss, process]
+    let backup = {
+        let app = app.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(app.config.backup_interval);
+            tick.tick().await; // the first tick is immediate; a backup at every start would be noise
+            loop {
+                tick.tick().await;
+                match crate::backups::create(&app).await {
+                    Ok(b) => tracing::info!(name = %b.name, size = b.size, "database backed up"),
+                    Err(e) => tracing::warn!("backup failed: {e}"),
+                }
+            }
+        })
+    };
+    vec![rss, process, backup]
 }

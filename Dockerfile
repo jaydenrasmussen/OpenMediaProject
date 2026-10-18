@@ -61,7 +61,7 @@ COPY --from=tools /tools/License.txt /usr/share/doc/7zip/License.txt
 COPY --from=server /src/target/release/omp-server /usr/local/bin/omp-server
 COPY --from=ui /ui/out /app/ui
 
-ENV OMP_ADDR=0.0.0.0:8080 OMP_UI_DIR=/app/ui
+ENV OMP_ADDR=0.0.0.0:8080 OMP_UI_DIR=/app/ui OMP_DATA_DIR=/config OMP_DOWNLOADS_DIR=/downloads
 EXPOSE 8080
 VOLUME ["/config", "/downloads", "/media"]
 USER omp

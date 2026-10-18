@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { UNAUTHORIZED_EVENT, get, post } from "../lib/api";
-import type { AuthStatus } from "../lib/types";
+import type { AuthStatus, HealthIssue } from "../lib/types";
 import { AuthScreen } from "./AuthScreen";
 import { ToastProvider } from "./toast";
 
@@ -13,6 +13,7 @@ const NAV = [
   { href: "/add/", label: "Add movie" },
   { href: "/activity/", label: "Activity" },
   { href: "/settings/", label: "Settings" },
+  { href: "/system/", label: "System" },
 ];
 
 type Phase = "loading" | "setup" | "login" | "ready" | "offline";
@@ -76,8 +77,39 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </a>
           </nav>
         </aside>
-        <main className="content">{children}</main>
+        <main className="content">
+          <HealthBanner />
+          {children}
+        </main>
       </div>
     </ToastProvider>
+  );
+}
+
+/** A one-line reminder when something needs attention; details are on the System page. */
+function HealthBanner() {
+  const [issues, setIssues] = useState<HealthIssue[]>([]);
+  const pathname = usePathname();
+  useEffect(() => {
+    let live = true;
+    get<HealthIssue[]>("/system/health")
+      .then((i) => live && setIssues(i))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+    // Re-check when moving between pages, so fixing a setting clears it.
+  }, [pathname]);
+  if (issues.length === 0 || pathname.startsWith("/system")) return null;
+  const errors = issues.filter((i) => i.level === "error").length;
+  return (
+    <Link
+      href="/system/"
+      className={`banner ${errors ? "bad" : "warn"}`}
+      style={{ display: "block", marginBottom: "1rem" }}
+    >
+      {errors ? `${errors} problem${errors === 1 ? "" : "s"} need attention` : `${issues.length} warning${issues.length === 1 ? "" : "s"}`}
+      : {issues[0].message}
+    </Link>
   );
 }

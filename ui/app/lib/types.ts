@@ -157,3 +157,22 @@ export interface AuthStatus {
   setup_required: boolean;
   authenticated: boolean;
 }
+
+export interface HealthIssue {
+  source: string;
+  level: "warning" | "error";
+  message: string;
+}
+
+export interface SystemStatus {
+  version: string;
+  started: string;
+  tmdb_configured: boolean;
+  data_dir: string;
+}
+
+export interface BackupInfo {
+  name: string;
+  size: number;
+  created: string;
+}

@@ -184,6 +184,66 @@ async fn health() -> Json<Value> {
     Json(json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
 }
 
+async fn health_checks(State(app): Shared) -> ApiResult {
+    let issues = crate::health::check(&app).await?;
+    Ok(Json(
+        serde_json::to_value(issues).map_err(|e| ApiError::internal(e.to_string()))?,
+    ))
+}
+
+async fn list_backups(State(app): Shared) -> ApiResult {
+    let backups = crate::backups::list(&app)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    Ok(Json(
+        serde_json::to_value(backups).map_err(|e| ApiError::internal(e.to_string()))?,
+    ))
+}
+
+async fn create_backup(State(app): Shared) -> ApiResult<(StatusCode, Json<Value>)> {
+    let b = crate::backups::create(&app)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::to_value(b).map_err(|e| ApiError::internal(e.to_string()))?),
+    ))
+}
+
+async fn download_backup(
+    State(app): Shared,
+    Path(name): Path<String>,
+) -> Result<Response, ApiError> {
+    let path = crate::backups::path_of(&app, &name)
+        .ok_or_else(|| ApiError::not_found("no such backup"))?;
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|_| ApiError::not_found("no such backup"))?;
+    Ok((
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/vnd.sqlite3".to_owned(),
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{name}\""),
+            ),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+async fn delete_backup(State(app): Shared, Path(name): Path<String>) -> ApiResult<StatusCode> {
+    let path = crate::backups::path_of(&app, &name)
+        .ok_or_else(|| ApiError::not_found("no such backup"))?;
+    tokio::fs::remove_file(path)
+        .await
+        .map_err(|_| ApiError::not_found("no such backup"))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn system_status(State(app): Shared) -> Json<Value> {
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
@@ -971,6 +1031,12 @@ pub fn router(app: Arc<App>) -> Router {
 
     let api = Router::new()
         .route("/system/status", get(system_status))
+        .route("/system/health", get(health_checks))
+        .route("/system/backup", get(list_backups).post(create_backup))
+        .route(
+            "/system/backup/{name}",
+            get(download_backup).delete(delete_backup),
+        )
         .route("/auth/logout", post(crate::auth::logout))
         .route("/auth/password", post(crate::auth::change_password))
         .route("/auth/apikey", get(crate::auth::get_api_key))

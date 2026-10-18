@@ -4,6 +4,8 @@ use std::{net::SocketAddr, path::PathBuf, time::Duration};
 pub struct AppConfig {
     /// Databases, session data and (by default) downloads.
     pub data_dir: PathBuf,
+    /// Where the built-in download clients put things unless told otherwise.
+    pub downloads_dir: PathBuf,
     pub ui_dir: PathBuf,
     pub addr: SocketAddr,
     /// TMDB read access token; without one, adding movies is unavailable.
@@ -14,14 +16,18 @@ pub struct AppConfig {
     /// Radarr's default RSS interval is 15 minutes.
     pub rss_interval: Duration,
     pub process_interval: Duration,
+    /// How often the database is backed up (Radarr: weekly).
+    pub backup_interval: Duration,
     /// The category our downloads are filed under in the download clients.
     pub download_category: String,
 }
 
 impl AppConfig {
     pub fn new(data_dir: impl Into<PathBuf>) -> Self {
+        let data_dir: PathBuf = data_dir.into();
         Self {
-            data_dir: data_dir.into(),
+            downloads_dir: data_dir.join("downloads"),
+            data_dir,
             ui_dir: PathBuf::from("ui/out"),
             addr: ([0, 0, 0, 0], 8080).into(),
             tmdb_token: None,
@@ -30,6 +36,7 @@ impl AppConfig {
             sevenzip: "7zz".into(),
             rss_interval: Duration::from_secs(15 * 60),
             process_interval: Duration::from_secs(60),
+            backup_interval: Duration::from_secs(7 * 24 * 3600),
             download_category: "movies".into(),
         }
     }
@@ -37,6 +44,9 @@ impl AppConfig {
     pub fn from_env() -> anyhow::Result<Self> {
         let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
         let mut c = Self::new(var("OMP_DATA_DIR").unwrap_or_else(|| "data".into()));
+        if let Some(v) = var("OMP_DOWNLOADS_DIR") {
+            c.downloads_dir = v.into();
+        }
         if let Some(v) = var("OMP_UI_DIR") {
             c.ui_dir = v.into();
         }

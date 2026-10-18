@@ -609,3 +609,36 @@ async fn provider_back_off_is_persisted() {
         .unwrap();
     assert_eq!(orphans, 0, "status row went with the provider");
 }
+
+#[tokio::test]
+async fn a_backup_is_a_working_copy_of_the_database() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(&dir.path().join("live")).await.unwrap();
+    db.config().set("hello", "world").await.unwrap();
+    db.root_folders().add("/media/movies").await.unwrap();
+
+    let copy = dir.path().join("backup.db");
+    db.backup_to(&copy).await.unwrap();
+    db.config().set("later", "change").await.unwrap();
+
+    // The copy opens as a database of its own, holding what was there at the time.
+    let restored = dir.path().join("restored");
+    std::fs::create_dir_all(&restored).unwrap();
+    std::fs::copy(&copy, restored.join("omp.db")).unwrap();
+    let again = Db::open(&restored).await.unwrap();
+    assert_eq!(
+        again.config().get("hello").await.unwrap().as_deref(),
+        Some("world")
+    );
+    assert_eq!(
+        again.config().get("later").await.unwrap(),
+        None,
+        "taken before the later change"
+    );
+    assert_eq!(again.root_folders().list().await.unwrap().len(), 1);
+
+    assert!(
+        db.backup_to(&copy).await.is_err(),
+        "never overwrites an existing file"
+    );
+}

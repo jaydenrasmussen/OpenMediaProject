@@ -63,7 +63,7 @@ async fn build_one(p: &Provider, config: &AppConfig) -> Result<Arc<dyn DownloadC
                 serde_json::from_value(p.settings.clone()).map_err(|e| e.to_string())?;
             let mut s = TorrentSettings::new(
                 j.download_dir
-                    .unwrap_or_else(|| config.data_dir.join("downloads/torrent")),
+                    .unwrap_or_else(|| config.downloads_dir.join("torrent")),
             );
             s.session_dir = Some(config.data_dir.join(format!("torrent-session-{}", p.id)));
             s.seed_ratio_limit = j.seed_ratio_limit;
@@ -95,7 +95,7 @@ async fn build_one(p: &Provider, config: &AppConfig) -> Result<Arc<dyn DownloadC
                 })
                 .collect();
             let root = config.data_dir.join(format!("usenet-{}", p.id));
-            let downloads = config.data_dir.join("downloads/usenet");
+            let downloads = config.downloads_dir.join("usenet");
             Ok(Arc::new(
                 UsenetClient::start(UsenetSettings {
                     servers,
@@ -148,7 +148,7 @@ pub async fn test_client(p: &Provider, config: &AppConfig) -> Result<(), String>
                 serde_json::from_value(p.settings.clone()).map_err(|e| e.to_string())?;
             let dir = j
                 .download_dir
-                .unwrap_or_else(|| config.data_dir.join("downloads/torrent"));
+                .unwrap_or_else(|| config.downloads_dir.join("torrent"));
             tokio::fs::create_dir_all(&dir)
                 .await
                 .map_err(|e| format!("cannot use {}: {e}", dir.display()))?;

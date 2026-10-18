@@ -91,6 +91,17 @@ impl Db {
         self.logs.close().await;
     }
 
+    /// Writes a consistent copy of the main database to `path` (which must
+    /// not exist) while the app keeps running. Does nothing useful for the
+    /// in-memory test database, which SQLite will not vacuum into a file.
+    pub async fn backup_to(&self, path: &Path) -> Result<()> {
+        sqlx::query("VACUUM INTO ?")
+            .bind(path.to_string_lossy().into_owned())
+            .execute(&self.main)
+            .await?;
+        Ok(())
+    }
+
     pub fn config(&self) -> Config<'_> {
         Config(&self.main)
     }

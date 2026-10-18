@@ -4,8 +4,10 @@
 mod api;
 mod app;
 mod auth;
+mod backups;
 mod clients;
 mod config;
+mod health;
 mod releases;
 mod tasks;
 
