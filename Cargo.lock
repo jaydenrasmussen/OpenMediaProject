@@ -2935,7 +2935,15 @@ name = "omp-torrent"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "axum",
+ "bytes",
+ "chrono",
  "librqbit",
+ "omp-core",
+ "omp-downloads",
+ "reqwest",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

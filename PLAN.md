@@ -264,6 +264,7 @@ Findings from the spikes:
 | `omp-naming`: Radarr `FileNameBuilder` token engine (movie/file/mediainfo/edition/custom-format tokens, truncation, colon handling) | Done | 20 tests ported from Radarr's OrganizerTests. |
 | `Importer` (find media files, sample/audio/multipart/unpack/already-imported/free-space/upgrade rules, rename via omp-naming, move/copy/hardlink, replace old file, file row + history) | Done | 7 tests on a real temp file system; probe is a trait (`MediaProbe`). |
 | `Ffprobe` MediaProbe (real ffprobe test) + `process_downloads` loop (refresh -> import -> remove from client / block with reasons) | Done | 3 + 2 tests. |
+| `omp-torrent` `TorrentClient`: librqbit-backed `DownloadClient` (URL/magnet add, category folders, seeding-ratio goal, completion/removal) | Done | 3 offline tests (real librqbit, data pre-placed). |
 | MediaInfo formatter for naming tokens, built-in torrent and usenet clients as `DownloadClient`s, HTTP API, UI | Not started | Next. |
 | `ParsingService` (match a parsed release to a library movie) | Not started | Needs the DB layer. |
 | `omp-core` movie metadata + `is_available` | Done | Port of Radarr's `Movie.IsAvailable` (min-availability, 90-day fallback, delay days). |

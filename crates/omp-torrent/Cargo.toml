@@ -8,11 +8,19 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+async-trait = "0.1"
+bytes = "1"
+omp-core = { path = "../omp-core" }
+omp-downloads = { path = "../omp-downloads" }
 librqbit = "9.0.1"
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+axum.workspace = true
+tempfile = "3"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tracing-subscriber.workspace = true
 
 [lints]
