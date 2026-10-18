@@ -103,3 +103,31 @@ pub fn matching_ids(formats: &[CustomFormat], input: &CustomFormatInput) -> Vec<
         .map(|f| f.id)
         .collect()
 }
+
+/// For a file about to be imported, before it has a database row.
+#[allow(clippy::too_many_arguments)]
+pub fn input_for_candidate(
+    quality: omp_core::quality::Quality,
+    edition: &str,
+    release_group: Option<&str>,
+    scene_name: &str,
+    path: &std::path::Path,
+    size: u64,
+    languages: &[omp_core::language::Language],
+    movie: &MovieRecord,
+) -> CustomFormatInput {
+    let filename = path.file_name().map(|n| n.to_string_lossy().into_owned());
+    CustomFormatInput {
+        quality: Some(quality),
+        edition: Some(edition.to_owned()),
+        release_group: release_group.map(str::to_owned),
+        simple_release_title: Some(scene_name.to_owned()).filter(|s| !s.is_empty()),
+        filename,
+        parsed_year: 0,
+        movie_year: Some(movie.movie.year),
+        movie_original_language: original_language(movie),
+        size,
+        indexer_flags: omp_core::release::IndexerFlags(0),
+        languages: languages.to_vec(),
+    }
+}

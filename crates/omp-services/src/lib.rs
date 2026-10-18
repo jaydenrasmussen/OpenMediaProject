@@ -7,6 +7,7 @@ mod disk;
 mod evaluate;
 mod formats;
 mod grab;
+mod import;
 mod snapshot;
 mod sync;
 mod tracking;
@@ -18,6 +19,10 @@ pub use evaluate::{
 };
 pub use formats::{input_for_file, input_for_history, input_for_release, matching_ids};
 pub use grab::{GrabContext, GrabbedRelease, ProcessedDecisions, process_decisions};
+pub use import::{
+    FileOutcome, FileResult, ImportConfig, ImportMode, ImportRejection, ImportRequest,
+    ImportResult, Importer, MediaProbe, ProbeInfo,
+};
 pub use snapshot::{DecisionSnapshot, QueueMap};
 pub use sync::{
     IndexerFailure, IndexerPool, RssSyncResult, SearchMode, SearchResult, SyncContext, rss_sync,

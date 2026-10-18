@@ -2910,6 +2910,7 @@ dependencies = [
 name = "omp-services"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "chrono",
  "omp-core",
@@ -2918,10 +2919,12 @@ dependencies = [
  "omp-downloads",
  "omp-indexers",
  "omp-library",
+ "omp-naming",
  "omp-parser",
  "omp-quality",
  "serde_json",
  "sqlx",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
