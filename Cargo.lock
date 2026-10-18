@@ -2953,9 +2953,18 @@ dependencies = [
 name = "omp-usenet"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
  "crc32fast",
+ "omp-core",
+ "omp-downloads",
  "rcgen",
+ "reqwest",
  "roxmltree",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",

@@ -21,6 +21,8 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-wasip2
       - uses: Swatinem/rust-cache@v2
+      # Tests that drive the real tools skip themselves when these are missing.
+      - run: sudo apt-get update && sudo apt-get install -y par2 7zip ffmpeg
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
