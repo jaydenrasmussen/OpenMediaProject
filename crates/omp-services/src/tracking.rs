@@ -185,14 +185,13 @@ impl DownloadMonitor {
                     entry.movie_id = grabbed.map(|g| g.movie_id);
                 }
 
-                if entry.state == TrackedState::Downloading {
-                    if entry.item.status == DownloadItemStatus::Failed {
-                        if mark_failed(db, entry, grabbed, options).await? {
-                            result.newly_failed.push(id.clone());
-                            if options.remove_failed {
-                                let _ = rc.client.remove(&id, true).await;
-                            }
-                        }
+                if entry.state == TrackedState::Downloading
+                    && entry.item.status == DownloadItemStatus::Failed
+                    && mark_failed(db, entry, grabbed, options).await?
+                {
+                    result.newly_failed.push(id.clone());
+                    if options.remove_failed {
+                        let _ = rc.client.remove(&id, true).await;
                     }
                 }
                 let was_waiting = matches!(entry.state, TrackedState::ImportPending);

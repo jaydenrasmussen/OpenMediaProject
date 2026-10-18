@@ -6,7 +6,7 @@ use omp_core::{
     language::Language,
     movie::{MovieMetadata, MovieStatus},
     quality::Quality,
-    release::{DownloadProtocol, IndexerFlags, ReleaseInfo},
+    release::DownloadProtocol,
 };
 use omp_db::{
     Db,
