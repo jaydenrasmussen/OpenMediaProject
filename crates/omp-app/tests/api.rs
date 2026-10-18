@@ -54,6 +54,7 @@ impl MovieMetadataProvider for FakeTmdb {
 
 struct Rig {
     router: Router,
+    key: String,
     dir: tempfile::TempDir,
 }
 
@@ -75,8 +76,10 @@ async fn rig_with(tmdb: bool) -> Rig {
     )
     .await
     .unwrap();
+    let key = app.api_key().await.unwrap();
     Rig {
         router: router(app),
+        key,
         dir,
     }
 }
@@ -86,7 +89,10 @@ async fn rig() -> Rig {
 }
 
 async fn call(r: &Rig, method: Method, path: &str, body: Option<Value>) -> (StatusCode, Value) {
-    let mut req = Request::builder().method(method).uri(path);
+    let mut req = Request::builder()
+        .method(method)
+        .uri(path)
+        .header("x-api-key", &r.key);
     let body = match body {
         Some(b) => {
             req = req.header("content-type", "application/json");

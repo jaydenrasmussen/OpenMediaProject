@@ -3,6 +3,7 @@
 
 mod api;
 mod app;
+mod auth;
 mod clients;
 mod config;
 mod tasks;

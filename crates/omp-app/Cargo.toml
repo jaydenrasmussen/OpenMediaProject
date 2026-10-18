@@ -8,9 +8,11 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+argon2 = "0.5"
 axum.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 fs4 = "0.13"
+getrandom = "0.3"
 omp-core = { path = "../omp-core" }
 omp-db = { path = "../omp-db" }
 omp-decision = { path = "../omp-decision" }
@@ -25,6 +27,7 @@ omp-torrent = { path = "../omp-torrent" }
 omp-usenet = { path = "../omp-usenet" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 thiserror = "2"
 tokio.workspace = true
 tower = { version = "0.5", features = ["util"] }

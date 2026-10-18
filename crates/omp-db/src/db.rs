@@ -10,7 +10,7 @@ use crate::{
     repo::{
         Blocklist, Config, CustomFormats, DelayProfiles, History, MovieFiles, Movies,
         PendingReleases, Providers, QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles,
-        RootFolders, Tags,
+        RootFolders, Sessions, Tags, Users,
     },
 };
 
@@ -93,6 +93,14 @@ impl Db {
 
     pub fn config(&self) -> Config<'_> {
         Config(&self.main)
+    }
+
+    pub fn users(&self) -> Users<'_> {
+        Users(&self.main)
+    }
+
+    pub fn sessions(&self) -> Sessions<'_> {
+        Sessions(&self.main)
     }
 
     pub fn tags(&self) -> Tags<'_> {

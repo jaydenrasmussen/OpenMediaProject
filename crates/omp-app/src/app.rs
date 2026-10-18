@@ -34,6 +34,8 @@ pub struct App {
     pub probe: Arc<dyn MediaProbe>,
     pub disk: Arc<dyn DiskSpace>,
     pub started: DateTime<Utc>,
+    /// A real password hash nobody knows the password to, checked when a login names an unknown user.
+    pub(crate) dummy_hash: String,
     pub(crate) rss_lock: tokio::sync::Mutex<()>,
     pub(crate) process_lock: tokio::sync::Mutex<()>,
     registry: RwLock<Arc<ClientRegistry>>,
@@ -70,12 +72,20 @@ impl App {
             probe,
             disk,
             started: Utc::now(),
+            dummy_hash: crate::auth::hash_password(&format!("{:?}", Utc::now()))
+                .await
+                .map_err(|e| anyhow::anyhow!("{}", e.1))?,
             rss_lock: tokio::sync::Mutex::new(()),
             process_lock: tokio::sync::Mutex::new(()),
             registry: RwLock::new(Arc::new(ClientRegistry::default())),
         });
         app.reload_clients().await?;
         Ok(app)
+    }
+
+    /// The key programs use in the `X-Api-Key` header.
+    pub async fn api_key(&self) -> anyhow::Result<String> {
+        Ok(crate::auth::api_key(self).await?)
     }
 
     pub fn registry(&self) -> Arc<ClientRegistry> {

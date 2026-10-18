@@ -26,13 +26,16 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::{app::App, tasks};
 
 type Shared = State<Arc<App>>;
-type ApiResult<T = Json<Value>> = Result<T, ApiError>;
+pub(crate) type ApiResult<T = Json<Value>> = Result<T, ApiError>;
 
 #[derive(Debug)]
-pub struct ApiError(StatusCode, String);
+pub struct ApiError(pub(crate) StatusCode, pub(crate) String);
 
 impl ApiError {
-    fn bad_request(m: impl Into<String>) -> Self {
+    pub(crate) fn internal(m: impl Into<String>) -> Self {
+        Self(StatusCode::INTERNAL_SERVER_ERROR, m.into())
+    }
+    pub(crate) fn bad_request(m: impl Into<String>) -> Self {
         Self(StatusCode::BAD_REQUEST, m.into())
     }
     fn not_found(m: impl Into<String>) -> Self {
@@ -745,8 +748,14 @@ pub fn router(app: Arc<App>) -> Router {
     }));
 
     let api = Router::new()
-        .route("/health", get(health))
         .route("/system/status", get(system_status))
+        .route("/auth/logout", post(crate::auth::logout))
+        .route("/auth/password", post(crate::auth::change_password))
+        .route("/auth/apikey", get(crate::auth::get_api_key))
+        .route(
+            "/auth/apikey/regenerate",
+            post(crate::auth::regenerate_api_key),
+        )
         .route("/movie", get(list_movies).post(add_movie))
         .route(
             "/movie/{id}",
@@ -772,8 +781,20 @@ pub fn router(app: Arc<App>) -> Router {
     let api = provider_routes!(api, "/indexer", ProviderKind::Indexer);
     let api = provider_routes!(api, "/downloadclient", ProviderKind::DownloadClient);
 
+    // Everything above needs a login session or the API key.
+    let api = api.route_layer(axum::middleware::from_fn_with_state(
+        app.clone(),
+        crate::auth::require_auth,
+    ));
+    let public = Router::new()
+        .route("/health", get(health))
+        .route("/auth/status", get(crate::auth::status))
+        .route("/auth/setup", post(crate::auth::setup))
+        .route("/auth/login", post(crate::auth::login));
     // Unknown API paths are errors, not the UI shell.
-    let api = api.fallback(|| async { ApiError::not_found("no such API endpoint") });
+    let api = api
+        .merge(public)
+        .fallback(|| async { ApiError::not_found("no such API endpoint") });
     Router::new()
         .nest("/api/v1", api)
         .fallback_service(ui)

@@ -265,6 +265,15 @@ CREATE TABLE users (
     password_hash TEXT NOT NULL
 );
 
+-- Browser sessions. Only a hash of the cookie token is stored, so a copy of the
+-- database does not hand out logins.
+CREATE TABLE sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created    TEXT NOT NULL,
+    expires    TEXT NOT NULL
+);
+
 CREATE TABLE naming_config (
     id       INTEGER PRIMARY KEY CHECK (id = 1),
     settings TEXT NOT NULL
