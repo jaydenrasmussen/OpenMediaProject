@@ -263,7 +263,8 @@ Findings from the spikes:
 | `DownloadMonitor` (tracked downloads: grab-history matching, completed -> ImportPending/Blocked, failed -> history + blocklist + remove) | Done | 5 tests. |
 | `omp-naming`: Radarr `FileNameBuilder` token engine (movie/file/mediainfo/edition/custom-format tokens, truncation, colon handling) | Done | 20 tests ported from Radarr's OrganizerTests. |
 | `Importer` (find media files, sample/audio/multipart/unpack/already-imported/free-space/upgrade rules, rename via omp-naming, move/copy/hardlink, replace old file, file row + history) | Done | 7 tests on a real temp file system; probe is a trait (`MediaProbe`). |
-| ffprobe `MediaProbe` + MediaInfo formatter, wiring monitor -> importer, built-in torrent and usenet clients as `DownloadClient`s, HTTP API, UI | Not started | Next. |
+| `Ffprobe` MediaProbe (real ffprobe test) + `process_downloads` loop (refresh -> import -> remove from client / block with reasons) | Done | 3 + 2 tests. |
+| MediaInfo formatter for naming tokens, built-in torrent and usenet clients as `DownloadClient`s, HTTP API, UI | Not started | Next. |
 | `ParsingService` (match a parsed release to a library movie) | Not started | Needs the DB layer. |
 | `omp-core` movie metadata + `is_available` | Done | Port of Radarr's `Movie.IsAvailable` (min-availability, 90-day fallback, delay days). |
 | `omp-metadata`: provider trait + TMDB provider | Done | Uses `TMDB_READ_TOKEN` (a TMDB v4 read token, from `.env`, gitignored). Maps release dates (earliest worldwide per kind), certification (US by default), collection, studio, ratings, images, alternative titles, credits. Status is derived from dates (our rule; Radarr's server is closed). 8 unit tests on a real captured response; 3 live tests (`--ignored`) and `examples/lookup.rs` verified against the real API. |

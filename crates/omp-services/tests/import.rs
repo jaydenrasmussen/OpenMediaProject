@@ -478,3 +478,181 @@ async fn grab_and_import_marker(l: &Lib) {
         .await
         .unwrap();
 }
+
+// ---- the download loop ---------------------------------------------------------------------
+
+mod process {
+    use super::*;
+    use omp_downloads::{
+        ClientItem, ClientRegistry, DownloadItemStatus, FakeClient, RegisteredClient,
+    };
+    use omp_services::{DownloadMonitor, ProcessOptions, TrackedState, process_downloads};
+    use std::sync::Arc;
+
+    fn item(l: &Lib, status: DownloadItemStatus, folder: &str) -> ClientItem {
+        ClientItem {
+            download_id: "d1".into(),
+            category: Some("movies".into()),
+            title: "The.Matrix.1999.1080p.BluRay.x264-GRP".into(),
+            total_size: 100,
+            remaining_size: 0,
+            status,
+            output_path: Some(l.downloads().join(folder).to_string_lossy().into_owned()),
+            seed_ratio: None,
+            can_move_files: true,
+            can_be_removed: true,
+            message: None,
+        }
+    }
+
+    async fn rig(l: &Lib) -> (Arc<FakeClient>, ClientRegistry) {
+        let client = Arc::new(FakeClient::new(omp_core::release::DownloadProtocol::Usenet));
+        let registry = ClientRegistry::new(vec![RegisteredClient {
+            id: 1,
+            name: "SAB".into(),
+            priority: 1,
+            tags: vec![],
+            client: client.clone(),
+        }]);
+        let grab = omp_db::repo::HistoryRecord {
+            id: 0,
+            movie_id: l.movie,
+            event: HistoryEvent::Grabbed,
+            date: now() - Duration::hours(1),
+            source_title: "The.Matrix.1999.1080p.BluRay.x264-GRP".into(),
+            quality: Default::default(),
+            languages: vec![],
+            download_id: Some("d1".into()),
+            data: Default::default(),
+        };
+        l.db.history().insert(&grab).await.unwrap();
+        (client, registry)
+    }
+
+    fn opts() -> ProcessOptions {
+        ProcessOptions {
+            now: now(),
+            category: Some("movies".into()),
+            remove_failed: true,
+            remove_completed: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn finished_downloads_are_imported_and_removed_from_the_client() {
+        let l = lib().await;
+        let (client, registry) = rig(&l).await;
+        write(
+            &l.downloads()
+                .join("job/The.Matrix.1999.1080p.BluRay.x264-GRP.mkv"),
+            800,
+        );
+        let monitor = DownloadMonitor::new();
+
+        client.set_items(vec![item(&l, DownloadItemStatus::Downloading, "job")]);
+        let r = process_downloads(
+            &l.db,
+            &monitor,
+            &registry,
+            &config(),
+            &GOOD,
+            &NoDiskCheck,
+            &opts(),
+        )
+        .await
+        .unwrap();
+        assert!(r.imported.is_empty());
+
+        client.set_items(vec![item(&l, DownloadItemStatus::Completed, "job")]);
+        let r = process_downloads(
+            &l.db,
+            &monitor,
+            &registry,
+            &config(),
+            &GOOD,
+            &NoDiskCheck,
+            &opts(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(r.imported, ["d1"]);
+        assert_eq!(monitor.get("d1").unwrap().state, TrackedState::Imported);
+        assert_eq!(client.removed(), [("d1".to_owned(), false)]);
+        assert!(
+            l.movie_dir
+                .join("The Matrix (1999) Bluray-1080p.mkv")
+                .exists()
+        );
+
+        // Next pass: nothing left to do.
+        let r = process_downloads(
+            &l.db,
+            &monitor,
+            &registry,
+            &config(),
+            &GOOD,
+            &NoDiskCheck,
+            &opts(),
+        )
+        .await
+        .unwrap();
+        assert!(r.imported.is_empty() && r.blocked.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_download_that_cannot_be_imported_is_blocked_with_reasons() {
+        let l = lib().await;
+        let (client, registry) = rig(&l).await;
+        write(
+            &l.downloads()
+                .join("job/The.Matrix.1999.1080p.BluRay.x264-GRP.mkv"),
+            800,
+        );
+        let monitor = DownloadMonitor::new();
+        client.set_items(vec![item(&l, DownloadItemStatus::Completed, "job")]);
+
+        let sample = FakeProbe {
+            runtime: 20.0,
+            ..GOOD
+        };
+        let r = process_downloads(
+            &l.db,
+            &monitor,
+            &registry,
+            &config(),
+            &sample,
+            &NoDiskCheck,
+            &opts(),
+        )
+        .await
+        .unwrap();
+        assert!(r.imported.is_empty());
+        assert_eq!(r.blocked.len(), 1);
+        assert!(r.blocked[0].1[0].contains("Sample"), "{:?}", r.blocked);
+        assert_eq!(
+            monitor.get("d1").unwrap().state,
+            TrackedState::ImportBlocked
+        );
+        assert!(
+            client.removed().is_empty(),
+            "left in the client for a person to sort out"
+        );
+
+        // An empty output folder is reported too.
+        std::fs::create_dir_all(l.downloads().join("empty")).unwrap();
+        let monitor = DownloadMonitor::new();
+        client.set_items(vec![item(&l, DownloadItemStatus::Completed, "empty")]);
+        let r = process_downloads(
+            &l.db,
+            &monitor,
+            &registry,
+            &config(),
+            &GOOD,
+            &NoDiskCheck,
+            &opts(),
+        )
+        .await
+        .unwrap();
+        assert!(r.blocked[0].1[0].contains("No files found"));
+    }
+}

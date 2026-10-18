@@ -5,9 +5,11 @@
 mod config;
 mod disk;
 mod evaluate;
+mod ffprobe;
 mod formats;
 mod grab;
 mod import;
+mod process;
 mod snapshot;
 mod sync;
 mod tracking;
@@ -17,12 +19,14 @@ pub use disk::{DiskSpace, NoDiskCheck};
 pub use evaluate::{
     EvaluateRequest, EvaluatedRelease, Evaluation, ServiceError, evaluate_releases,
 };
+pub use ffprobe::{Ffprobe, parse_probe_output};
 pub use formats::{input_for_file, input_for_history, input_for_release, matching_ids};
 pub use grab::{GrabContext, GrabbedRelease, ProcessedDecisions, process_decisions};
 pub use import::{
     FileOutcome, FileResult, ImportConfig, ImportMode, ImportRejection, ImportRequest,
     ImportResult, Importer, MediaProbe, ProbeInfo,
 };
+pub use process::{ProcessOptions, ProcessResult, process_downloads};
 pub use snapshot::{DecisionSnapshot, QueueMap};
 pub use sync::{
     IndexerFailure, IndexerPool, RssSyncResult, SearchMode, SearchResult, SyncContext, rss_sync,

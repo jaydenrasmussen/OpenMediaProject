@@ -109,6 +109,14 @@ impl DownloadMonitor {
         all
     }
 
+    /// Marks a download as needing a person, with the reasons.
+    pub fn block(&self, download_id: &str, reasons: Vec<String>) {
+        if let Some(t) = self.tracked.lock().unwrap().get_mut(download_id) {
+            t.state = TrackedState::ImportBlocked;
+            t.warnings = reasons;
+        }
+    }
+
     /// Records the outcome of an import attempt made elsewhere.
     pub fn set_state(&self, download_id: &str, state: TrackedState) {
         if let Some(t) = self.tracked.lock().unwrap().get_mut(download_id) {
