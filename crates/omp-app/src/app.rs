@@ -36,6 +36,8 @@ pub struct App {
     pub started: DateTime<Utc>,
     /// A real password hash nobody knows the password to, checked when a login names an unknown user.
     pub(crate) dummy_hash: String,
+    /// Interactive search results, kept so a chosen release can be grabbed.
+    pub(crate) search_cache: std::sync::Mutex<crate::releases::SearchCache>,
     pub(crate) rss_lock: tokio::sync::Mutex<()>,
     pub(crate) process_lock: tokio::sync::Mutex<()>,
     registry: RwLock<Arc<ClientRegistry>>,
@@ -75,6 +77,7 @@ impl App {
             dummy_hash: crate::auth::hash_password(&format!("{:?}", Utc::now()))
                 .await
                 .map_err(|e| anyhow::anyhow!("{}", e.1))?,
+            search_cache: std::sync::Mutex::default(),
             rss_lock: tokio::sync::Mutex::new(()),
             process_lock: tokio::sync::Mutex::new(()),
             registry: RwLock::new(Arc::new(ClientRegistry::default())),

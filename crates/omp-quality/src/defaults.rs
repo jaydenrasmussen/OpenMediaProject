@@ -200,6 +200,34 @@ mod tests {
     }
 
     #[test]
+    fn validation_catches_broken_profiles() {
+        let good = default_profile("t", Some(Quality::BLURAY_1080P), &[Quality::BLURAY_1080P]);
+        assert_eq!(good.validate(), Ok(()));
+
+        let mut missing = good.clone();
+        missing.items.pop();
+        assert!(missing.validate().unwrap_err().contains("exactly once"));
+
+        let mut nothing = good.clone();
+        for i in &mut nothing.items {
+            if let ProfileItem::Quality { allowed, .. } = i {
+                *allowed = false;
+            }
+        }
+        assert!(nothing.validate().unwrap_err().contains("allowed"));
+
+        let mut bad_cutoff = good.clone();
+        bad_cutoff.cutoff = Quality::DVD.id; // present, but not allowed
+        assert!(bad_cutoff.validate().unwrap_err().contains("cutoff"));
+        bad_cutoff.cutoff = 4242;
+        assert!(bad_cutoff.validate().unwrap_err().contains("cutoff"));
+
+        let mut unnamed = good;
+        unnamed.name = "  ".into();
+        assert!(unnamed.validate().is_err());
+    }
+
+    #[test]
     fn six_default_profiles_with_sane_cutoffs() {
         let all = default_profiles();
         assert_eq!(

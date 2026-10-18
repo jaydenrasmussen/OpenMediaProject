@@ -6,6 +6,7 @@ mod app;
 mod auth;
 mod clients;
 mod config;
+mod releases;
 mod tasks;
 
 pub use api::router;

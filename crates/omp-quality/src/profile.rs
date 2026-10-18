@@ -85,6 +85,60 @@ pub struct QualityProfile {
 }
 
 impl QualityProfile {
+    /// Checks a profile a person has edited. Every quality must appear exactly
+    /// once (the decision engine relies on that), something must be allowed,
+    /// and the cutoff must name an allowed row.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.name.trim().is_empty() {
+            return Err("the profile needs a name".into());
+        }
+        let mut seen: Vec<u32> = Vec::new();
+        let mut group_ids: Vec<u32> = Vec::new();
+        for item in &self.items {
+            match item {
+                ProfileItem::Quality { quality, .. } => seen.push(quality.id),
+                ProfileItem::Group {
+                    id,
+                    name,
+                    qualities,
+                    ..
+                } => {
+                    if name.trim().is_empty() {
+                        return Err("every group needs a name".into());
+                    }
+                    if qualities.len() < 2 {
+                        return Err(format!("the group '{name}' needs at least two qualities"));
+                    }
+                    if group_ids.contains(id) || *id < 1000 {
+                        return Err(format!("the group '{name}' has a bad or duplicate id"));
+                    }
+                    group_ids.push(*id);
+                    seen.extend(qualities.iter().map(|q| q.id));
+                }
+            }
+        }
+        for q in Quality::ALL {
+            let count = seen.iter().filter(|id| **id == q.id).count();
+            if count != 1 {
+                return Err(format!(
+                    "{} must appear exactly once in the profile (found {count})",
+                    q.name
+                ));
+            }
+        }
+        if !self.items.iter().any(ProfileItem::allowed) {
+            return Err("at least one quality must be allowed".into());
+        }
+        let cutoff_ok = self.items.iter().any(|i| match i {
+            ProfileItem::Quality { quality, allowed } => *allowed && quality.id == self.cutoff,
+            ProfileItem::Group { id, allowed, .. } => *allowed && *id == self.cutoff,
+        });
+        if !cutoff_ok {
+            return Err("the cutoff must be an allowed quality or group in the profile".into());
+        }
+        Ok(())
+    }
+
     /// First allowed quality in profile order.
     pub fn first_allowed_quality(&self) -> Option<Quality> {
         let item = self.items.iter().find(|i| i.allowed())?;

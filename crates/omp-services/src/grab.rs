@@ -333,3 +333,72 @@ async fn remove_grabbed_pending(db: &Db, grabbed: &EvaluatedRelease) -> Result<(
     }
     Ok(())
 }
+
+/// Sends one chosen release to a download client regardless of what the
+/// decision engine said: the person picked it. Records history and back-off
+/// like an automatic grab. The error is a message fit to show.
+pub async fn grab_selected(
+    db: &Db,
+    evaluation: &Evaluation,
+    registry: &ClientRegistry,
+    ctx: &GrabContext,
+    index: usize,
+) -> Result<GrabbedRelease, String> {
+    let item = &evaluation.items[index];
+    let Some(movie) = item.movie.as_ref() else {
+        return Err("this release could not be matched to a movie in the library".into());
+    };
+    let db_err = |e: omp_db::DbError| e.to_string();
+
+    let blocked: HashSet<i64> = db
+        .providers()
+        .blocked(ProviderKind::DownloadClient, ctx.now)
+        .await
+        .map_err(db_err)?
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    let client = registry
+        .select(item.release.protocol, &movie.movie.tags, false, &blocked)
+        .map_err(|e| e.to_string())?;
+
+    let request = AddRequest {
+        release: &item.release,
+        category: ctx.category.as_deref(),
+    };
+    match client.client.add(&request).await {
+        Ok(download_id) => {
+            db.providers()
+                .record_success(client.id)
+                .await
+                .map_err(db_err)?;
+            if item.release.indexer_id > 0 {
+                db.providers()
+                    .record_success(i64::from(item.release.indexer_id))
+                    .await
+                    .map_err(db_err)?;
+            }
+            record_grab(db, item, &download_id, &client.name, ctx)
+                .await
+                .map_err(|e| e.to_string())?;
+            remove_grabbed_pending(db, item)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(GrabbedRelease {
+                index,
+                download_id,
+                client_id: client.id,
+                client_name: client.name.clone(),
+            })
+        }
+        Err(e) => {
+            if e.is_client_failure() {
+                db.providers()
+                    .record_failure(client.id, ctx.now, ctx.process_start, None, true)
+                    .await
+                    .map_err(db_err)?;
+            }
+            Err(e.to_string())
+        }
+    }
+}

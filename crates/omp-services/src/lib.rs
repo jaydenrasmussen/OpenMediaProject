@@ -22,7 +22,7 @@ pub use evaluate::{
 };
 pub use ffprobe::{Ffprobe, parse_probe_output};
 pub use formats::{input_for_file, input_for_history, input_for_release, matching_ids};
-pub use grab::{GrabContext, GrabbedRelease, ProcessedDecisions, process_decisions};
+pub use grab::{GrabContext, GrabbedRelease, ProcessedDecisions, grab_selected, process_decisions};
 pub use import::{
     FileOutcome, FileResult, ImportConfig, ImportMode, ImportRejection, ImportRequest,
     ImportResult, Importer, MediaProbe, ProbeInfo,

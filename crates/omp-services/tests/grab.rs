@@ -512,3 +512,81 @@ async fn a_delayed_best_release_does_not_stop_a_lower_one_that_can_go_now() {
         "the better release still waits for its delay"
     );
 }
+
+#[tokio::test]
+async fn a_chosen_release_is_grabbed_even_if_the_engine_rejected_it() {
+    use omp_services::grab_selected;
+    let r = rig().await;
+    let id = add_movie(&r.db, 603, "The Matrix", 1999).await;
+    // An unmonitored movie is a permanent rejection for automatic grabs.
+    let m = r.db.movies().get(id).await.unwrap();
+    r.db.movies()
+        .update(
+            id,
+            &omp_db::repo::MovieUpdate {
+                monitored: false,
+                minimum_availability: m.movie.minimum_availability,
+                quality_profile_id: m.movie.quality_profile_id,
+                path: m.movie.path.clone(),
+                root_folder_path: None,
+                tags: vec![],
+            },
+        )
+        .await
+        .unwrap();
+    let e = evaluate(&r.db, vec![usenet("The.Matrix.1999.1080p.BluRay.x264-GRP")]).await;
+    assert!(e.items[0].decision.rejected(), "{:?}", e.items[0].decision);
+
+    let grabbed = grab_selected(&r.db, &e, &r.registry, &ctx(), 0)
+        .await
+        .unwrap();
+    assert_eq!(r.usenet.added(), ["The.Matrix.1999.1080p.BluRay.x264-GRP"]);
+    assert_eq!(grabbed.client_id, r.usenet_id);
+    let h = r.db.history().for_movie(id).await.unwrap();
+    assert_eq!((h.len(), h[0].event), (1, HistoryEvent::Grabbed));
+    assert_eq!(
+        h[0].download_id.as_deref(),
+        Some(grabbed.download_id.as_str())
+    );
+}
+
+#[tokio::test]
+async fn choosing_a_release_reports_why_it_could_not_be_sent() {
+    use omp_services::grab_selected;
+    let r = rig().await;
+    add_movie(&r.db, 603, "The Matrix", 1999).await;
+
+    let unmatched = evaluate(
+        &r.db,
+        vec![usenet("Some.Other.Film.2020.1080p.WEB-DL.x264-GRP")],
+    )
+    .await;
+    let err = grab_selected(&r.db, &unmatched, &r.registry, &ctx(), 0)
+        .await
+        .unwrap_err();
+    assert!(err.contains("could not be matched"), "{err}");
+
+    let e = evaluate(&r.db, vec![usenet(WEB)]).await;
+    r.usenet
+        .fail_with(Some(ClientError::Unavailable("connection refused".into())));
+    let err = grab_selected(&r.db, &e, &r.registry, &ctx(), 0)
+        .await
+        .unwrap_err();
+    assert!(err.contains("connection refused"), "{err}");
+    assert_eq!(
+        r.db.providers()
+            .status(r.usenet_id)
+            .await
+            .unwrap()
+            .escalation_level,
+        1,
+        "the client is backed off"
+    );
+
+    let torrent = evaluate(&r.db, vec![release(WEB, DownloadProtocol::Torrent)]).await;
+    r.usenet.fail_with(None);
+    let err = grab_selected(&r.db, &torrent, &r.registry, &ctx(), 0)
+        .await
+        .unwrap_err();
+    assert!(err.contains("isn't configured"), "no torrent client: {err}");
+}

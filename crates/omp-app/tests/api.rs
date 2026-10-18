@@ -44,11 +44,23 @@ impl MovieMetadataProvider for FakeTmdb {
             ..Default::default()
         })
     }
-    async fn search(&self, _: &str, _: Option<i32>) -> Result<Vec<MovieMetadata>, MetadataError> {
-        Ok(vec![])
+    async fn search(
+        &self,
+        term: &str,
+        year: Option<i32>,
+    ) -> Result<Vec<MovieMetadata>, MetadataError> {
+        if term.to_lowercase().contains("matrix") && year.is_none_or(|y| y == 1999) {
+            Ok(vec![self.movie(603).await?])
+        } else {
+            Ok(vec![])
+        }
     }
-    async fn movie_by_imdb_id(&self, _: &str) -> Result<MovieMetadata, MetadataError> {
-        Err(MetadataError::NotFound)
+    async fn movie_by_imdb_id(&self, imdb: &str) -> Result<MovieMetadata, MetadataError> {
+        if imdb == "tt0133093" {
+            self.movie(603).await
+        } else {
+            Err(MetadataError::NotFound)
+        }
     }
 }
 
@@ -375,6 +387,21 @@ async fn quality_profiles_round_trip() {
     let id = created["id"].as_i64().unwrap();
     assert!(id > 6);
 
+    let mut partial = created.clone();
+    partial["items"].as_array_mut().unwrap().pop();
+    let (s, e) = call(
+        &r,
+        Method::PUT,
+        &format!("/api/v1/qualityprofile/{id}"),
+        Some(partial),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::BAD_REQUEST,
+        "profiles must cover every quality: {e}"
+    );
+
     let mut edited = created.clone();
     edited["upgrade_allowed"] = json!(false);
     let (s, saved) = call(
@@ -568,4 +595,87 @@ async fn import_settings_persist() {
         ),
         (json!(true), json!("dash"), json!("copy"))
     );
+}
+
+#[tokio::test]
+async fn lookup_finds_movies_and_marks_those_already_in_the_library() {
+    let r = rig().await;
+    let (s, v) = get(&r, "/api/v1/movie/lookup?term=the%20matrix%201999").await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        (v[0]["title"].clone(), v[0]["in_library"].clone()),
+        (json!("The Matrix"), json!(null))
+    );
+    assert_eq!(
+        get(&r, "/api/v1/movie/lookup?term=the%20matrix%202003")
+            .await
+            .1,
+        json!([]),
+        "year narrows the search"
+    );
+    assert_eq!(
+        get(&r, "/api/v1/movie/lookup?term=tmdb:603").await.1[0]["tmdb_id"],
+        603
+    );
+    assert_eq!(
+        get(&r, "/api/v1/movie/lookup?term=imdb:tt0133093").await.1[0]["tmdb_id"],
+        603
+    );
+    assert_eq!(
+        get(&r, "/api/v1/movie/lookup?term=tmdb:1").await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        get(&r, "/api/v1/movie/lookup?term=tmdb:abc").await.0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        get(&r, "/api/v1/movie/lookup?term=%20").await.0,
+        StatusCode::BAD_REQUEST
+    );
+
+    let root = add_root(&r).await;
+    let body = json!({ "tmdb_id": 603, "quality_profile_id": 1, "root_folder_path": root });
+    assert_eq!(
+        call(&r, Method::POST, "/api/v1/movie", Some(body)).await.0,
+        StatusCode::CREATED
+    );
+    let (_, again) = get(&r, "/api/v1/movie/lookup?term=matrix").await;
+    assert!(again[0]["in_library"].is_i64());
+
+    let bare = rig_with(false).await;
+    assert_eq!(
+        get(&bare, "/api/v1/movie/lookup?term=matrix").await.0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+}
+
+#[tokio::test]
+async fn interactive_search_and_grab_validate_their_input() {
+    let r = rig().await;
+    assert_eq!(
+        get(&r, "/api/v1/release?movie_id=999").await.0,
+        StatusCode::NOT_FOUND
+    );
+
+    let root = add_root(&r).await;
+    let body = json!({ "tmdb_id": 603, "quality_profile_id": 1, "root_folder_path": root });
+    let (_, movie) = call(&r, Method::POST, "/api/v1/movie", Some(body)).await;
+    let (s, found) = get(&r, &format!("/api/v1/release?movie_id={}", movie["id"])).await;
+    assert_eq!(s, StatusCode::OK, "{found}");
+    assert_eq!(found["releases"], json!([]), "no indexers configured");
+
+    for (id, status) in [
+        ("garbage", StatusCode::BAD_REQUEST),
+        ("99-0", StatusCode::NOT_FOUND),
+    ] {
+        let (s, _) = call(
+            &r,
+            Method::POST,
+            "/api/v1/release",
+            Some(json!({ "id": id })),
+        )
+        .await;
+        assert_eq!(s, status, "{id}");
+    }
 }

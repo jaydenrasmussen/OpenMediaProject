@@ -489,6 +489,198 @@ async fn command(
     ))
 }
 
+// ---- lookup and interactive search -------------------------------------------------------
+
+#[derive(Deserialize)]
+struct Lookup {
+    term: String,
+}
+
+fn lookup_json(m: &omp_core::movie::MovieMetadata, in_library: Option<i64>) -> Value {
+    json!({
+        "tmdb_id": m.tmdb_id,
+        "imdb_id": m.imdb_id,
+        "title": m.title,
+        "year": m.year,
+        "overview": m.overview,
+        "runtime": m.runtime,
+        "images": m.images,
+        "in_library": in_library,
+    })
+}
+
+/// Search TMDB. `tmdb:603` and `imdb:tt0133093` look one movie up directly;
+/// anything else is a title search, with an optional trailing year.
+async fn movie_lookup(State(app): Shared, Query(q): Query<Lookup>) -> ApiResult {
+    let Some(provider) = app.metadata.clone() else {
+        return Err(ApiError::unavailable(
+            "no metadata provider is configured (set TMDB_READ_TOKEN)",
+        ));
+    };
+    let term = q.term.trim();
+    if term.is_empty() {
+        return Err(ApiError::bad_request("term is required"));
+    }
+    let found: Vec<omp_core::movie::MovieMetadata> = if let Some(id) = term.strip_prefix("tmdb:") {
+        let id: i64 = id
+            .trim()
+            .parse()
+            .map_err(|_| ApiError::bad_request("tmdb: needs a number"))?;
+        vec![provider.movie(id).await.map_err(metadata_error)?]
+    } else if let Some(id) = term.strip_prefix("imdb:") {
+        vec![
+            provider
+                .movie_by_imdb_id(id.trim())
+                .await
+                .map_err(metadata_error)?,
+        ]
+    } else {
+        let (title, year) = split_year(term);
+        provider.search(title, year).await.map_err(metadata_error)?
+    };
+    let mut out = Vec::new();
+    for m in &found {
+        let existing = app
+            .db
+            .movies()
+            .find_by_tmdb_id(m.tmdb_id)
+            .await?
+            .map(|r| r.movie.id);
+        out.push(lookup_json(m, existing));
+    }
+    Ok(Json(Value::Array(out)))
+}
+
+fn metadata_error(e: omp_metadata::MetadataError) -> ApiError {
+    match e {
+        omp_metadata::MetadataError::NotFound => ApiError::not_found("no such movie"),
+        other => ApiError(StatusCode::BAD_GATEWAY, other.to_string()),
+    }
+}
+
+/// "The Matrix 1999" or "The Matrix (1999)" -> ("The Matrix", Some(1999)).
+fn split_year(term: &str) -> (&str, Option<i32>) {
+    let trimmed = term.trim_end_matches(')').trim_end();
+    if let Some((head, tail)) = trimmed.rsplit_once(|c: char| c.is_whitespace() || c == '(')
+        && tail.len() == 4
+        && let Ok(year) = tail.parse::<i32>()
+        && (1870..=2200).contains(&year)
+    {
+        let head = head.trim_end_matches('(').trim();
+        if !head.is_empty() {
+            return (head, Some(year));
+        }
+    }
+    (term, None)
+}
+
+#[derive(Deserialize)]
+struct ReleaseSearch {
+    movie_id: i64,
+}
+
+/// Searches every interactive-search indexer for a movie and returns what was
+/// found with the decision engine's verdict on each. Nothing is grabbed.
+async fn search_releases(State(app): Shared, Query(q): Query<ReleaseSearch>) -> ApiResult {
+    app.db.movies().get(q.movie_id).await?;
+    let result = tasks::search_movie_once(&app, q.movie_id, SearchMode::Interactive, true).await?;
+    let failures: Vec<Value> = result
+        .failures
+        .iter()
+        .map(|f| json!({ "indexer": f.indexer, "error": f.error.to_string() }))
+        .collect();
+
+    // Best approved releases first, in the engine's order; the rest by size.
+    let mut rank: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    for (n, i) in result
+        .evaluation
+        .approved_best_first()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        rank.insert(i, n + 1);
+    }
+    let (search_id, evaluation) = app.search_cache.lock().unwrap().insert(result.evaluation);
+    let now = chrono::Utc::now();
+    let mut items: Vec<(usize, Value)> = evaluation
+        .items
+        .iter()
+        .enumerate()
+        .map(|(i, it)| {
+            let r = &it.release;
+            (
+                i,
+                json!({
+                    "id": format!("{search_id}-{i}"),
+                    "guid": r.guid,
+                    "title": r.title,
+                    "indexer": r.indexer,
+                    "protocol": format!("{:?}", r.protocol).to_lowercase(),
+                    "size": r.size,
+                    "age_hours": r.age_hours(now),
+                    "seeders": r.torrent.as_ref().and_then(|t| t.seeders),
+                    "peers": r.torrent.as_ref().and_then(|t| t.peers),
+                    "quality": it.parsed.as_ref().map(|p| p.quality.quality.name),
+                    "release_group": it.parsed.as_ref().and_then(|p| p.release_group.clone()),
+                    "custom_format_score": it.custom_format_score,
+                    "matched_movie_id": it.movie.as_ref().map(|m| m.movie.id),
+                    "approved": it.decision.approved(),
+                    "temporarily_rejected": it.decision.temporarily_rejected(),
+                    "rejections": it.decision.rejections.iter().map(|x| x.message.clone()).collect::<Vec<_>>(),
+                    "rank": rank.get(&i),
+                }),
+            )
+        })
+        .collect();
+    items.sort_by_key(|(i, v)| {
+        (
+            rank.get(i).copied().unwrap_or(usize::MAX),
+            std::cmp::Reverse(v["size"].as_u64().unwrap_or(0)),
+        )
+    });
+    Ok(Json(json!({
+        "releases": items.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
+        "indexer_failures": failures,
+    })))
+}
+
+#[derive(Deserialize)]
+struct GrabRelease {
+    /// An `id` from a release search.
+    id: String,
+}
+
+async fn grab_release(State(app): Shared, Json(req): Json<GrabRelease>) -> ApiResult {
+    let (search, index) = req
+        .id
+        .split_once('-')
+        .and_then(|(s, i)| Some((s.parse::<u64>().ok()?, i.parse::<usize>().ok()?)))
+        .ok_or_else(|| ApiError::bad_request("malformed release id"))?;
+    let evaluation = app
+        .search_cache
+        .lock()
+        .unwrap()
+        .get(search)
+        .ok_or_else(|| ApiError::not_found("those search results have expired; search again"))?;
+    if index >= evaluation.items.len() {
+        return Err(ApiError::bad_request("no such release in those results"));
+    }
+    let ctx = omp_services::GrabContext {
+        now: chrono::Utc::now(),
+        process_start: app.started,
+        category: Some(app.config.download_category.clone()),
+    };
+    let grabbed = omp_services::grab_selected(&app.db, &evaluation, &app.registry(), &ctx, index)
+        .await
+        .map_err(|m| ApiError(StatusCode::BAD_GATEWAY, m))?;
+    Ok(Json(json!({
+        "download_id": grabbed.download_id,
+        "client": grabbed.client_name,
+        "title": evaluation.items[index].release.title,
+    })))
+}
+
 // ---- settings ----------------------------------------------------------------------------
 
 async fn list_root_folders(State(app): Shared) -> ApiResult {
@@ -551,6 +743,7 @@ async fn add_profile(
     Json(mut p): Json<QualityProfile>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     p.id = 0;
+    p.validate().map_err(ApiError::bad_request)?;
     let id = app.db.quality_profiles().insert(&p).await?;
     let saved = app.db.quality_profiles().get(id).await?;
     Ok((
@@ -565,6 +758,7 @@ async fn update_profile(
     Json(mut p): Json<QualityProfile>,
 ) -> ApiResult {
     p.id = id;
+    p.validate().map_err(ApiError::bad_request)?;
     app.db.quality_profiles().update(&p).await?;
     get_profile(State(app), Path(id)).await
 }
@@ -757,6 +951,8 @@ pub fn router(app: Arc<App>) -> Router {
             post(crate::auth::regenerate_api_key),
         )
         .route("/movie", get(list_movies).post(add_movie))
+        .route("/movie/lookup", get(movie_lookup))
+        .route("/release", get(search_releases).post(grab_release))
         .route(
             "/movie/{id}",
             get(get_movie).put(update_movie).delete(delete_movie),
@@ -799,4 +995,26 @@ pub fn router(app: Arc<App>) -> Router {
         .nest("/api/v1", api)
         .fallback_service(ui)
         .with_state(app)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_year;
+
+    #[test]
+    fn years_are_split_off_search_terms() {
+        assert_eq!(split_year("The Matrix 1999"), ("The Matrix", Some(1999)));
+        assert_eq!(split_year("The Matrix (1999)"), ("The Matrix", Some(1999)));
+        assert_eq!(
+            split_year("2001"),
+            ("2001", None),
+            "a title that is only a number"
+        );
+        assert_eq!(
+            split_year("Blade Runner 2049"),
+            ("Blade Runner", Some(2049))
+        );
+        assert_eq!(split_year("Alien"), ("Alien", None));
+        assert_eq!(split_year("Apollo 13"), ("Apollo 13", None));
+    }
 }
