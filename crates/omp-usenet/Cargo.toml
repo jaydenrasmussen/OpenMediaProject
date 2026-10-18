@@ -1,0 +1,22 @@
+[package]
+name = "omp-usenet"
+description = "Built-in usenet (NZB) download client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+crc32fast = "1"
+roxmltree = "0.20"
+thiserror = "2"
+tokio.workspace = true
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+webpki-roots = "1"
+tracing.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+rcgen = "0.13"
