@@ -21,6 +21,30 @@ use crate::{
     grab::{GrabContext, ProcessedDecisions, process_decisions},
 };
 
+/// Turns a stored indexer into a client, or says why it cannot be one.
+fn build_client(provider: &Provider) -> Result<IndexerClient, String> {
+    let flavor = match provider.implementation.as_str() {
+        "newznab" => Flavor::Newznab,
+        "torznab" => Flavor::Torznab,
+        other => return Err(format!("implementation '{other}' is not built in")),
+    };
+    let settings: IndexerSettings = serde_json::from_value(provider.settings.clone())
+        .map_err(|e| format!("unreadable settings: {e}"))?;
+    let identity = IndexerIdentity {
+        id: provider.id as i32,
+        name: provider.name.clone(),
+        priority: provider.priority,
+    };
+    IndexerClient::new(flavor, settings, identity)
+}
+
+/// Checks that an indexer answers and speaks Newznab/Torznab. For the
+/// settings form's "Test" button; the indexer need not be saved.
+pub async fn test_indexer(provider: &Provider) -> Result<(), String> {
+    let client = build_client(provider)?.with_rate_limit(Duration::ZERO);
+    client.test().await.map_err(|e| e.to_string())
+}
+
 struct PoolIndexer {
     provider: Provider,
     client: IndexerClient,
@@ -42,33 +66,12 @@ impl IndexerPool {
             if !provider.enabled {
                 continue;
             }
-            let flavor = match provider.implementation.as_str() {
-                "newznab" => Flavor::Newznab,
-                "torznab" => Flavor::Torznab,
-                other => {
-                    tracing::debug!(indexer = %provider.name, "implementation {other} is not built in");
-                    continue;
-                }
-            };
-            let settings: IndexerSettings = match serde_json::from_value(provider.settings.clone())
-            {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!(indexer = %provider.name, "unreadable settings: {e}");
-                    continue;
-                }
-            };
-            let identity = IndexerIdentity {
-                id: provider.id as i32,
-                name: provider.name.clone(),
-                priority: provider.priority,
-            };
-            match IndexerClient::new(flavor, settings, identity) {
+            match build_client(&provider) {
                 Ok(client) => indexers.push(PoolIndexer {
                     provider,
                     client: client.with_rate_limit(rate_limit),
                 }),
-                Err(e) => tracing::warn!(indexer = %provider.name, "invalid settings: {e}"),
+                Err(e) => tracing::warn!(indexer = %provider.name, "skipped: {e}"),
             }
         }
         Ok(Self { indexers })

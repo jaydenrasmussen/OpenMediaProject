@@ -138,3 +138,49 @@ pub async fn build_registry(db: &Db, config: &AppConfig) -> anyhow::Result<Clien
     }
     Ok(ClientRegistry::new(registered))
 }
+
+/// Checks a download client's settings without starting it: usenet servers
+/// are connected to and logged in to; the torrent folder must be writable.
+pub async fn test_client(p: &Provider, config: &AppConfig) -> Result<(), String> {
+    match p.implementation.as_str() {
+        "torrent" => {
+            let j: TorrentJson =
+                serde_json::from_value(p.settings.clone()).map_err(|e| e.to_string())?;
+            let dir = j
+                .download_dir
+                .unwrap_or_else(|| config.data_dir.join("downloads/torrent"));
+            tokio::fs::create_dir_all(&dir)
+                .await
+                .map_err(|e| format!("cannot use {}: {e}", dir.display()))?;
+            let probe = dir.join(".omp-write-test");
+            tokio::fs::write(&probe, b"")
+                .await
+                .map_err(|e| format!("{} is not writable: {e}", dir.display()))?;
+            let _ = tokio::fs::remove_file(probe).await;
+            Ok(())
+        }
+        "usenet" => {
+            let j: UsenetJson =
+                serde_json::from_value(p.settings.clone()).map_err(|e| e.to_string())?;
+            if j.servers.is_empty() {
+                return Err("add at least one usenet server".into());
+            }
+            for s in j.servers {
+                let host = s.host.clone();
+                let mut c =
+                    ServerConfig::new(s.host, s.port.unwrap_or(if s.tls { 563 } else { 119 }));
+                c.tls = s.tls;
+                c.username = s.username;
+                c.password = s.password;
+                c.timeout = Duration::from_secs(10);
+                omp_usenet::NntpConnection::connect(&c)
+                    .await
+                    .map_err(|e| format!("{host}: {e}"))?
+                    .quit()
+                    .await;
+            }
+            Ok(())
+        }
+        other => Err(format!("download client type '{other}' is not built in")),
+    }
+}

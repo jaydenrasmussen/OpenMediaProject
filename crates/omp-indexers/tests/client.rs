@@ -483,3 +483,20 @@ async fn the_rate_limit_spaces_requests_out() {
         start.elapsed()
     );
 }
+
+#[tokio::test]
+async fn network_errors_do_not_leak_the_api_key() {
+    let settings = IndexerSettings {
+        base_url: "http://127.0.0.1:1".into(),
+        api_key: "SECRET-KEY-123".into(),
+        categories: vec![2000],
+        ..Default::default()
+    };
+    let c = IndexerClient::new(Flavor::Newznab, settings, identity()).unwrap();
+    let err = c.test().await.unwrap_err().to_string();
+    assert!(err.contains("127.0.0.1"), "still says where: {err}");
+    assert!(
+        !err.contains("SECRET-KEY-123") && !err.contains("apikey"),
+        "{err}"
+    );
+}

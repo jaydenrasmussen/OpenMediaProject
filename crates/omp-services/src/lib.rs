@@ -31,6 +31,6 @@ pub use process::{ProcessOptions, ProcessResult, process_downloads};
 pub use snapshot::{DecisionSnapshot, QueueMap};
 pub use sync::{
     IndexerFailure, IndexerPool, RssSyncResult, SearchMode, SearchResult, SyncContext, rss_sync,
-    search_movie,
+    search_movie, test_indexer,
 };
 pub use tracking::{DownloadMonitor, MonitorOptions, RefreshResult, TrackedDownload, TrackedState};

@@ -403,6 +403,8 @@ struct Paging {
     limit: i64,
     #[serde(default)]
     offset: i64,
+    /// Only this movie's events.
+    movie_id: Option<i64>,
 }
 
 fn default_page_size() -> i64 {
@@ -410,11 +412,15 @@ fn default_page_size() -> i64 {
 }
 
 async fn history(State(app): Shared, Query(p): Query<Paging>) -> ApiResult {
-    let rows = app
-        .db
-        .history()
-        .recent(p.limit.clamp(1, 500), p.offset.max(0))
-        .await?;
+    let rows = match p.movie_id {
+        Some(id) => app.db.history().for_movie(id).await?,
+        None => {
+            app.db
+                .history()
+                .recent(p.limit.clamp(1, 500), p.offset.max(0))
+                .await?
+        }
+    };
     Ok(Json(Value::Array(rows.iter().map(history_json).collect())))
 }
 
@@ -883,10 +889,32 @@ async fn delete_provider(app: Arc<App>, kind: ProviderKind, id: i64) -> ApiResul
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Tries a provider's settings without saving them.
+async fn test_provider(app: Arc<App>, kind: ProviderKind, body: ProviderBody) -> ApiResult {
+    let p = body.into_provider(0, kind);
+    validate_provider(kind, &p)?;
+    let outcome = match kind {
+        ProviderKind::Indexer => omp_services::test_indexer(&p).await,
+        ProviderKind::DownloadClient => crate::clients::test_client(&p, &app.config).await,
+        _ => Ok(()),
+    };
+    Ok(Json(match outcome {
+        Ok(()) => json!({ "ok": true }),
+        Err(error) => json!({ "ok": false, "error": error }),
+    }))
+}
+
 macro_rules! provider_routes {
     ($router:expr, $path:literal, $kind:expr) => {{
         let item = concat!($path, "/{id}");
+        let test = concat!($path, "/test");
         $router
+            .route(
+                test,
+                post(|State(app): Shared, Json(b): Json<ProviderBody>| {
+                    test_provider(app, $kind, b)
+                }),
+            )
             .route(
                 $path,
                 get(|State(app): Shared| list_providers(app, $kind)).post(

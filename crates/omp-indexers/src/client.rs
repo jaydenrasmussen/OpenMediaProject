@@ -24,6 +24,17 @@ use crate::{
 /// Stop paging an unbounded query after this many results.
 const MAX_RESULTS_PER_QUERY: usize = 1000;
 
+/// A network failure, worded without the request URL: it carries the API key,
+/// and these messages end up in logs and on screen.
+fn network_error(e: reqwest::Error) -> IndexerError {
+    let host = e.url().and_then(|u| u.host_str().map(str::to_owned));
+    let message = e.without_url().to_string();
+    IndexerError::Network(match host {
+        Some(host) => format!("{message} ({host})"),
+        None => message,
+    })
+}
+
 #[derive(Debug, Clone)]
 pub struct IndexerIdentity {
     pub id: i32,
@@ -107,7 +118,7 @@ impl IndexerClient {
             .header("Accept", "application/rss+xml, text/xml, application/xml")
             .send()
             .await
-            .map_err(|e| IndexerError::Network(e.to_string()))?;
+            .map_err(network_error)?;
 
         let status = response.status();
         let content_type = response
@@ -126,10 +137,7 @@ impl IndexerClient {
         if status.as_u16() == 429 {
             return Err(IndexerError::TooManyRequests { retry_after });
         }
-        let body = response
-            .text()
-            .await
-            .map_err(|e| IndexerError::Network(e.to_string()))?;
+        let body = response.text().await.map_err(network_error)?;
 
         // An XML body is parsed even on an error status: indexers report
         // problems (bad key, limits) as XML with a 4xx.

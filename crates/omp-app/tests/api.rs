@@ -679,3 +679,54 @@ async fn interactive_search_and_grab_validate_their_input() {
         assert_eq!(s, status, "{id}");
     }
 }
+
+#[tokio::test]
+async fn provider_settings_can_be_tested_before_saving() {
+    let r = rig().await;
+    let dir = r.dir.path().join("torrents");
+    let torrent =
+        json!({ "name": "t", "implementation": "torrent", "settings": { "download_dir": dir } });
+    let (s, v) = call(
+        &r,
+        Method::POST,
+        "/api/v1/downloadclient/test",
+        Some(torrent),
+    )
+    .await;
+    assert_eq!((s, v["ok"].clone()), (StatusCode::OK, json!(true)), "{v}");
+    assert!(dir.exists(), "the folder was created to prove it can be");
+
+    let usenet = json!({ "name": "u", "implementation": "usenet", "settings": { "servers": [{ "host": "127.0.0.1", "port": 1, "tls": false }] } });
+    let (_, v) = call(
+        &r,
+        Method::POST,
+        "/api/v1/downloadclient/test",
+        Some(usenet),
+    )
+    .await;
+    assert_eq!(v["ok"], false);
+    assert!(v["error"].as_str().unwrap().contains("127.0.0.1"), "{v}");
+    let none = json!({ "name": "u", "implementation": "usenet", "settings": { "servers": [] } });
+    assert_eq!(
+        call(&r, Method::POST, "/api/v1/downloadclient/test", Some(none))
+            .await
+            .1["ok"],
+        false
+    );
+
+    let indexer = json!({ "name": "i", "implementation": "newznab", "settings": { "base_url": "http://127.0.0.1:1", "api_key": "k" } });
+    let (s, v) = call(&r, Method::POST, "/api/v1/indexer/test", Some(indexer)).await;
+    assert_eq!((s, v["ok"].clone()), (StatusCode::OK, json!(false)), "{v}");
+    let bad = json!({ "name": "i", "implementation": "gopher" });
+    assert_eq!(
+        call(&r, Method::POST, "/api/v1/indexer/test", Some(bad))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        get(&r, "/api/v1/indexer").await.1,
+        json!([]),
+        "testing saves nothing"
+    );
+}
