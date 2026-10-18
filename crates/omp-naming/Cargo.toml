@@ -1,0 +1,13 @@
+[package]
+name = "omp-naming"
+description = "File and folder naming from user-editable token patterns"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omp-parser = { path = "../omp-parser" }
+
+[lints]
+workspace = true

@@ -2852,6 +2852,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "omp-naming"
+version = "0.1.0"
+dependencies = [
+ "omp-parser",
+]
+
+[[package]]
 name = "omp-parser"
 version = "0.1.0"
 dependencies = [
