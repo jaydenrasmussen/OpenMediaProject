@@ -70,6 +70,8 @@ impl QualityIndex {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QualityProfile {
+    /// Assigned on creation; clients may leave it out.
+    #[serde(default)]
     pub id: i32,
     pub name: String,
     /// Quality id, or group id, below which upgrades are still wanted.

@@ -491,6 +491,8 @@ impl SpecificationDef {
 /// The storable form of a custom format.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CustomFormatDef {
+    /// Assigned on creation; clients may leave it out.
+    #[serde(default)]
     pub id: i32,
     pub name: String,
     #[serde(default)]

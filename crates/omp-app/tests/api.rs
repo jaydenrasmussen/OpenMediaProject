@@ -881,3 +881,244 @@ async fn backups_can_be_made_listed_downloaded_and_deleted() {
         1
     );
 }
+
+#[tokio::test]
+async fn custom_formats_are_validated_and_managed() {
+    let r = rig().await;
+    assert_eq!(get(&r, "/api/v1/customformat").await.1, json!([]));
+    let good = json!({
+        "name": "x265",
+        "include_when_renaming": true,
+        "specifications": [
+            { "name": "x265", "negate": false, "required": true, "implementation": "release_title", "value": "[xh]\\.?265|hevc" }
+        ]
+    });
+    let (s, created) = call(&r, Method::POST, "/api/v1/customformat", Some(good.clone())).await;
+    assert_eq!(s, StatusCode::CREATED, "{created}");
+    let id = created["id"].as_i64().unwrap();
+    assert!(id > 0);
+
+    let mut bad_regex = good.clone();
+    bad_regex["specifications"][0]["value"] = json!("(unclosed");
+    let (s, e) = call(&r, Method::POST, "/api/v1/customformat", Some(bad_regex)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "{e}");
+    let mut nameless = good.clone();
+    nameless["name"] = json!(" ");
+    assert_eq!(
+        call(&r, Method::POST, "/api/v1/customformat", Some(nameless))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+
+    let mut renamed = created.clone();
+    renamed["name"] = json!("HEVC");
+    assert_eq!(
+        call(
+            &r,
+            Method::PUT,
+            &format!("/api/v1/customformat/{id}"),
+            Some(renamed)
+        )
+        .await
+        .1["name"],
+        "HEVC"
+    );
+    assert_eq!(get(&r, "/api/v1/customformat").await.1[0]["name"], "HEVC");
+    assert_eq!(
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/customformat/{id}"),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(get(&r, "/api/v1/customformat").await.1, json!([]));
+}
+
+#[tokio::test]
+async fn delay_profiles_release_profiles_and_tags() {
+    let r = rig().await;
+
+    let (_, delays) = get(&r, "/api/v1/delayprofile").await;
+    assert_eq!(delays.as_array().unwrap().len(), 1, "the catch-all exists");
+    let default_id = delays[0]["id"].as_i64().unwrap();
+    let (s, e) = call(
+        &r,
+        Method::DELETE,
+        &format!("/api/v1/delayprofile/{default_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT, "the default cannot go: {e}");
+
+    let (_, tag) = call(
+        &r,
+        Method::POST,
+        "/api/v1/tag",
+        Some(json!({ "label": "kids" })),
+    )
+    .await;
+    let tag_id = tag["id"].as_i64().unwrap();
+    assert_eq!(
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/tag",
+            Some(json!({ "label": " " }))
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let mut custom = delays[0].clone();
+    custom["tags"] = json!([tag_id]);
+    custom["usenet_delay"] = json!(120);
+    custom["order"] = json!(1);
+    let (s, made) = call(&r, Method::POST, "/api/v1/delayprofile", Some(custom)).await;
+    assert_eq!(s, StatusCode::CREATED, "{made}");
+    assert_eq!(
+        get(&r, "/api/v1/delayprofile")
+            .await
+            .1
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let made_id = made["id"].as_i64().unwrap();
+    assert_eq!(
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/delayprofile/{made_id}"),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+
+    let rp = json!({ "name": "no cam", "enabled": true, "required": [], "ignored": ["CAM", "TS"], "indexer_id": 0, "tags": [] });
+    let (s, created) = call(&r, Method::POST, "/api/v1/releaseprofile", Some(rp)).await;
+    assert_eq!(s, StatusCode::CREATED, "{created}");
+    let rid = created["id"].as_i64().unwrap();
+    let mut off = created.clone();
+    off["enabled"] = json!(false);
+    assert_eq!(
+        call(
+            &r,
+            Method::PUT,
+            &format!("/api/v1/releaseprofile/{rid}"),
+            Some(off)
+        )
+        .await
+        .1["enabled"],
+        false
+    );
+    assert_eq!(
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/releaseprofile/{rid}"),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+
+    assert_eq!(get(&r, "/api/v1/tag").await.1.as_array().unwrap().len(), 1);
+    assert_eq!(
+        call(&r, Method::DELETE, &format!("/api/v1/tag/{tag_id}"), None)
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+}
+
+#[tokio::test]
+async fn quality_definitions_and_decision_settings() {
+    let r = rig().await;
+    let (_, defs) = get(&r, "/api/v1/qualitydefinition").await;
+    assert_eq!(
+        defs.as_array().unwrap().len(),
+        30,
+        "every quality has a size definition"
+    );
+    let hd = defs
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["title"] == "Bluray-1080p")
+        .unwrap()
+        .clone();
+
+    let (s, v) = call(
+        &r,
+        Method::PUT,
+        &format!("/api/v1/qualitydefinition/{}", hd["quality_id"]),
+        Some(json!({ "min_size": 5.0, "max_size": 200.0, "preferred_size": 150.0 })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, again) = get(&r, "/api/v1/qualitydefinition").await;
+    let hd2 = again
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["title"] == "Bluray-1080p")
+        .unwrap();
+    assert_eq!(
+        (
+            hd2["min_size"].clone(),
+            hd2["max_size"].clone(),
+            hd2["preferred_size"].clone()
+        ),
+        (json!(5.0), json!(200.0), json!(150.0))
+    );
+
+    let id = hd["quality_id"].clone();
+    for bad in [
+        json!({ "min_size": -1.0 }),
+        json!({ "min_size": 50.0, "max_size": 10.0 }),
+        json!({ "max_size": 10.0, "preferred_size": 20.0 }),
+    ] {
+        assert_eq!(
+            call(
+                &r,
+                Method::PUT,
+                &format!("/api/v1/qualitydefinition/{id}"),
+                Some(bad)
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(
+        call(
+            &r,
+            Method::PUT,
+            "/api/v1/qualitydefinition/9999",
+            Some(json!({}))
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+
+    let (_, mut cfg) = get(&r, "/api/v1/config/decision").await;
+    cfg["minimum_age"] = json!(90);
+    cfg["retention"] = json!(1500);
+    let (s, saved) = call(&r, Method::PUT, "/api/v1/config/decision", Some(cfg)).await;
+    assert_eq!(s, StatusCode::OK, "{saved}");
+    let (_, back) = get(&r, "/api/v1/config/decision").await;
+    assert_eq!(
+        (back["minimum_age"].clone(), back["retention"].clone()),
+        (json!(90), json!(1500))
+    );
+}

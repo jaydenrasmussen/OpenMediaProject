@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DelayProfile {
+    /// Assigned on creation; clients may leave it out.
+    #[serde(default)]
     pub id: i32,
     pub enable_usenet: bool,
     pub enable_torrent: bool,

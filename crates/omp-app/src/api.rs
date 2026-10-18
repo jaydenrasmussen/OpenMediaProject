@@ -949,6 +949,221 @@ async fn delete_provider(app: Arc<App>, kind: ProviderKind, id: i64) -> ApiResul
     Ok(StatusCode::NO_CONTENT)
 }
 
+// ---- profiles and other settings ---------------------------------------------------------
+
+fn to_json<T: serde::Serialize>(v: &T) -> ApiResult {
+    serde_json::to_value(v)
+        .map(Json)
+        .map_err(|e| ApiError::internal(e.to_string()))
+}
+
+async fn list_custom_formats(State(app): Shared) -> ApiResult {
+    to_json(&app.db.custom_formats().list().await?)
+}
+
+fn check_custom_format(f: &omp_quality::custom_format::CustomFormatDef) -> Result<(), ApiError> {
+    if f.name.trim().is_empty() {
+        return Err(ApiError::bad_request("a custom format needs a name"));
+    }
+    f.build().map(|_| ()).map_err(ApiError::bad_request)
+}
+
+async fn add_custom_format(
+    State(app): Shared,
+    Json(mut f): Json<omp_quality::custom_format::CustomFormatDef>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    f.id = 0;
+    check_custom_format(&f)?;
+    let id = app.db.custom_formats().insert(&f).await?;
+    f.id = id;
+    Ok((StatusCode::CREATED, to_json(&f)?))
+}
+
+async fn update_custom_format(
+    State(app): Shared,
+    Path(id): Path<i32>,
+    Json(mut f): Json<omp_quality::custom_format::CustomFormatDef>,
+) -> ApiResult {
+    f.id = id;
+    check_custom_format(&f)?;
+    app.db.custom_formats().update(&f).await?;
+    to_json(&f)
+}
+
+async fn delete_custom_format(State(app): Shared, Path(id): Path<i32>) -> ApiResult<StatusCode> {
+    app.db.custom_formats().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_delay_profiles(State(app): Shared) -> ApiResult {
+    to_json(&app.db.delay_profiles().list().await?)
+}
+
+async fn add_delay_profile(
+    State(app): Shared,
+    Json(mut p): Json<omp_quality::delay::DelayProfile>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    p.id = 0;
+    let id = app.db.delay_profiles().insert(&p).await?;
+    p.id = id;
+    Ok((StatusCode::CREATED, to_json(&p)?))
+}
+
+async fn update_delay_profile(
+    State(app): Shared,
+    Path(id): Path<i32>,
+    Json(mut p): Json<omp_quality::delay::DelayProfile>,
+) -> ApiResult {
+    p.id = id;
+    app.db.delay_profiles().update(&p).await?;
+    to_json(&p)
+}
+
+async fn delete_delay_profile(State(app): Shared, Path(id): Path<i32>) -> ApiResult<StatusCode> {
+    app.db.delay_profiles().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_release_profiles(State(app): Shared) -> ApiResult {
+    to_json(&app.db.release_profiles().list().await?)
+}
+
+async fn add_release_profile(
+    State(app): Shared,
+    Json(mut p): Json<omp_quality::release_profile::ReleaseProfile>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    p.id = 0;
+    let id = app.db.release_profiles().insert(&p).await?;
+    p.id = id;
+    Ok((StatusCode::CREATED, to_json(&p)?))
+}
+
+async fn update_release_profile(
+    State(app): Shared,
+    Path(id): Path<i32>,
+    Json(mut p): Json<omp_quality::release_profile::ReleaseProfile>,
+) -> ApiResult {
+    p.id = id;
+    app.db.release_profiles().update(&p).await?;
+    to_json(&p)
+}
+
+async fn delete_release_profile(State(app): Shared, Path(id): Path<i32>) -> ApiResult<StatusCode> {
+    app.db.release_profiles().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_tags(State(app): Shared) -> ApiResult {
+    let tags = app.db.tags().list().await?;
+    Ok(Json(Value::Array(
+        tags.iter()
+            .map(|t| json!({ "id": t.id, "label": t.label }))
+            .collect(),
+    )))
+}
+
+#[derive(Deserialize)]
+struct NewTag {
+    label: String,
+}
+
+async fn add_tag(
+    State(app): Shared,
+    Json(t): Json<NewTag>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let tag = app.db.tags().get_or_create(&t.label).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "id": tag.id, "label": tag.label })),
+    ))
+}
+
+async fn delete_tag(State(app): Shared, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    app.db.tags().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn definition_json(d: &omp_quality::definition::QualityDefinition) -> Value {
+    json!({
+        "quality_id": d.quality.id,
+        "title": d.quality.name,
+        "weight": d.weight,
+        "min_size": d.min_size,
+        "max_size": d.max_size,
+        "preferred_size": d.preferred_size,
+    })
+}
+
+async fn list_quality_definitions(State(app): Shared) -> ApiResult {
+    let defs = app.db.quality_definitions().load().await?;
+    Ok(Json(Value::Array(
+        defs.all().iter().map(definition_json).collect(),
+    )))
+}
+
+#[derive(Deserialize)]
+struct DefinitionUpdate {
+    min_size: Option<f64>,
+    max_size: Option<f64>,
+    preferred_size: Option<f64>,
+}
+
+/// Sizes are megabytes per minute of runtime.
+async fn update_quality_definition(
+    State(app): Shared,
+    Path(quality_id): Path<u32>,
+    Json(u): Json<DefinitionUpdate>,
+) -> ApiResult {
+    let defs = app.db.quality_definitions().load().await?;
+    let mut d = defs
+        .all()
+        .iter()
+        .find(|d| d.quality.id == quality_id)
+        .cloned()
+        .ok_or_else(|| ApiError::not_found("no such quality"))?;
+    for v in [u.min_size, u.max_size, u.preferred_size]
+        .into_iter()
+        .flatten()
+    {
+        if !v.is_finite() || v < 0.0 {
+            return Err(ApiError::bad_request("sizes must be zero or more"));
+        }
+    }
+    if let (Some(min), Some(max)) = (u.min_size, u.max_size)
+        && max != 0.0
+        && min > max
+    {
+        return Err(ApiError::bad_request(
+            "the minimum size cannot be above the maximum",
+        ));
+    }
+    if let (Some(pref), Some(max)) = (u.preferred_size, u.max_size)
+        && max != 0.0
+        && pref > max
+    {
+        return Err(ApiError::bad_request(
+            "the preferred size cannot be above the maximum",
+        ));
+    }
+    d.min_size = u.min_size;
+    d.max_size = u.max_size;
+    d.preferred_size = u.preferred_size;
+    app.db.quality_definitions().save(&d).await?;
+    Ok(Json(definition_json(&d)))
+}
+
+async fn get_decision_config(State(app): Shared) -> ApiResult {
+    to_json(&omp_services::load_decision_config(&app.db).await?)
+}
+
+async fn put_decision_config(
+    State(app): Shared,
+    Json(c): Json<omp_decision::model::DecisionConfig>,
+) -> ApiResult {
+    omp_services::save_decision_config(&app.db, &c).await?;
+    to_json(&c)
+}
+
 /// Tries a provider's settings without saving them.
 async fn test_provider(app: Arc<App>, kind: ProviderKind, body: ProviderBody) -> ApiResult {
     let p = body.into_provider(0, kind);
@@ -1067,6 +1282,41 @@ pub fn router(app: Arc<App>) -> Router {
         .route(
             "/config/import",
             get(get_import_config).put(put_import_config),
+        )
+        .route(
+            "/config/decision",
+            get(get_decision_config).put(put_decision_config),
+        )
+        .route(
+            "/customformat",
+            get(list_custom_formats).post(add_custom_format),
+        )
+        .route(
+            "/customformat/{id}",
+            axum::routing::put(update_custom_format).delete(delete_custom_format),
+        )
+        .route(
+            "/delayprofile",
+            get(list_delay_profiles).post(add_delay_profile),
+        )
+        .route(
+            "/delayprofile/{id}",
+            axum::routing::put(update_delay_profile).delete(delete_delay_profile),
+        )
+        .route(
+            "/releaseprofile",
+            get(list_release_profiles).post(add_release_profile),
+        )
+        .route(
+            "/releaseprofile/{id}",
+            axum::routing::put(update_release_profile).delete(delete_release_profile),
+        )
+        .route("/tag", get(list_tags).post(add_tag))
+        .route("/tag/{id}", axum::routing::delete(delete_tag))
+        .route("/qualitydefinition", get(list_quality_definitions))
+        .route(
+            "/qualitydefinition/{quality_id}",
+            axum::routing::put(update_quality_definition),
         );
     let api = provider_routes!(api, "/indexer", ProviderKind::Indexer);
     let api = provider_routes!(api, "/downloadclient", ProviderKind::DownloadClient);
