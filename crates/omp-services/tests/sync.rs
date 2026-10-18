@@ -346,3 +346,127 @@ async fn automatic_search_grabs_and_interactive_does_not() {
     assert_eq!(res.processed.unwrap().grabbed.len(), 1);
     assert_eq!(r.usenet.added().len(), 1);
 }
+
+#[tokio::test]
+async fn delayed_releases_are_picked_up_by_a_later_sync_once_the_delay_is_over() {
+    let (base, _) = mock(feed(&["The.Matrix.1999.1080p.BluRay.x264-GRP"]), false).await;
+    let r = rig(&base).await;
+    let movie = add_movie(&r.db, 603, "The Matrix", 1999).await;
+    let mut delay = r.db.delay_profiles().list().await.unwrap().remove(0);
+    delay.usenet_delay = 360; // six hours; the release is two hours old
+    r.db.delay_profiles().update(&delay).await.unwrap();
+    let pool = pool(&r.db).await;
+    let engine = DecisionEngine::default();
+
+    let first = rss_sync(&r.db, &engine, &pool, &r.registry, sync_ctx())
+        .await
+        .unwrap();
+    assert!(first.processed.grabbed.is_empty());
+    assert!(r.usenet.added().is_empty());
+    assert_eq!(
+        r.db.pending_releases()
+            .for_movie(movie)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // Three hours on the delay has not passed.
+    let mut ctx = sync_ctx();
+    ctx.now += Duration::hours(3);
+    let second = rss_sync(&r.db, &engine, &pool, &r.registry, ctx)
+        .await
+        .unwrap();
+    // The feed page is fetched again (as Radarr does); the pending copy is not added twice.
+    assert!(second.processed.grabbed.is_empty());
+    assert_eq!(
+        r.db.pending_releases()
+            .for_movie(movie)
+            .await
+            .unwrap()
+            .len(),
+        1,
+        "no duplicate row"
+    );
+
+    // Five hours on it is seven hours old, which is past the delay.
+    let mut ctx = sync_ctx();
+    ctx.now += Duration::hours(5);
+    let third = rss_sync(&r.db, &engine, &pool, &r.registry, ctx)
+        .await
+        .unwrap();
+    assert_eq!(third.processed.grabbed.len(), 1, "{third:?}");
+    assert_eq!(r.usenet.added(), ["The.Matrix.1999.1080p.BluRay.x264-GRP"]);
+    assert!(
+        r.db.pending_releases()
+            .for_movie(movie)
+            .await
+            .unwrap()
+            .is_empty(),
+        "the grabbed release is no longer pending"
+    );
+}
+
+#[tokio::test]
+async fn grabbing_a_better_release_clears_worse_pending_ones_but_keeps_better() {
+    let (base, _) = mock(feed(&["The.Matrix.1999.1080p.BluRay.x264-GRP"]), false).await;
+    let r = rig(&base).await;
+    let movie = add_movie(&r.db, 603, "The Matrix", 1999).await;
+    let mut other = release_for_pending("The.Matrix.1999.720p.WEB-DL.x264-OLD");
+    other.indexer = "Other".into();
+    let mut better = release_for_pending("The.Matrix.1999.2160p.BluRay.x264-NEW");
+    better.indexer = "Other".into();
+    r.db.pending_releases()
+        .add(movie, &other, omp_db::repo::PendingReason::Delay)
+        .await
+        .unwrap();
+    r.db.pending_releases()
+        .add(movie, &better, omp_db::repo::PendingReason::Delay)
+        .await
+        .unwrap();
+    let pool = pool(&r.db).await;
+
+    // No delay on this profile, so the fresh 1080p Bluray is grabbed straight away.
+    let res = rss_sync(
+        &r.db,
+        &DecisionEngine::default(),
+        &pool,
+        &r.registry,
+        sync_ctx(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(res.processed.grabbed.len(), 1);
+    let left: Vec<String> =
+        r.db.pending_releases()
+            .for_movie(movie)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|p| p.release.title)
+            .collect();
+    assert!(
+        !left.iter().any(|t| t.contains("720p")),
+        "worse pending release dropped: {left:?}"
+    );
+}
+
+fn release_for_pending(title: &str) -> omp_core::release::ReleaseInfo {
+    omp_core::release::ReleaseInfo {
+        guid: format!("g-{title}"),
+        title: title.into(),
+        size: 4_000_000_000,
+        download_url: format!("https://idx.example/{title}.nzb"),
+        indexer_id: 0,
+        indexer: "Idx".into(),
+        indexer_priority: 25,
+        protocol: DownloadProtocol::Usenet,
+        publish_date: now() - Duration::hours(1),
+        container: None,
+        indexer_flags: omp_core::release::IndexerFlags(0),
+        imdb_id: None,
+        tmdb_id: 0,
+        torrent: None,
+    }
+}

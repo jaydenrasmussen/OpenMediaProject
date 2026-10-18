@@ -151,6 +151,10 @@ pub async fn process_decisions(
         }
     }
 
+    for g in &out.grabbed {
+        remove_grabbed_pending(db, &items[g.index]).await?;
+    }
+
     for (index, reason) in pending_queue {
         if let Some(id) = movie_id(items, index) {
             db.pending_releases()
@@ -301,5 +305,31 @@ async fn record_grab(
             data,
         })
         .await?;
+    Ok(())
+}
+
+/// Once a release is grabbed, waiting releases for the same movie that are no
+/// better have no further use. Better ones stay: they may still be worth an
+/// upgrade when their delay ends.
+async fn remove_grabbed_pending(db: &Db, grabbed: &EvaluatedRelease) -> Result<(), ServiceError> {
+    let (Some(movie), Some(parsed), Some(profile)) = (
+        grabbed.movie.as_ref(),
+        grabbed.parsed.as_ref(),
+        grabbed.profile.as_ref(),
+    ) else {
+        return Ok(());
+    };
+    for p in db.pending_releases().for_movie(movie.movie.id).await? {
+        let Some(pending) = omp_parser::title::parse_movie_title(&p.release.title, false) else {
+            continue;
+        };
+        if profile
+            .comparer()
+            .compare_model(&parsed.quality, &pending.quality)
+            != std::cmp::Ordering::Less
+        {
+            db.pending_releases().remove(p.id).await?;
+        }
+    }
     Ok(())
 }

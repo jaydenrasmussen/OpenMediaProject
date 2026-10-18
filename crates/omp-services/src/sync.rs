@@ -198,6 +198,23 @@ pub async fn rss_sync(
     }
 
     result.fetched = releases.len();
+    // Releases waiting on a delay (or an unavailable client) are looked at
+    // again every sync, along with the fresh ones.
+    let blocked: Vec<i64> = db
+        .providers()
+        .blocked(ProviderKind::Indexer, ctx.now)
+        .await?
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    for pending in db.pending_releases().list().await? {
+        let r = pending.release;
+        let already = releases.iter().any(|f| same_release(f, &r));
+        let indexer_blocked = r.indexer_id > 0 && blocked.contains(&i64::from(r.indexer_id));
+        if !already && !indexer_blocked {
+            releases.push(r);
+        }
+    }
     let evaluation = evaluate_releases(
         db,
         engine,
@@ -212,7 +229,35 @@ pub async fn rss_sync(
     )
     .await?;
     result.processed = process_decisions(db, &evaluation, registry, &ctx.grab()).await?;
+    remove_rejected_pending(db, &evaluation, &result.processed).await?;
     Ok(result)
+}
+
+/// The same post: same title, publish date and indexer.
+fn same_release(a: &ReleaseInfo, b: &ReleaseInfo) -> bool {
+    a.title == b.title && a.publish_date == b.publish_date && a.indexer == b.indexer
+}
+
+/// A release that was waiting but is now rejected for good has no reason to
+/// stay in the pending list.
+async fn remove_rejected_pending(
+    db: &Db,
+    evaluation: &Evaluation,
+    processed: &ProcessedDecisions,
+) -> Result<(), ServiceError> {
+    if processed.rejected.is_empty() {
+        return Ok(());
+    }
+    let pending = db.pending_releases().list().await?;
+    for &i in &processed.rejected {
+        for p in pending
+            .iter()
+            .filter(|p| same_release(&p.release, &evaluation.items[i].release))
+        {
+            db.pending_releases().remove(p.id).await?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
