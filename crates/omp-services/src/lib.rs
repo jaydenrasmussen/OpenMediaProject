@@ -9,6 +9,7 @@ mod formats;
 mod grab;
 mod snapshot;
 mod sync;
+mod tracking;
 
 pub use config::{DECISION_CONFIG_KEY, load_decision_config, save_decision_config};
 pub use disk::{DiskSpace, NoDiskCheck};
@@ -22,3 +23,4 @@ pub use sync::{
     IndexerFailure, IndexerPool, RssSyncResult, SearchMode, SearchResult, SyncContext, rss_sync,
     search_movie,
 };
+pub use tracking::{DownloadMonitor, MonitorOptions, RefreshResult, TrackedDownload, TrackedState};

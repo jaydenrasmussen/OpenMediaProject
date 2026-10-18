@@ -12,6 +12,7 @@ pub struct FakeClient {
     added: Mutex<Vec<String>>,
     failure: Mutex<Option<ClientError>>,
     items: Mutex<Vec<ClientItem>>,
+    items_failure: Mutex<Option<ClientError>>,
     removed: Mutex<Vec<(String, bool)>>,
 }
 
@@ -22,6 +23,7 @@ impl FakeClient {
             added: Mutex::new(Vec::new()),
             failure: Mutex::new(None),
             items: Mutex::new(Vec::new()),
+            items_failure: Mutex::new(None),
             removed: Mutex::new(Vec::new()),
         }
     }
@@ -34,6 +36,11 @@ impl FakeClient {
     /// Titles added so far.
     pub fn added(&self) -> Vec<String> {
         self.added.lock().unwrap().clone()
+    }
+
+    /// Make `items` fail until cleared.
+    pub fn fail_items(&self, error: Option<ClientError>) {
+        *self.items_failure.lock().unwrap() = error;
     }
 
     pub fn set_items(&self, items: Vec<ClientItem>) {
@@ -61,6 +68,9 @@ impl DownloadClient for FakeClient {
     }
 
     async fn items(&self) -> Result<Vec<ClientItem>, ClientError> {
+        if let Some(e) = self.items_failure.lock().unwrap().clone() {
+            return Err(e);
+        }
         Ok(self.items.lock().unwrap().clone())
     }
 
