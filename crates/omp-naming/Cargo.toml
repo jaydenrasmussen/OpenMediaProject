@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 omp-parser = { path = "../omp-parser" }
+serde = { version = "1", features = ["derive"] }
 
 [lints]
 workspace = true

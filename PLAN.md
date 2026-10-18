@@ -266,6 +266,7 @@ Findings from the spikes:
 | `Ffprobe` MediaProbe (real ffprobe test) + `process_downloads` loop (refresh -> import -> remove from client / block with reasons) | Done | 3 + 2 tests. |
 | `omp-torrent` `TorrentClient`: librqbit-backed `DownloadClient` (URL/magnet add, category folders, seeding-ratio goal, completion/removal) | Done | 3 offline tests (real librqbit, data pre-placed). |
 | `omp-usenet`: NZB parser, yEnc, NNTP (TLS, auth), multi-connection downloader with backup-server fallback, par2 repair + 7zz unpack, `UsenetClient` (persisted queue, categories) | Done | 25 tests (mock NNTP server; real par2/7zz when installed, else skipped). |
+| `omp-app`: app state, first-run defaults (Radarr's 6 quality profiles), client registry from stored settings, scheduler (RSS 15 min, download loop 1 min), `/api/v1` (movies, queue, history, commands, root folders, quality profiles, indexers, download clients, import/naming config) and `omp-server` wired to it | Done | 9 API tests; smoke-tested the real binary. **No authentication yet: do not expose the port.** |
 | MediaInfo formatter for naming tokens, built-in torrent and usenet clients as `DownloadClient`s, HTTP API, UI | Not started | Next. |
 | `ParsingService` (match a parsed release to a library movie) | Not started | Needs the DB layer. |
 | `omp-core` movie metadata + `is_available` | Done | Port of Radarr's `Movie.IsAvailable` (min-availability, 90-day fallback, delay days). |

@@ -1269,6 +1269,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs4"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8640e34b88f7652208ce9e88b1a37a2ae95227d84abec377ccd3c5cfeb141ed4"
+dependencies = [
+ "rustix 1.1.5",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "fs_extra"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2757,6 +2767,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "omp-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "fs4",
+ "http-body-util",
+ "omp-core",
+ "omp-db",
+ "omp-decision",
+ "omp-downloads",
+ "omp-indexers",
+ "omp-metadata",
+ "omp-naming",
+ "omp-parser",
+ "omp-quality",
+ "omp-services",
+ "omp-torrent",
+ "omp-usenet",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+]
+
+[[package]]
 name = "omp-core"
 version = "0.1.0"
 dependencies = [
@@ -2856,6 +2898,7 @@ name = "omp-naming"
 version = "0.1.0"
 dependencies = [
  "omp-parser",
+ "serde",
 ]
 
 [[package]]
@@ -2898,10 +2941,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
- "serde_json",
+ "dotenvy",
+ "omp-app",
  "tokio",
- "tower",
- "tower-http",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2922,6 +2964,7 @@ dependencies = [
  "omp-naming",
  "omp-parser",
  "omp-quality",
+ "serde",
  "serde_json",
  "sqlx",
  "tempfile",

@@ -1,0 +1,40 @@
+[package]
+name = "omp-app"
+description = "Application composition: state, background tasks and the HTTP API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+fs4 = "0.13"
+omp-core = { path = "../omp-core" }
+omp-db = { path = "../omp-db" }
+omp-decision = { path = "../omp-decision" }
+omp-downloads = { path = "../omp-downloads" }
+omp-indexers = { path = "../omp-indexers" }
+omp-metadata = { path = "../omp-metadata" }
+omp-naming = { path = "../omp-naming" }
+omp-parser = { path = "../omp-parser" }
+omp-quality = { path = "../omp-quality" }
+omp-services = { path = "../omp-services" }
+omp-torrent = { path = "../omp-torrent" }
+omp-usenet = { path = "../omp-usenet" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio.workspace = true
+tower = { version = "0.5", features = ["util"] }
+tower-http.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+async-trait = "0.1"
+http-body-util = "0.1"
+tempfile = "3"
+
+[lints]
+workspace = true

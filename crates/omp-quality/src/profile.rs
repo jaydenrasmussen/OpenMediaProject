@@ -68,7 +68,7 @@ impl QualityIndex {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QualityProfile {
     pub id: i32,
     pub name: String,

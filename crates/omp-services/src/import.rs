@@ -20,6 +20,7 @@ use omp_db::{
 };
 use omp_naming::{NamingConfig, NamingFile, NamingMovie, build_file_name};
 use omp_parser::{files::is_media_extension, title::parse_movie_title};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     DiskSpace,
@@ -42,7 +43,8 @@ pub trait MediaProbe: Send + Sync {
     async fn probe(&self, path: &Path) -> Option<ProbeInfo>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ImportMode {
     /// Move unless the download client says the files are still needed.
     Auto,
@@ -50,7 +52,8 @@ pub enum ImportMode {
     Copy,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ImportConfig {
     pub mode: ImportMode,
     /// When copying, hardlink if the file system allows it.

@@ -85,4 +85,7 @@ pub trait DownloadClient: Send + Sync {
     async fn items(&self) -> Result<Vec<ClientItem>, ClientError>;
 
     async fn remove(&self, download_id: &str, delete_data: bool) -> Result<(), ClientError>;
+
+    /// Stops background work before the client is dropped or replaced.
+    async fn shutdown(&self) {}
 }

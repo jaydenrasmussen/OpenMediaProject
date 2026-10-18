@@ -15,6 +15,7 @@ mod sync;
 mod tracking;
 
 pub use config::{DECISION_CONFIG_KEY, load_decision_config, save_decision_config};
+pub use config::{load_import_config, save_import_config};
 pub use disk::{DiskSpace, NoDiskCheck};
 pub use evaluate::{
     EvaluateRequest, EvaluatedRelease, Evaluation, ServiceError, evaluate_releases,

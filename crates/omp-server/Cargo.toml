@@ -9,13 +9,11 @@ rust-version.workspace = true
 [dependencies]
 anyhow.workspace = true
 axum.workspace = true
+dotenvy = "0.15"
+omp-app = { path = "../omp-app" }
 tokio.workspace = true
-tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-tower = { version = "0.5", features = ["util"] }
-serde_json = "1"
-
 
 [lints]
 workspace = true

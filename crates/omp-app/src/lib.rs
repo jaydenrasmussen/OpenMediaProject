@@ -1,0 +1,13 @@
+//! Puts the pieces together: application state, the background tasks that
+//! keep the library moving, and the HTTP API.
+
+mod api;
+mod app;
+mod clients;
+mod config;
+mod tasks;
+
+pub use api::router;
+pub use app::{App, RealDisk};
+pub use config::AppConfig;
+pub use tasks::{process_downloads_once, rss_sync_once, search_movie_once, spawn_scheduler};

@@ -1,15 +1,6 @@
-use std::{convert::Infallible, env, net::SocketAddr, path::PathBuf};
+use std::env;
 
-use axum::{
-    Json, Router,
-    body::Body,
-    http::{Request, StatusCode},
-    response::IntoResponse,
-    routing::get,
-};
-use serde_json::json;
-use tower::{ServiceExt, service_fn};
-use tower_http::services::{ServeDir, ServeFile};
+use omp_app::{App, AppConfig, router, spawn_scheduler};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -17,21 +8,55 @@ async fn main() -> anyhow::Result<()> {
         return healthcheck().await;
     }
 
+    // A .env file is a development convenience; the container has none.
+    let _ = dotenvy::dotenv();
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
-    let addr: SocketAddr = env::var("OMP_ADDR")
-        .unwrap_or_else(|_| "0.0.0.0:8080".into())
-        .parse()?;
-    let ui_dir = PathBuf::from(env::var("OMP_UI_DIR").unwrap_or_else(|_| "ui/out".into()));
+    let config = AppConfig::from_env()?;
+    let addr = config.addr;
+    tracing::info!(data_dir = %config.data_dir.display(), ui_dir = %config.ui_dir.display(), "starting");
+    if config.tmdb_token.is_none() {
+        tracing::warn!("TMDB_READ_TOKEN is not set: movies cannot be added until it is");
+    }
+
+    let app = App::open(config).await?;
+    let background = spawn_scheduler(app.clone());
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    tracing::info!(%addr, ui_dir = %ui_dir.display(), "listening");
-    axum::serve(listener, app(ui_dir)).await?;
+    tracing::info!(%addr, "listening");
+    axum::serve(listener, router(app.clone()))
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    tracing::info!("shutting down");
+    for task in background {
+        task.abort();
+    }
+    app.shutdown().await;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            s.recv().await;
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        () = ctrl_c => {},
+        () = terminate => {},
+    }
 }
 
 /// Used by the container HEALTHCHECK so the image needs no curl.
@@ -52,82 +77,4 @@ async fn healthcheck() -> anyhow::Result<()> {
         "unhealthy: {buf}"
     );
     Ok(())
-}
-
-fn app(ui_dir: PathBuf) -> Router {
-    // Static export: unknown *page* paths fall back to the SPA shell. Paths that
-    // look like files (have an extension) must 404, or a missing JS/CSS asset
-    // would be served as HTML with a 200.
-    let shell = ServeFile::new(ui_dir.join("index.html"));
-    let ui = ServeDir::new(&ui_dir).fallback(service_fn(move |req: Request<Body>| {
-        let shell = shell.clone();
-        async move {
-            let last = req.uri().path().rsplit('/').next().unwrap_or_default();
-            if last.contains('.') {
-                Ok(StatusCode::NOT_FOUND.into_response())
-            } else {
-                Ok::<_, Infallible>(shell.oneshot(req).await.into_response())
-            }
-        }
-    }));
-    Router::new()
-        .route("/api/v1/health", get(health))
-        .fallback_service(ui)
-}
-
-async fn health() -> Json<serde_json::Value> {
-    Json(json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use axum::{body::Body, http::Request};
-    use tower::ServiceExt;
-
-    use super::*;
-
-    fn ui_fixture() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("omp-ui-test-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("_next")).unwrap();
-        std::fs::write(dir.join("index.html"), "<h1>shell</h1>").unwrap();
-        std::fs::write(dir.join("_next/app.js"), "console.log(1)").unwrap();
-        dir
-    }
-
-    async fn status(ui: &Path, path: &str) -> u16 {
-        app(ui.to_path_buf())
-            .oneshot(Request::get(path).body(Body::empty()).unwrap())
-            .await
-            .unwrap()
-            .status()
-            .as_u16()
-    }
-
-    #[tokio::test]
-    async fn spa_fallback_only_for_page_paths() {
-        let ui = ui_fixture();
-        assert_eq!(status(&ui, "/").await, 200);
-        assert_eq!(
-            status(&ui, "/movies/42").await,
-            200,
-            "unknown page -> shell"
-        );
-        assert_eq!(status(&ui, "/_next/app.js").await, 200);
-        assert_eq!(
-            status(&ui, "/_next/missing.js").await,
-            404,
-            "missing asset must 404"
-        );
-    }
-
-    #[tokio::test]
-    async fn health_ok() {
-        let res = app("nonexistent".into())
-            .oneshot(Request::get("/api/v1/health").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(res.status(), 200);
-    }
 }

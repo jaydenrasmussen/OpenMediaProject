@@ -1,6 +1,7 @@
 use std::sync::LazyLock;
 
 use omp_parser::re::Re;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     iso,
@@ -14,7 +15,8 @@ use crate::{
 /// prefix or suffix around the token.
 pub const DEFAULT_RELEASE_GROUP: &str = "OpenMediaProject";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ColonReplacement {
     Delete,
     Dash,
@@ -24,7 +26,8 @@ pub enum ColonReplacement {
     Smart,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct NamingConfig {
     pub rename_movies: bool,
     pub replace_illegal_characters: bool,

@@ -94,6 +94,18 @@ impl History<'_> {
             .collect()
     }
 
+    /// The most recent events across all movies, newest first.
+    pub async fn recent(&self, limit: i64, offset: i64) -> Result<Vec<HistoryRecord>> {
+        sqlx::query("SELECT * FROM history ORDER BY date DESC, id DESC LIMIT ? OFFSET ?")
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(self.0)
+            .await?
+            .iter()
+            .map(history_from_row)
+            .collect()
+    }
+
     /// Every event that shares a download id, oldest first.
     pub async fn by_download_id(&self, download_id: &str) -> Result<Vec<HistoryRecord>> {
         sqlx::query("SELECT * FROM history WHERE download_id = ? ORDER BY date, id")

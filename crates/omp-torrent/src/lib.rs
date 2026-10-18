@@ -313,6 +313,10 @@ impl DownloadClient for TorrentClient {
         Ok(items)
     }
 
+    async fn shutdown(&self) {
+        self.stop().await;
+    }
+
     async fn remove(&self, download_id: &str, delete_data: bool) -> Result<(), ClientError> {
         let hash = download_id.parse::<librqbit::dht::Id20>().map_err(other)?;
         self.session

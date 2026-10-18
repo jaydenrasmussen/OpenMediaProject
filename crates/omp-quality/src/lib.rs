@@ -4,6 +4,7 @@
 //! `UpgradableSpecification` (GPL-3.0).
 
 pub mod custom_format;
+pub mod defaults;
 pub mod definition;
 pub mod delay;
 pub mod profile;
