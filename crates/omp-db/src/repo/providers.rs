@@ -230,6 +230,44 @@ impl Providers<'_> {
         Ok(date.zip(url))
     }
 
+    /// As [`Self::last_rss_sync`], for the TV feed.
+    pub async fn last_tv_rss_sync(
+        &self,
+        provider_id: i64,
+    ) -> Result<Option<(DateTime<Utc>, String)>> {
+        let row = sqlx::query(
+            "SELECT last_tv_rss_publish_date, last_tv_rss_download_url FROM provider_status WHERE provider_id = ?",
+        )
+        .bind(provider_id)
+        .fetch_optional(self.0)
+        .await?;
+        let Some(r) = row else { return Ok(None) };
+        let date: Option<DateTime<Utc>> = r.try_get("last_tv_rss_publish_date")?;
+        let url: Option<String> = r.try_get("last_tv_rss_download_url")?;
+        Ok(date.zip(url))
+    }
+
+    pub async fn set_last_tv_rss_sync(
+        &self,
+        provider_id: i64,
+        publish_date: DateTime<Utc>,
+        download_url: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO provider_status (provider_id, last_tv_rss_publish_date, last_tv_rss_download_url)
+             VALUES (?, ?, ?)
+             ON CONFLICT(provider_id) DO UPDATE SET
+               last_tv_rss_publish_date = excluded.last_tv_rss_publish_date,
+               last_tv_rss_download_url = excluded.last_tv_rss_download_url",
+        )
+        .bind(provider_id)
+        .bind(publish_date)
+        .bind(download_url)
+        .execute(self.0)
+        .await?;
+        Ok(())
+    }
+
     pub async fn set_last_rss_sync(
         &self,
         provider_id: i64,

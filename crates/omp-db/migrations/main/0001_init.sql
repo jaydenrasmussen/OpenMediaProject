@@ -251,6 +251,50 @@ CREATE TABLE episodes (
 CREATE INDEX episodes_file ON episodes(episode_file_id);
 CREATE INDEX episodes_air_date ON episodes(air_date);
 
+CREATE TABLE episode_history (
+    id          INTEGER PRIMARY KEY,
+    series_id   INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+    episode_id  INTEGER NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
+    event_type  INTEGER NOT NULL,
+    date        TEXT NOT NULL,
+    source_title TEXT NOT NULL,
+    quality     TEXT NOT NULL,
+    languages   TEXT NOT NULL DEFAULT '[]',
+    download_id TEXT,
+    data        TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX episode_history_episode ON episode_history(episode_id, date);
+CREATE INDEX episode_history_download ON episode_history(download_id);
+
+CREATE TABLE tv_blocklist (
+    id              INTEGER PRIMARY KEY,
+    series_id       INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+    episode_ids     TEXT NOT NULL DEFAULT '[]',
+    source_title    TEXT NOT NULL,
+    quality         TEXT NOT NULL,
+    languages       TEXT NOT NULL DEFAULT '[]',
+    published_date  TEXT,
+    size            INTEGER,
+    protocol        INTEGER NOT NULL,
+    indexer         TEXT,
+    indexer_flags   INTEGER NOT NULL DEFAULT 0,
+    torrent_info_hash TEXT,
+    message         TEXT,
+    date            TEXT NOT NULL
+);
+CREATE INDEX tv_blocklist_series ON tv_blocklist(series_id);
+
+CREATE TABLE pending_tv_releases (
+    id          INTEGER PRIMARY KEY,
+    series_id   INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+    episode_ids TEXT NOT NULL DEFAULT '[]',
+    title       TEXT NOT NULL,
+    added       TEXT NOT NULL,
+    release     TEXT NOT NULL,
+    reason      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX pending_tv_series ON pending_tv_releases(series_id);
+
 -- ---- history ------------------------------------------------------------------
 
 CREATE TABLE history (
@@ -316,7 +360,9 @@ CREATE TABLE provider_status (
     disabled_till   TEXT,
     -- The newest release the last RSS sync saw, so the next one knows where to stop.
     last_rss_publish_date TEXT,
-    last_rss_download_url TEXT
+    last_rss_download_url TEXT,
+    last_tv_rss_publish_date TEXT,
+    last_tv_rss_download_url TEXT
 );
 
 -- ---- queue and scheduling ------------------------------------------------------------

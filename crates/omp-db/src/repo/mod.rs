@@ -9,6 +9,7 @@ mod profiles;
 mod providers;
 mod series;
 mod simple;
+mod tv_activity;
 
 pub use activity::{
     Blocklist, History, HistoryRecord, PendingReason, PendingRelease, PendingReleases,
@@ -26,3 +27,7 @@ pub use series::{
     SeriesRecord, SeriesUpdate,
 };
 pub use simple::{ImportExclusion, ImportExclusions, RootFolder, RootFolders, Tag, Tags};
+pub use tv_activity::{
+    EpisodeHistory, EpisodeHistoryRecord, PendingTvRelease, PendingTvReleases, TvBlocklist,
+    TvBlocklistEntry,
+};

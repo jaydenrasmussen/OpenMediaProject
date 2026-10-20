@@ -18,6 +18,10 @@ mod series;
 mod snapshot;
 mod sync;
 mod tracking;
+mod tv_evaluate;
+mod tv_grab;
+mod tv_match;
+mod tv_sync;
 
 pub use config::{DECISION_CONFIG_KEY, load_decision_config, save_decision_config};
 pub use config::{load_import_config, save_import_config};
@@ -47,4 +51,16 @@ pub use sync::{
 };
 pub use tracking::{
     DownloadMonitor, MonitorOptions, RefreshResult, TrackedDownload, TrackedState, record_failure,
+};
+pub use tv_evaluate::{
+    EvaluatedTvRelease, TvEvaluateRequest, TvEvaluation, TvQueueMap, TvSnapshot,
+    evaluate_tv_releases, input_for_episode_file, input_for_episode_release,
+};
+pub use tv_grab::{grab_selected_tv, process_tv_decisions};
+pub use tv_match::{
+    ReleaseIds, SeriesIndex, SeriesMatchType, TvMatch, find_series, match_release, pick_episodes,
+};
+pub use tv_sync::{
+    SeriesSearchSummary, TvRssSyncResult, TvSearchResult, TvSyncContext, search_episode,
+    search_missing, search_season, tv_rss_sync,
 };

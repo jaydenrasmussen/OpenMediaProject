@@ -62,14 +62,14 @@ pub trait PluginIndexers: Send + Sync {
     ) -> Result<Vec<ReleaseInfo>, String>;
 }
 
-enum Source {
+pub(crate) enum Source {
     Builtin(Box<IndexerClient>),
     Plugin(Arc<dyn PluginIndexers>),
 }
 
-struct PoolIndexer {
-    provider: Provider,
-    source: Source,
+pub(crate) struct PoolIndexer {
+    pub(crate) provider: Provider,
+    pub(crate) source: Source,
 }
 
 impl PoolIndexer {
@@ -95,6 +95,31 @@ impl PoolIndexer {
         }
     }
 
+    pub(crate) async fn recent_tv(
+        &self,
+        last_seen: Option<LastSeen>,
+    ) -> Result<RecentFeed, IndexerError> {
+        match &self.source {
+            Source::Builtin(client) => client.fetch_recent_tv(last_seen).await,
+            // Plugins only speak movies for now.
+            Source::Plugin(_) => Ok(RecentFeed {
+                releases: vec![],
+                fully_updated: true,
+                newest: None,
+            }),
+        }
+    }
+
+    pub(crate) async fn search_tv(
+        &self,
+        search: &omp_indexers::TvSearch,
+    ) -> Result<Vec<ReleaseInfo>, IndexerError> {
+        match &self.source {
+            Source::Builtin(client) => client.search_tv(search).await,
+            Source::Plugin(_) => Ok(vec![]),
+        }
+    }
+
     async fn search(&self, query: &MovieSearch) -> Result<Vec<ReleaseInfo>, IndexerError> {
         match &self.source {
             Source::Builtin(client) => client.search_movie(query).await,
@@ -108,7 +133,7 @@ impl PoolIndexer {
 
 /// The configured, usable indexers.
 pub struct IndexerPool {
-    indexers: Vec<PoolIndexer>,
+    pub(crate) indexers: Vec<PoolIndexer>,
 }
 
 impl IndexerPool {
@@ -176,7 +201,7 @@ pub struct SyncContext {
 }
 
 impl SyncContext {
-    fn grab(&self) -> GrabContext {
+    pub(crate) fn grab(&self) -> GrabContext {
         GrabContext {
             now: self.now,
             process_start: self.process_start,
@@ -201,7 +226,7 @@ pub struct RssSyncResult {
 }
 
 /// Records a failed call against the indexer's back-off, the way Radarr does.
-async fn record_failure(
+pub(crate) async fn record_failure(
     db: &Db,
     provider_id: i64,
     error: &IndexerError,
@@ -222,7 +247,11 @@ async fn record_failure(
     Ok(())
 }
 
-async fn is_blocked(db: &Db, provider_id: i64, now: DateTime<Utc>) -> Result<bool, ServiceError> {
+pub(crate) async fn is_blocked(
+    db: &Db,
+    provider_id: i64,
+    now: DateTime<Utc>,
+) -> Result<bool, ServiceError> {
     Ok(db
         .providers()
         .blocked(ProviderKind::Indexer, now)
@@ -341,7 +370,7 @@ pub async fn push_release(
 }
 
 /// The same post: same title, publish date and indexer.
-fn same_release(a: &ReleaseInfo, b: &ReleaseInfo) -> bool {
+pub(crate) fn same_release(a: &ReleaseInfo, b: &ReleaseInfo) -> bool {
     a.title == b.title && a.publish_date == b.publish_date && a.indexer == b.indexer
 }
 

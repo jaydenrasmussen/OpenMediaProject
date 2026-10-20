@@ -8,10 +8,10 @@ use sqlx::{
 use crate::{
     Result,
     repo::{
-        Blocklist, Config, CustomFormats, DelayProfiles, EpisodeFiles, Episodes, History,
-        ImportExclusions, Logs, MovieFiles, Movies, PendingReleases, Providers,
-        QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles, RootFolders, Series, Sessions,
-        Tags, Users,
+        Blocklist, Config, CustomFormats, DelayProfiles, EpisodeFiles, EpisodeHistory, Episodes,
+        History, ImportExclusions, Logs, MovieFiles, Movies, PendingReleases, PendingTvReleases,
+        Providers, QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles, RootFolders, Series,
+        Sessions, Tags, TvBlocklist, Users,
     },
 };
 
@@ -190,6 +190,18 @@ impl Db {
 
     pub fn sessions(&self) -> Sessions<'_> {
         Sessions(&self.main)
+    }
+
+    pub fn episode_history(&self) -> EpisodeHistory<'_> {
+        EpisodeHistory(&self.main)
+    }
+
+    pub fn tv_blocklist(&self) -> TvBlocklist<'_> {
+        TvBlocklist(&self.main)
+    }
+
+    pub fn pending_tv_releases(&self) -> PendingTvReleases<'_> {
+        PendingTvReleases(&self.main)
     }
 
     pub fn series(&self) -> Series<'_> {
