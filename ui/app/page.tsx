@@ -6,6 +6,7 @@ import { LoadState } from "./components/Page";
 import { Poster } from "./components/Poster";
 import { get } from "./lib/api";
 import { useLoad } from "./lib/hooks";
+import { useLive } from "./lib/live";
 import type { Movie } from "./lib/types";
 
 type Filter = "all" | "wanted" | "downloaded" | "unmonitored";
@@ -18,7 +19,8 @@ function badge(m: Movie) {
 }
 
 export default function Library() {
-  const { data, error, loading } = useLoad(() => get<Movie[]>("/movie"));
+  const { data, error, loading, reload } = useLoad(() => get<Movie[]>("/movie"));
+  useLive(reload, ["history"]);
   const [text, setText] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("title");

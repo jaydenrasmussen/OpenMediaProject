@@ -286,7 +286,7 @@ Findings from the spikes:
 | Naming-token engine | Not started | |
 
 #### Work order (set 2026-10-20)
-1. [ ] WebSocket live updates
+1. [x] WebSocket live updates
 2. [ ] Scene numbering and mappings
 3. [ ] TV import lists
 4. [ ] Manual import of unmatched downloads

@@ -11,6 +11,7 @@ import { useToast } from "../../components/toast";
 import { del, get, post, put } from "../../lib/api";
 import { formatDate, formatSize } from "../../lib/format";
 import { errorMessage, useLoad } from "../../lib/hooks";
+import { useLive } from "../../lib/live";
 import type { Episode, EpisodeHistoryItem, QualityProfile, Series, Tag } from "../../lib/types";
 
 export default function SeriesPage() {
@@ -53,6 +54,7 @@ function SeriesDetail() {
     episodes.reload();
     history.reload();
   };
+  useLive(reload, ["history"]);
 
   async function run<T>(work: () => Promise<T>, done?: string) {
     try {

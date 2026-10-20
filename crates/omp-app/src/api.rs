@@ -2314,10 +2314,16 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/plugin/{id}/schema", get(plugin_schema));
 
     // Everything above needs a login session or the API key.
-    let api = api.route_layer(axum::middleware::from_fn_with_state(
-        app.clone(),
-        crate::auth::require_auth,
-    ));
+    let api = api.route("/ws", get(crate::events::websocket));
+    let api = api
+        .route_layer(axum::middleware::from_fn_with_state(
+            app.clone(),
+            crate::events::announce_changes,
+        ))
+        .route_layer(axum::middleware::from_fn_with_state(
+            app.clone(),
+            crate::auth::require_auth,
+        ));
     let public = Router::new()
         .route("/health", get(health))
         .route("/auth/status", get(crate::auth::status))

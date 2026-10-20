@@ -7,6 +7,7 @@ import { Poster } from "../components/Poster";
 import { useToast } from "../components/toast";
 import { get, put } from "../lib/api";
 import { errorMessage, useLoad } from "../lib/hooks";
+import { useLive } from "../lib/live";
 import type { QualityProfile, Series } from "../lib/types";
 
 type Filter = "all" | "continuing" | "ended" | "missing" | "unmonitored";
@@ -22,6 +23,7 @@ function badge(s: Series) {
 export default function SeriesLibrary() {
   const { data, error, loading, reload } = useLoad(() => get<Series[]>("/series"));
   const profiles = useLoad(() => get<QualityProfile[]>("/qualityprofile"));
+  useLive(reload, ["history"]);
   const notify = useToast();
   const [editing, setEditing] = useState(false);
   const [picked, setPicked] = useState<Set<number>>(new Set());

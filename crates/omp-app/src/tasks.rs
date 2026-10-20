@@ -336,7 +336,8 @@ where
 /// Starts the periodic jobs. Abort the handles to stop them.
 pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
     let minute = Duration::from_secs(60);
-    vec![
+    let mut jobs = vec![crate::events::spawn_watcher(app.clone())];
+    jobs.extend(vec![
         every(
             &app,
             "rss-sync",
@@ -468,7 +469,8 @@ pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
                 }
             },
         ),
-    ]
+    ]);
+    jobs
 }
 
 /// Re-reads movie details from the metadata provider: release dates, status

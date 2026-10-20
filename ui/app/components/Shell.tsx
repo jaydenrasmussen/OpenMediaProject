@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { UNAUTHORIZED_EVENT, get, post } from "../lib/api";
 import type { AuthStatus, HealthIssue } from "../lib/types";
+import { useLive } from "../lib/live";
 import { AuthScreen } from "./AuthScreen";
 import { ToastProvider } from "./toast";
 
@@ -98,6 +99,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
 function HealthBanner() {
   const [issues, setIssues] = useState<HealthIssue[]>([]);
   const pathname = usePathname();
+  const [tick, setTick] = useState(0);
+  useLive(() => setTick((t) => t + 1), ["tasks"]);
   useEffect(() => {
     let live = true;
     get<HealthIssue[]>("/system/health")
@@ -107,7 +110,7 @@ function HealthBanner() {
       live = false;
     };
     // Re-check when moving between pages, so fixing a setting clears it.
-  }, [pathname]);
+  }, [pathname, tick]);
   if (issues.length === 0 || pathname.startsWith("/system")) return null;
   const errors = issues.filter((i) => i.level === "error").length;
   return (

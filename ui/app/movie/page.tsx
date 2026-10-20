@@ -11,6 +11,7 @@ import { useToast } from "../components/toast";
 import { del, get, post, put } from "../lib/api";
 import { formatDate, formatRuntime, formatSize } from "../lib/format";
 import { errorMessage, useLoad } from "../lib/hooks";
+import { useLive } from "../lib/live";
 import type { HistoryItem, Movie, QualityProfile, Tag } from "../lib/types";
 
 export default function MoviePage() {
@@ -38,6 +39,10 @@ function MovieDetail() {
   const notify = useToast();
   const movie = useLoad(() => get<Movie>(`/movie/${id}`), [id]);
   const history = useLoad(() => get<HistoryItem[]>(`/history?movie_id=${id}`), [id]);
+  useLive(() => {
+    movie.reload();
+    history.reload();
+  }, ["history"]);
   const [showSearch, setShowSearch] = useState(false);
   const [editing, setEditing] = useState(false);
 

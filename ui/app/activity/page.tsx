@@ -7,6 +7,7 @@ import { useToast } from "../components/toast";
 import { del, get } from "../lib/api";
 import { formatDate, formatSize, percent } from "../lib/format";
 import { errorMessage, useLoad, usePoll } from "../lib/hooks";
+import { useLive } from "../lib/live";
 import type { BlocklistItem, EpisodeHistoryItem, HistoryItem, QueueItem, TvBlocklistItem } from "../lib/types";
 
 const STATE_BADGE: Record<string, string> = {
@@ -56,7 +57,8 @@ export default function Activity() {
 function Queue() {
   const notify = useToast();
   const q = useLoad(() => get<QueueItem[]>("/queue"));
-  usePoll(q.reload, 4000);
+  useLive(q.reload, ["queue"]);
+  usePoll(q.reload, 30000); // a safety net if the socket is down
 
   const [removing, setRemoving] = useState<QueueItem | null>(null);
   const [blocklist, setBlocklist] = useState(true);
@@ -166,6 +168,7 @@ function Blocklist() {
     ];
     return rows.sort((a, c) => c.date.localeCompare(a.date));
   });
+  useLive(b.reload, []);
   async function remove(i: BlockRow) {
     try {
       await del(i.tv ? `/blocklist/series/${i.id}` : `/blocklist/${i.id}`);
@@ -254,6 +257,7 @@ function History() {
     ];
     return rows.sort((a, b) => b.date.localeCompare(a.date)).slice(0, PAGE);
   }, [page]);
+  useLive(h.reload, ["history"]);
   return (
     <>
       <LoadState loading={h.loading} error={h.error} hasData={!!h.data} />

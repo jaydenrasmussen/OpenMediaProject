@@ -7,6 +7,7 @@ import { useToast } from "../components/toast";
 import { get, post } from "../lib/api";
 import { formatDate } from "../lib/format";
 import { errorMessage, useLoad } from "../lib/hooks";
+import { useLive } from "../lib/live";
 import type { Movie, WantedEpisode } from "../lib/types";
 
 type Tab = "missing" | "cutoff";
@@ -34,6 +35,7 @@ function WantedEpisodes() {
   const [tab, setTab] = useState<Tab>("missing");
   const list = useLoad(() => get<{ total: number; items: WantedEpisode[] }>(`/wanted/episodes/${tab}?limit=200`), [tab]);
   const [searching, setSearching] = useState<Set<number>>(new Set());
+  useLive(list.reload, ["history"]);
 
   async function search(ids: number[]) {
     for (const id of ids) {
@@ -118,6 +120,7 @@ function WantedMovies() {
   const [tab, setTab] = useState<Tab>("missing");
   const list = useLoad(() => get<Movie[]>(`/wanted/${tab}`), [tab]);
   const [searching, setSearching] = useState<Set<number>>(new Set());
+  useLive(list.reload, ["history"]);
 
   async function search(ids: number[]) {
     for (const id of ids) {

@@ -40,6 +40,8 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 http-body-util = "0.1"
+tokio-tungstenite = "0.28"
+futures-util = "0.3"
 tempfile = "3"
 
 [lints]
