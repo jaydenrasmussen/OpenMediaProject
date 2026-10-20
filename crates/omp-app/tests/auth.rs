@@ -525,3 +525,105 @@ async fn the_api_key_cannot_change_the_password() {
     .await;
     assert_eq!(reply.status, StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn repeated_wrong_passwords_lock_the_username_out_for_a_while() {
+    let r = rig().await;
+    set_up(&r).await;
+    let login = |password: &str| {
+        send(
+            &r,
+            "POST",
+            "/api/v1/auth/login",
+            Some(json!({ "username": "admin", "password": password })),
+            &[],
+        )
+    };
+    for _ in 0..5 {
+        assert_eq!(login("wrong").await.status, StatusCode::UNAUTHORIZED);
+    }
+    // Even the right password waits once the limit is hit.
+    let blocked = login(PASSWORD).await;
+    assert_eq!(blocked.status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(
+        blocked.body["error"]
+            .as_str()
+            .unwrap()
+            .contains("try again"),
+        "{}",
+        blocked.body
+    );
+    // Another username is unaffected.
+    let other = send(
+        &r,
+        "POST",
+        "/api/v1/auth/login",
+        Some(json!({ "username": "someone-else", "password": "x" })),
+        &[],
+    )
+    .await;
+    assert_eq!(other.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn a_good_login_clears_earlier_failures() {
+    let r = rig().await;
+    set_up(&r).await;
+    let login = |password: &str| {
+        send(
+            &r,
+            "POST",
+            "/api/v1/auth/login",
+            Some(json!({ "username": "admin", "password": password })),
+            &[],
+        )
+    };
+    for _ in 0..4 {
+        login("wrong").await;
+    }
+    assert_eq!(login(PASSWORD).await.status, StatusCode::OK);
+    for _ in 0..4 {
+        assert_eq!(login("wrong").await.status, StatusCode::UNAUTHORIZED);
+    }
+}
+
+#[tokio::test]
+async fn the_cookie_is_secure_only_behind_https() {
+    let r = rig().await;
+    set_up(&r).await;
+    let set_cookie = |proto: Option<&'static str>| {
+        let r = &r;
+        async move {
+            let mut req = Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/login")
+                .header("content-type", "application/json");
+            if let Some(p) = proto {
+                req = req.header("x-forwarded-proto", p);
+            }
+            let res = r
+                .router
+                .clone()
+                .oneshot(
+                    req.body(Body::from(
+                        json!({ "username": "admin", "password": PASSWORD }).to_string(),
+                    ))
+                    .unwrap(),
+                )
+                .await
+                .unwrap();
+            res.headers()
+                .get(header::SET_COOKIE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_owned()
+        }
+    };
+    assert!(!set_cookie(None).await.contains("Secure"));
+    let secure = set_cookie(Some("https")).await;
+    assert!(
+        secure.contains("; Secure") && secure.contains("HttpOnly"),
+        "{secure}"
+    );
+}

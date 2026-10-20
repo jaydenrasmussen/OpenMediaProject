@@ -181,8 +181,65 @@ pub struct Credentials {
     password: String,
 }
 
-fn session_cookie(token: &str, max_age_secs: i64) -> String {
-    format!("{SESSION_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age_secs}")
+/// Behind a TLS-terminating proxy the browser sees HTTPS, and the cookie
+/// should then never travel over plain HTTP.
+fn is_https(headers: &HeaderMap) -> bool {
+    headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.eq_ignore_ascii_case("https"))
+}
+
+fn session_cookie(token: &str, max_age_secs: i64, secure: bool) -> String {
+    let secure = if secure { "; Secure" } else { "" };
+    format!(
+        "{SESSION_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age_secs}{secure}"
+    )
+}
+
+/// Failed sign-ins per username, and overall, in a sliding window. Keeps a
+/// guessing attack slow without locking the real owner out for long.
+#[derive(Default)]
+pub(crate) struct LoginLimiter {
+    failures: std::sync::Mutex<std::collections::HashMap<String, Vec<std::time::Instant>>>,
+}
+
+const LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+const MAX_FAILURES_PER_USER: usize = 5;
+const MAX_FAILURES_OVERALL: usize = 50;
+const ANY_USER: &str = "\u{0}all";
+
+impl LoginLimiter {
+    /// How long until another attempt is allowed, if one is not allowed now.
+    pub(crate) fn blocked_for(
+        &self,
+        username: &str,
+        now: std::time::Instant,
+    ) -> Option<std::time::Duration> {
+        let mut map = self.failures.lock().unwrap();
+        let mut wait = |key: &str, max: usize| {
+            let recent = map.entry(key.to_owned()).or_default();
+            recent.retain(|t| now.duration_since(*t) < LIMIT_WINDOW);
+            (recent.len() >= max).then(|| LIMIT_WINDOW - now.duration_since(recent[0]))
+        };
+        let user = wait(&username.to_lowercase(), MAX_FAILURES_PER_USER);
+        let all = wait(ANY_USER, MAX_FAILURES_OVERALL);
+        user.into_iter().chain(all).max()
+    }
+
+    pub(crate) fn record_failure(&self, username: &str, now: std::time::Instant) {
+        let mut map = self.failures.lock().unwrap();
+        for key in [username.to_lowercase(), ANY_USER.to_owned()] {
+            map.entry(key).or_default().push(now);
+        }
+    }
+
+    pub(crate) fn clear(&self, username: &str) {
+        self.failures
+            .lock()
+            .unwrap()
+            .remove(&username.to_lowercase());
+    }
 }
 
 async fn start_session(app: &App, user_id: i64) -> Result<String, ApiError> {
@@ -209,6 +266,7 @@ fn with_cookie(cookie: String, body: Value) -> Response {
 /// Creates the one user. Only works while there is none.
 pub async fn setup(
     State(app): State<Arc<App>>,
+    headers: HeaderMap,
     Json(c): Json<Credentials>,
 ) -> Result<Response, ApiError> {
     let username = c.username.trim();
@@ -229,15 +287,24 @@ pub async fn setup(
     };
     let token = start_session(&app, user.id).await?;
     Ok(with_cookie(
-        session_cookie(&token, SESSION_DAYS * 86400),
+        session_cookie(&token, SESSION_DAYS * 86400, is_https(&headers)),
         json!({ "username": user.username }),
     ))
 }
 
 pub async fn login(
     State(app): State<Arc<App>>,
+    headers: HeaderMap,
     Json(c): Json<Credentials>,
 ) -> Result<Response, ApiError> {
+    let now = std::time::Instant::now();
+    if let Some(wait) = app.login_limiter.blocked_for(c.username.trim(), now) {
+        let minutes = wait.as_secs().div_ceil(60).max(1);
+        return Err(ApiError(
+            StatusCode::TOO_MANY_REQUESTS,
+            format!("too many failed attempts; try again in {minutes} minute(s)"),
+        ));
+    }
     let user = app.db.users().by_username(c.username.trim()).await?;
     // Always do the expensive check so timing does not reveal valid usernames.
     let ok = verify_password(
@@ -248,13 +315,15 @@ pub async fn login(
         && user.is_some();
     match user {
         Some(user) if ok => {
+            app.login_limiter.clear(c.username.trim());
             let token = start_session(&app, user.id).await?;
             Ok(with_cookie(
-                session_cookie(&token, SESSION_DAYS * 86400),
+                session_cookie(&token, SESSION_DAYS * 86400, is_https(&headers)),
                 json!({ "username": user.username }),
             ))
         }
         _ => {
+            app.login_limiter.record_failure(c.username.trim(), now);
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             Err(ApiError(
                 StatusCode::UNAUTHORIZED,
@@ -269,7 +338,7 @@ pub async fn logout(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<R
         app.db.sessions().delete(&hash_token(&token)).await?;
     }
     Ok(with_cookie(
-        session_cookie("", 0),
+        session_cookie("", 0, is_https(&headers)),
         json!({ "status": "logged out" }),
     ))
 }
@@ -282,6 +351,7 @@ pub struct ChangePassword {
 
 pub async fn change_password(
     State(app): State<Arc<App>>,
+    headers: HeaderMap,
     axum::Extension(identity): axum::Extension<Identity>,
     Json(c): Json<ChangePassword>,
 ) -> Result<Response, ApiError> {
@@ -310,7 +380,7 @@ pub async fn change_password(
     app.db.sessions().delete_for_user(user_id).await?;
     let token = start_session(&app, user_id).await?;
     Ok(with_cookie(
-        session_cookie(&token, SESSION_DAYS * 86400),
+        session_cookie(&token, SESSION_DAYS * 86400, is_https(&headers)),
         json!({ "status": "password changed" }),
     ))
 }

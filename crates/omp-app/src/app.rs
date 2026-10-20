@@ -37,6 +37,7 @@ pub struct App {
     pub started: DateTime<Utc>,
     /// A real password hash nobody knows the password to, checked when a login names an unknown user.
     pub(crate) dummy_hash: String,
+    pub(crate) login_limiter: crate::auth::LoginLimiter,
     /// Interactive search results, kept so a chosen release can be grabbed.
     pub(crate) search_cache: std::sync::Mutex<crate::releases::SearchCache>,
     pub(crate) rss_lock: tokio::sync::Mutex<()>,
@@ -76,6 +77,7 @@ impl App {
             plugins: Arc::new(crate::plugins::Plugins::load(&config.plugin_dirs)),
             config,
             started: Utc::now(),
+            login_limiter: crate::auth::LoginLimiter::default(),
             dummy_hash: crate::auth::hash_password(&format!("{:?}", Utc::now()))
                 .await
                 .map_err(|e| anyhow::anyhow!("{}", e.1))?,
