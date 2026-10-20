@@ -314,6 +314,32 @@ pub async fn rss_sync(
     Ok(result)
 }
 
+/// A release handed to us by something else (a script, another tool): judge
+/// it like any other and grab it if it passes. Returns the verdict too.
+pub async fn push_release(
+    db: &Db,
+    engine: &DecisionEngine,
+    registry: &ClientRegistry,
+    release: ReleaseInfo,
+    ctx: SyncContext,
+) -> Result<(Evaluation, ProcessedDecisions), ServiceError> {
+    let evaluation = evaluate_releases(
+        db,
+        engine,
+        EvaluateRequest {
+            releases: vec![release],
+            search: None,
+            pushed: true,
+            now: ctx.now,
+            queue: ctx.queue.clone(),
+            disk: ctx.disk.clone(),
+        },
+    )
+    .await?;
+    let processed = process_decisions(db, &evaluation, registry, &ctx.grab()).await?;
+    Ok((evaluation, processed))
+}
+
 /// The same post: same title, publish date and indexer.
 fn same_release(a: &ReleaseInfo, b: &ReleaseInfo) -> bool {
     a.title == b.title && a.publish_date == b.publish_date && a.indexer == b.indexer

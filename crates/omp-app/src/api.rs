@@ -889,6 +889,70 @@ struct ReleaseSearch {
     movie_id: i64,
 }
 
+#[derive(Deserialize)]
+struct PushedRelease {
+    title: String,
+    download_url: String,
+    /// "usenet" or "torrent".
+    protocol: String,
+    #[serde(default)]
+    size: u64,
+    publish_date: Option<chrono::DateTime<chrono::Utc>>,
+    /// A name for the source; shown in history.
+    indexer: Option<String>,
+    info_hash: Option<String>,
+    seeders: Option<i32>,
+}
+
+/// Lets another program hand us a release (Radarr's `POST /release/push`).
+async fn push_release(State(app): Shared, Json(r): Json<PushedRelease>) -> ApiResult {
+    use omp_core::release::{DownloadProtocol, ReleaseInfo, TorrentRelease};
+    if r.title.trim().is_empty() {
+        return Err(ApiError::bad_request("title is required"));
+    }
+    let url = r.download_url.trim();
+    if !(url.starts_with("http://") || url.starts_with("https://") || url.starts_with("magnet:")) {
+        return Err(ApiError::bad_request(
+            "download_url must be an http(s) or magnet link",
+        ));
+    }
+    let protocol = match r.protocol.to_ascii_lowercase().as_str() {
+        "usenet" => DownloadProtocol::Usenet,
+        "torrent" => DownloadProtocol::Torrent,
+        _ => return Err(ApiError::bad_request("protocol must be usenet or torrent")),
+    };
+    let release = ReleaseInfo {
+        guid: r.info_hash.clone().unwrap_or_else(|| url.to_owned()),
+        title: r.title.trim().to_owned(),
+        size: r.size,
+        download_url: url.to_owned(),
+        indexer_id: 0,
+        indexer: r.indexer.unwrap_or_else(|| "Pushed".into()),
+        indexer_priority: 25,
+        protocol,
+        publish_date: r.publish_date.unwrap_or_else(chrono::Utc::now),
+        container: None,
+        indexer_flags: Default::default(),
+        imdb_id: None,
+        tmdb_id: 0,
+        torrent: (protocol == DownloadProtocol::Torrent).then(|| TorrentRelease {
+            magnet_url: url.starts_with("magnet:").then(|| url.to_owned()),
+            info_hash: r.info_hash,
+            seeders: r.seeders,
+            peers: None,
+        }),
+    };
+    let (evaluation, processed) = tasks::push_release_once(&app, release).await?;
+    let item = &evaluation.items[0];
+    Ok(Json(json!({
+        "approved": item.decision.approved(),
+        "grabbed": !processed.grabbed.is_empty(),
+        "pending": !processed.pending.is_empty(),
+        "matched_movie_id": item.movie.as_ref().map(|m| m.movie.id),
+        "rejections": item.decision.rejections.iter().map(|x| x.message.clone()).collect::<Vec<_>>(),
+    })))
+}
+
 /// Searches every interactive-search indexer for a movie and returns what was
 /// found with the decision engine's verdict on each. Nothing is grabbed.
 async fn search_releases(State(app): Shared, Query(q): Query<ReleaseSearch>) -> ApiResult {
@@ -1655,6 +1719,56 @@ async fn rename_previews(State(app): Shared, Query(q): Query<RenameQuery>) -> Ap
     )))
 }
 
+#[derive(Deserialize)]
+struct FeedQuery {
+    #[serde(default = "default_past_days")]
+    past_days: i64,
+    #[serde(default = "default_future_days")]
+    future_days: i64,
+    #[serde(default)]
+    unmonitored: bool,
+}
+
+fn default_past_days() -> i64 {
+    7
+}
+
+fn default_future_days() -> i64 {
+    90
+}
+
+/// Subscribe to this from a calendar app: `/api/v1/calendar/feed.ics?apikey=...`.
+async fn calendar_feed(
+    State(app): Shared,
+    Query(q): Query<FeedQuery>,
+) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    let now = chrono::Utc::now();
+    let today = now.date_naive();
+    let movies: Vec<MovieRecord> = app
+        .db
+        .movies()
+        .list()
+        .await?
+        .into_iter()
+        .filter(|m| q.unmonitored || m.movie.monitored)
+        .collect();
+    let body = crate::ical::feed(
+        &movies,
+        today - chrono::Duration::days(q.past_days.clamp(0, 365)),
+        today + chrono::Duration::days(q.future_days.clamp(0, 730)),
+        now,
+    );
+    Ok((
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/calendar; charset=utf-8",
+        )],
+        body,
+    )
+        .into_response())
+}
+
 async fn list_tasks(State(app): Shared) -> Json<Value> {
     let tasks: Vec<Value> = app
         .task_statuses()
@@ -1868,6 +1982,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/movie/import", post(import_movies))
         .route("/rootfolder/{id}/unmapped", get(unmapped))
         .route("/release", get(search_releases).post(grab_release))
+        .route("/release/push", post(push_release))
         .route(
             "/movie/{id}",
             get(get_movie).put(update_movie).delete(delete_movie),
@@ -1942,6 +2057,7 @@ pub fn router(app: Arc<App>) -> Router {
     let api = api
         .route("/system/task", get(list_tasks))
         .route("/rename", get(rename_previews))
+        .route("/calendar/feed.ics", get(calendar_feed))
         .route("/log", get(list_logs).delete(clear_logs));
     let api = api.route("/exclusion", get(list_exclusions)).route(
         "/exclusion/{tmdb_id}",

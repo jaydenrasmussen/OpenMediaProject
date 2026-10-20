@@ -8,6 +8,7 @@ mod backups;
 mod clients;
 mod config;
 mod health;
+mod ical;
 mod lists;
 mod logs;
 mod notify;

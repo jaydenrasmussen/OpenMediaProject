@@ -41,6 +41,7 @@ impl MovieMetadataProvider for FakeTmdb {
             year: 1999,
             runtime: 136,
             status: MovieStatus::Released,
+            digital_release: Some(chrono::Utc::now() + chrono::Duration::days(3)),
             ..Default::default()
         })
     }
@@ -1450,4 +1451,119 @@ async fn existing_files_can_be_previewed_and_renamed_to_the_naming_format() {
     cfg["naming"]["rename_movies"] = json!(false);
     call(&r, Method::PUT, "/api/v1/config/import", Some(cfg)).await;
     assert_eq!(get(&r, "/api/v1/rename").await.1, json!([]));
+}
+
+#[tokio::test]
+async fn pushed_releases_are_judged_like_any_other() {
+    let r = rig().await;
+    let root = add_root(&r).await;
+    let (_, profiles) = get(&r, "/api/v1/qualityprofile").await;
+    let (_, m) = call(
+        &r,
+        Method::POST,
+        "/api/v1/movie",
+        Some(json!({ "tmdb_id": 603, "quality_profile_id": profiles[0]["id"], "root_folder_path": root })),
+    )
+    .await;
+    let push = |body: Value| call(&r, Method::POST, "/api/v1/release/push", Some(body));
+
+    for bad in [
+        json!({ "title": "", "download_url": "https://x.test/a.nzb", "protocol": "usenet" }),
+        json!({ "title": "x", "download_url": "ftp://x.test/a.nzb", "protocol": "usenet" }),
+        json!({ "title": "x", "download_url": "https://x.test/a.nzb", "protocol": "carrier-pigeon" }),
+    ] {
+        assert_eq!(push(bad).await.0, StatusCode::BAD_REQUEST);
+    }
+
+    let (s, unknown) = push(json!({
+        "title": "Some.Other.Film.2020.1080p.BluRay.x264-GRP",
+        "download_url": "https://x.test/other.nzb", "protocol": "usenet",
+    }))
+    .await;
+    assert_eq!(s, StatusCode::OK, "{unknown}");
+    assert_eq!(
+        (unknown["approved"].clone(), unknown["grabbed"].clone()),
+        (json!(false), json!(false))
+    );
+    assert!(!unknown["rejections"].as_array().unwrap().is_empty());
+
+    // A match for a library movie is approved; with no download client it waits.
+    let (s, ok) = push(json!({
+        "title": "The.Matrix.1999.ENGLISH.1080p.BluRay.x264-GRP",
+        "download_url": "https://x.test/matrix.nzb", "protocol": "usenet", "size": 8_000_000_000u64,
+    }))
+    .await;
+    assert_eq!(s, StatusCode::OK, "{ok}");
+    assert_eq!(ok["matched_movie_id"], m["id"], "{ok}");
+    assert_eq!(ok["approved"], true, "{ok}");
+    assert_eq!(
+        (ok["grabbed"].clone(), ok["pending"].clone()),
+        (json!(false), json!(true)),
+        "{ok}"
+    );
+}
+
+#[tokio::test]
+async fn the_calendar_can_be_subscribed_to_as_an_ical_feed() {
+    let r = rig().await;
+    let root = add_root(&r).await;
+    let (_, profiles) = get(&r, "/api/v1/qualityprofile").await;
+    call(
+        &r,
+        Method::POST,
+        "/api/v1/movie",
+        Some(json!({ "tmdb_id": 603, "quality_profile_id": profiles[0]["id"], "root_folder_path": root })),
+    )
+    .await;
+
+    // Calendar apps cannot send headers, so the key goes in the URL.
+    let fetch = |path: String| {
+        let r = &r;
+        async move {
+            let res = r
+                .router
+                .clone()
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let status = res.status();
+            let content_type = res
+                .headers()
+                .get("content-type")
+                .map(|v| v.to_str().unwrap().to_owned());
+            let body = res.into_body().collect().await.unwrap().to_bytes();
+            (
+                status,
+                content_type,
+                String::from_utf8(body.to_vec()).unwrap(),
+            )
+        }
+    };
+    assert_eq!(
+        fetch("/api/v1/calendar/feed.ics".into()).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (s, content_type, ics) = fetch(format!("/api/v1/calendar/feed.ics?apikey={}", r.key)).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(
+        content_type.as_deref(),
+        Some("text/calendar; charset=utf-8")
+    );
+    assert!(
+        ics.starts_with("BEGIN:VCALENDAR\r\n") && ics.ends_with("END:VCALENDAR\r\n"),
+        "{ics}"
+    );
+    assert!(
+        ics.contains("SUMMARY:The Matrix (1999) - Digital release"),
+        "{ics}"
+    );
+    assert_eq!(ics.matches("BEGIN:VEVENT").count(), 1);
+
+    // Outside the window, nothing.
+    let (_, _, later) = fetch(format!(
+        "/api/v1/calendar/feed.ics?apikey={}&future_days=1",
+        r.key
+    ))
+    .await;
+    assert!(!later.contains("BEGIN:VEVENT"), "{later}");
 }

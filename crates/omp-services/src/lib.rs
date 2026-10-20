@@ -37,7 +37,7 @@ pub use scan::{RescanResult, UnmappedFolder, rescan_movie, unmapped_folders};
 pub use snapshot::{DecisionSnapshot, QueueMap};
 pub use sync::{
     IndexerFailure, IndexerPool, PluginIndexers, RssSyncResult, SearchMode, SearchResult,
-    SyncContext, rss_sync, search_movie, test_indexer,
+    SyncContext, push_release, rss_sync, search_movie, test_indexer,
 };
 pub use tracking::{
     DownloadMonitor, MonitorOptions, RefreshResult, TrackedDownload, TrackedState, record_failure,

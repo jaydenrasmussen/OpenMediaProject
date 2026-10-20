@@ -7,6 +7,20 @@ import { get } from "../lib/api";
 import { useLoad } from "../lib/hooks";
 import type { Movie } from "../lib/types";
 
+/** The iCal address for calendar apps, with the API key they need. */
+function FeedLink() {
+  const key = useLoad(() => get<{ api_key: string }>("/auth/apikey"));
+  if (!key.data) return null;
+  const url = `${window.location.origin}/api/v1/calendar/feed.ics?apikey=${key.data.api_key}`;
+  return (
+    <details className="small" style={{ marginBottom: "1rem" }}>
+      <summary>Subscribe in a calendar app</summary>
+      <p className="muted">Add this address as a calendar subscription. It contains your API key, so keep it private.</p>
+      <input type="text" readOnly value={url} onFocus={(e) => e.target.select()} style={{ width: "100%" }} aria-label="Calendar feed address" />
+    </details>
+  );
+}
+
 const KINDS = [
   { key: "in_cinemas", label: "In cinemas" },
   { key: "digital_release", label: "Digital" },
@@ -67,6 +81,7 @@ export default function Calendar() {
         </button>
       </div>
       <LoadState loading={movies.loading} error={movies.error} hasData={!!movies.data} />
+      <FeedLink />
       {movies.data && days.length === 0 && <p className="muted">No releases this month.</p>}
       <div className="stack">
         {days.map(([day, entries]) => (

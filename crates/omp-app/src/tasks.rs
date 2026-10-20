@@ -86,6 +86,21 @@ pub async fn search_movie_once(
     .await
 }
 
+/// Judges and, if it passes, grabs a release someone pushed to the API.
+pub async fn push_release_once(
+    app: &App,
+    release: omp_core::release::ReleaseInfo,
+) -> Result<(omp_services::Evaluation, omp_services::ProcessedDecisions), ServiceError> {
+    omp_services::push_release(
+        &app.db,
+        &app.engine,
+        &app.registry(),
+        release,
+        sync_context(app, false),
+    )
+    .await
+}
+
 /// One pass of the download loop: refresh, import, clean up.
 pub async fn process_downloads_once(app: &App) -> Result<Option<ProcessResult>, ServiceError> {
     let Ok(_running) = app.process_lock.try_lock() else {
