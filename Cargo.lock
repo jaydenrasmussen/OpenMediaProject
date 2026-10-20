@@ -2822,6 +2822,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2932,6 +2933,7 @@ dependencies = [
 name = "omp-parser"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "fancy-regex",
  "omp-core",
  "regress",
@@ -2992,6 +2994,7 @@ dependencies = [
  "omp-downloads",
  "omp-indexers",
  "omp-library",
+ "omp-metadata",
  "omp-naming",
  "omp-parser",
  "omp-quality",
