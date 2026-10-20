@@ -125,6 +125,21 @@ function Naming() {
         </label>
       </div>
 
+      <h3>Removing files</h3>
+      <div className="form-grid">
+        <label className="field">
+          <span>Recycle bin folder (empty deletes for good)</span>
+          <input type="text" placeholder="/recycle" value={cfg.recycle_bin} onChange={(e) => set({ recycle_bin: e.target.value })} />
+        </label>
+        <label className="field">
+          <span>Empty the bin after (days, 0 keeps everything)</span>
+          <input type="number" min={0} value={cfg.recycle_bin_cleanup_days} onChange={(e) => set({ recycle_bin_cleanup_days: Number(e.target.value) })} />
+        </label>
+      </div>
+      <label className="check">
+        <input type="checkbox" checked={cfg.unmonitor_deleted} onChange={(e) => set({ unmonitor_deleted: e.target.checked })} /> Stop monitoring a movie when its file is deleted
+      </label>
+
       <h3>Naming</h3>
       <label className="check">
         <input type="checkbox" checked={cfg.naming.rename_movies} onChange={(e) => setNaming({ rename_movies: e.target.checked })} /> Rename imported movies

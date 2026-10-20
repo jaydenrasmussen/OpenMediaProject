@@ -64,6 +64,13 @@ pub struct ImportConfig {
     pub download_propers: bool,
     /// Folder name prefixes where download clients unpack, separated by `|`.
     pub working_folders: String,
+    /// Where replaced and deleted files go instead of being erased. Empty
+    /// means they are deleted.
+    pub recycle_bin: String,
+    /// Days files stay in the bin. 0 keeps them until someone empties it.
+    pub recycle_bin_cleanup_days: u32,
+    /// Stop monitoring a movie once its file is deleted by hand.
+    pub unmonitor_deleted: bool,
     pub naming: NamingConfig,
 }
 
@@ -76,6 +83,9 @@ impl Default for ImportConfig {
             skip_free_space_check: false,
             download_propers: true,
             working_folders: "_UNPACK_|_FAILED_".into(),
+            recycle_bin: String::new(),
+            recycle_bin_cleanup_days: 7,
+            unmonitor_deleted: false,
             naming: NamingConfig::default(),
         }
     }
@@ -626,10 +636,26 @@ impl Importer<'_> {
             return Err(format!("Failed to transfer file: {e}"));
         }
 
-        if let Some(p) = displaced {
-            let _ = tokio::fs::remove_file(p).await;
-        } else if let Some(p) = &old_path {
-            let _ = tokio::fs::remove_file(p).await;
+        // The replaced file goes to the recycle bin, or is erased.
+        let replaced = displaced.or(old_path.clone());
+        if let Some(p) = replaced {
+            let name = old
+                .as_ref()
+                .map(|o| o.relative_path.clone())
+                .unwrap_or_else(|| {
+                    p.file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned()
+                });
+            let name = Path::new(&name)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            if let Err(e) = crate::recycle::dispose(self.config, &p, &name).await {
+                tracing::warn!(file = %p.display(), "could not remove the replaced file: {e}");
+            }
         }
 
         let flags = req

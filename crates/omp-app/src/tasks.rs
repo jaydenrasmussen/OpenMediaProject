@@ -236,6 +236,23 @@ pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
         ),
         every(
             &app,
+            "recycle-bin",
+            "Clean the recycle bin",
+            10 * minute,
+            Duration::from_secs(24 * 3600),
+            false,
+            |app| async move {
+                let config = load_import_config(&app.db)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                omp_services::clean_recycle_bin(&config)
+                    .await
+                    .map(|n| (n > 0).then(|| format!("{n} items removed")))
+                    .map_err(|e| e.to_string())
+            },
+        ),
+        every(
+            &app,
             "notifications",
             "Send notifications",
             Duration::ZERO,

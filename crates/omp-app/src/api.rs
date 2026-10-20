@@ -443,6 +443,26 @@ struct DeleteMovie {
     /// Stop import lists adding this movie again.
     #[serde(default)]
     add_exclusion: bool,
+    /// Also delete the movie's folder from disk (to the recycle bin if set up).
+    #[serde(default)]
+    delete_files: bool,
+}
+
+/// True when `path` is a folder inside one of the root folders (and is not a
+/// root folder itself), so deleting it cannot take a whole library or the
+/// system with it.
+async fn is_inside_a_root(app: &App, path: &str) -> Result<bool, ApiError> {
+    let path = std::path::Path::new(path);
+    Ok(app
+        .db
+        .root_folders()
+        .list()
+        .await?
+        .iter()
+        .any(|r| path.starts_with(&r.path) && path != std::path::Path::new(&r.path))
+        && !path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir)))
 }
 
 async fn delete_movie(
@@ -450,14 +470,84 @@ async fn delete_movie(
     Path(id): Path<i64>,
     Query(q): Query<DeleteMovie>,
 ) -> ApiResult<StatusCode> {
+    let m = app.db.movies().get(id).await?;
+    if q.delete_files && std::path::Path::new(&m.movie.path).exists() {
+        if !is_inside_a_root(&app, &m.movie.path).await? {
+            return Err(ApiError::bad_request(
+                "the movie's folder is not inside a root folder, so it will not be deleted",
+            ));
+        }
+        let config = load_import_config(&app.db).await?;
+        let path = std::path::PathBuf::from(&m.movie.path);
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        omp_services::dispose_file(&config, &path, &name)
+            .await
+            .map_err(|e| ApiError::internal(format!("could not delete the folder: {e}")))?;
+    }
     if q.add_exclusion {
-        let m = app.db.movies().get(id).await?;
         app.db
             .import_exclusions()
             .add(m.movie.tmdb_id, &m.movie.title, m.movie.year)
             .await?;
     }
     app.db.movies().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Deletes the movie's file (to the recycle bin if set up) and keeps the movie.
+async fn delete_movie_file(State(app): Shared, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    let m = app.db.movies().get(id).await?;
+    let file = app
+        .db
+        .movie_files()
+        .for_movie(id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("the movie has no file"))?;
+    let config = load_import_config(&app.db).await?;
+    let path = std::path::Path::new(&m.movie.path).join(&file.relative_path);
+    if path.exists() {
+        let name = std::path::Path::new(&file.relative_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        omp_services::dispose_file(&config, &path, &name)
+            .await
+            .map_err(|e| ApiError::internal(format!("could not delete the file: {e}")))?;
+    }
+    app.db.movie_files().delete_for_movie(id).await?;
+    app.db
+        .history()
+        .insert(&HistoryRecord {
+            id: 0,
+            movie_id: id,
+            event: HistoryEvent::MovieFileDeleted,
+            date: chrono::Utc::now(),
+            source_title: file.relative_path.clone(),
+            quality: file.quality,
+            languages: file.languages.clone(),
+            download_id: None,
+            data: [("reason".to_owned(), "Manual".to_owned())].into(),
+        })
+        .await?;
+    if config.unmonitor_deleted && m.movie.monitored {
+        app.db
+            .movies()
+            .update(
+                id,
+                &omp_db::repo::MovieUpdate {
+                    monitored: false,
+                    minimum_availability: m.movie.minimum_availability,
+                    quality_profile_id: m.movie.quality_profile_id,
+                    path: m.movie.path.clone(),
+                    root_folder_path: m.root_folder_path.clone(),
+                    tags: m.movie.tags.clone(),
+                },
+            )
+            .await?;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1987,6 +2077,7 @@ pub fn router(app: Arc<App>) -> Router {
             "/movie/{id}",
             get(get_movie).put(update_movie).delete(delete_movie),
         )
+        .route("/movie/{id}/file", axum::routing::delete(delete_movie_file))
         .route("/queue", get(queue))
         .route(
             "/queue/{download_id}",

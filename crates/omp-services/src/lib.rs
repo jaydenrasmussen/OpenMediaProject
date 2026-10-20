@@ -11,6 +11,7 @@ mod grab;
 mod import;
 mod media;
 mod process;
+mod recycle;
 mod rename;
 mod scan;
 mod snapshot;
@@ -32,6 +33,7 @@ pub use import::{
 };
 pub use media::naming_media;
 pub use process::{ProcessOptions, ProcessResult, process_downloads};
+pub use recycle::{clean_bin as clean_recycle_bin, dispose as dispose_file};
 pub use rename::{RenamePreview, rename_movie, rename_preview, rename_previews};
 pub use scan::{RescanResult, UnmappedFolder, rescan_movie, unmapped_folders};
 pub use snapshot::{DecisionSnapshot, QueueMap};

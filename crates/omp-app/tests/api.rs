@@ -1567,3 +1567,152 @@ async fn the_calendar_can_be_subscribed_to_as_an_ical_feed() {
     .await;
     assert!(!later.contains("BEGIN:VEVENT"), "{later}");
 }
+
+#[tokio::test]
+async fn files_and_folders_are_deleted_safely_or_recycled() {
+    let r = rig().await;
+    let root = add_root(&r).await;
+    let bin = r.dir.path().join("bin");
+    let (_, mut cfg) = get(&r, "/api/v1/config/import").await;
+    cfg["recycle_bin"] = json!(bin.to_string_lossy());
+    cfg["unmonitor_deleted"] = json!(true);
+    call(&r, Method::PUT, "/api/v1/config/import", Some(cfg)).await;
+
+    let (_, profiles) = get(&r, "/api/v1/qualityprofile").await;
+    let folder = std::path::Path::new(&root).join("The Matrix (1999)");
+    std::fs::create_dir_all(&folder).unwrap();
+    let file = folder.join("The.Matrix.1999.1080p.BluRay.x264-GRP.mkv");
+    std::fs::write(&file, vec![1u8; 2048]).unwrap();
+    let (_, out) = call(
+        &r,
+        Method::POST,
+        "/api/v1/movie/import",
+        Some(json!({
+            "items": [{ "path": folder.to_string_lossy(), "tmdb_id": 603 }],
+            "quality_profile_id": profiles[0]["id"],
+        })),
+    )
+    .await;
+    let id = out["results"][0]["movie_id"].as_i64().unwrap();
+
+    // Deleting just the file recycles it, keeps the movie, records it and unmonitors.
+    assert_eq!(
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/movie/{id}/file"),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert!(!file.exists());
+    assert!(
+        bin.join("The.Matrix.1999.1080p.BluRay.x264-GRP.mkv")
+            .is_file()
+    );
+    let (_, movie) = get(&r, &format!("/api/v1/movie/{id}")).await;
+    assert_eq!(
+        (movie["has_file"].clone(), movie["monitored"].clone()),
+        (json!(false), json!(false))
+    );
+    let (_, history) = get(&r, &format!("/api/v1/history?movie_id={id}")).await;
+    assert!(
+        history
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["event"] == "movieFileDeleted")
+    );
+    assert_eq!(
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/movie/{id}/file"),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND,
+        "no file left"
+    );
+
+    // Removing the movie with its files moves the folder to the bin.
+    assert_eq!(
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/movie/{id}?delete_files=true"),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert!(!folder.exists());
+    assert!(bin.join("The Matrix (1999)").is_dir());
+    assert_eq!(
+        get(&r, &format!("/api/v1/movie/{id}")).await.0,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn deleting_files_refuses_folders_outside_the_root_folders() {
+    let r = rig().await;
+    let root = add_root(&r).await;
+    let (_, profiles) = get(&r, "/api/v1/qualityprofile").await;
+    let (_, m) = call(
+        &r,
+        Method::POST,
+        "/api/v1/movie",
+        Some(json!({ "tmdb_id": 603, "quality_profile_id": profiles[0]["id"], "root_folder_path": root })),
+    )
+    .await;
+    let id = m["id"].as_i64().unwrap();
+
+    // Point the movie somewhere it must never be allowed to delete.
+    let outside = r.dir.path().join("precious");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("keep.txt"), b"x").unwrap();
+    call(
+        &r,
+        Method::PUT,
+        &format!("/api/v1/movie/{id}"),
+        Some(json!({ "path": outside.to_string_lossy() })),
+    )
+    .await;
+    let (s, _) = call(
+        &r,
+        Method::DELETE,
+        &format!("/api/v1/movie/{id}?delete_files=true"),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert!(outside.join("keep.txt").is_file());
+    // The movie is still there, too.
+    assert_eq!(
+        get(&r, &format!("/api/v1/movie/{id}")).await.0,
+        StatusCode::OK
+    );
+
+    // The root folder itself is not deletable this way either.
+    call(
+        &r,
+        Method::PUT,
+        &format!("/api/v1/movie/{id}"),
+        Some(json!({ "path": root })),
+    )
+    .await;
+    let (s, _) = call(
+        &r,
+        Method::DELETE,
+        &format!("/api/v1/movie/{id}?delete_files=true"),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert!(std::path::Path::new(&root).is_dir());
+}

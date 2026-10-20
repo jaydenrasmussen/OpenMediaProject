@@ -71,12 +71,27 @@ function MovieDetail() {
     }
   }
 
+  const [removing, setRemoving] = useState(false);
+  const [deleteFiles, setDeleteFiles] = useState(false);
+  const [exclude, setExclude] = useState(false);
+
   async function remove() {
-    if (!m || !confirm(`Remove “${m.title}” from the library? Files on disk are kept.`)) return;
-    const exclude = confirm("Stop import lists adding it again?\n\nOK excludes it. Cancel lets lists add it back.");
+    if (!m) return;
     try {
-      await del(`/movie/${m.id}?add_exclusion=${exclude}`);
+      await del(`/movie/${m.id}?add_exclusion=${exclude}&delete_files=${deleteFiles}`);
       router.push("/");
+    } catch (e) {
+      notify(errorMessage(e), "bad");
+    }
+  }
+
+  async function deleteFile() {
+    if (!m || !confirm(`Delete the file for “${m.title}”? The movie stays in the library.`)) return;
+    try {
+      await del(`/movie/${m.id}/file`);
+      notify("File deleted.", "good");
+      movie.reload();
+      history.reload();
     } catch (e) {
       notify(errorMessage(e), "bad");
     }
@@ -124,10 +139,32 @@ function MovieDetail() {
                 <button onClick={() => runCommand("RefreshMovie", "Details refreshed.")} title="Re-read dates and details from TMDB">
                   Refresh
                 </button>
-                <button className="danger" onClick={remove}>
+                {m.has_file && (
+                  <button className="danger" onClick={deleteFile}>
+                    Delete file
+                  </button>
+                )}
+                <button className="danger" onClick={() => setRemoving((r) => !r)}>
                   Remove
                 </button>
               </div>
+              {removing && (
+                <section className="card stack">
+                  <strong>Remove “{m.title}” from the library?</strong>
+                  <label className="check">
+                    <input type="checkbox" checked={deleteFiles} onChange={(e) => setDeleteFiles(e.target.checked)} /> Also delete its folder from disk
+                  </label>
+                  <label className="check">
+                    <input type="checkbox" checked={exclude} onChange={(e) => setExclude(e.target.checked)} /> Stop import lists adding it again
+                  </label>
+                  <div className="row end">
+                    <button onClick={() => setRemoving(false)}>Cancel</button>
+                    <button className="danger" onClick={remove}>
+                      Remove
+                    </button>
+                  </div>
+                </section>
+              )}
 
               <div className="card">
                 <h3 style={{ marginTop: 0 }}>File</h3>
