@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useState } from "react";
 import { LoadState } from "../components/Page";
-import { get } from "../lib/api";
+import { useToast } from "../components/toast";
+import { del, get } from "../lib/api";
 import { formatDate, formatSize, percent } from "../lib/format";
-import { useLoad, usePoll } from "../lib/hooks";
-import type { HistoryItem, QueueItem } from "../lib/types";
+import { errorMessage, useLoad, usePoll } from "../lib/hooks";
+import type { BlocklistItem, HistoryItem, QueueItem } from "../lib/types";
 
 const STATE_BADGE: Record<string, string> = {
   Downloading: "accent",
@@ -29,7 +30,7 @@ const EVENT_LABEL: Record<string, string> = {
 };
 
 export default function Activity() {
-  const [tab, setTab] = useState<"queue" | "history">("queue");
+  const [tab, setTab] = useState<"queue" | "history" | "blocklist">("queue");
   return (
     <>
       <h1>Activity</h1>
@@ -40,15 +41,35 @@ export default function Activity() {
         <button role="tab" className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>
           History
         </button>
+        <button role="tab" className={tab === "blocklist" ? "active" : ""} onClick={() => setTab("blocklist")}>
+          Blocklist
+        </button>
       </div>
-      {tab === "queue" ? <Queue /> : <History />}
+      {tab === "queue" ? <Queue /> : tab === "history" ? <History /> : <Blocklist />}
     </>
   );
 }
 
 function Queue() {
+  const notify = useToast();
   const q = useLoad(() => get<QueueItem[]>("/queue"));
   usePoll(q.reload, 4000);
+
+  const [removing, setRemoving] = useState<QueueItem | null>(null);
+  const [blocklist, setBlocklist] = useState(true);
+  const [deleteData, setDeleteData] = useState(false);
+
+  async function confirmRemove() {
+    if (!removing) return;
+    try {
+      await del(`/queue/${encodeURIComponent(removing.download_id)}?blocklist=${blocklist}&search=${blocklist}&delete_data=${deleteData}`);
+      setRemoving(null);
+      q.reload();
+    } catch (err) {
+      notify(errorMessage(err), "bad");
+    }
+  }
+
   return (
     <>
       <LoadState loading={q.loading} error={q.error} hasData={!!q.data} />
@@ -63,6 +84,7 @@ function Queue() {
                 <th>State</th>
                 <th>Progress</th>
                 <th className="num">Size</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -91,11 +113,99 @@ function Queue() {
                     <span className="small muted">{percent(i.size, i.size_left)}%</span>
                   </td>
                   <td className="num">{formatSize(i.size)}</td>
+                  <td>
+                    <button className="danger" onClick={() => setRemoving(i)} aria-label={`Remove ${i.title}`}>
+                      Remove
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+      {removing && (
+        <section className="card stack" style={{ marginTop: "1rem" }}>
+          <strong>Remove “{removing.title}” from the queue?</strong>
+          <label className="check">
+            <input type="checkbox" checked={blocklist} onChange={(e) => setBlocklist(e.target.checked)} /> Blocklist this release and search for another
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={deleteData} onChange={(e) => setDeleteData(e.target.checked)} /> Delete the downloaded files
+          </label>
+          <div className="row end">
+            <button onClick={() => setRemoving(null)}>Cancel</button>
+            <button className="danger" onClick={confirmRemove}>
+              Remove
+            </button>
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+function Blocklist() {
+  const notify = useToast();
+  const b = useLoad(() => get<BlocklistItem[]>("/blocklist?limit=200"));
+  async function remove(i: BlocklistItem) {
+    try {
+      await del(`/blocklist/${i.id}`);
+      b.reload();
+    } catch (err) {
+      notify(errorMessage(err), "bad");
+    }
+  }
+  async function clear() {
+    if (!confirm("Clear the whole blocklist? Those releases can be grabbed again.")) return;
+    try {
+      await del("/blocklist");
+      b.reload();
+    } catch (err) {
+      notify(errorMessage(err), "bad");
+    }
+  }
+  return (
+    <>
+      <LoadState loading={b.loading} error={b.error} hasData={!!b.data} />
+      {b.data && b.data.length === 0 && <p className="muted">Nothing is blocklisted. Failed downloads end up here so they are not grabbed again.</p>}
+      {b.data && b.data.length > 0 && (
+        <>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Release</th>
+                  <th>Quality</th>
+                  <th>Indexer</th>
+                  <th>When</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {b.data.map((i) => (
+                  <tr key={i.id}>
+                    <td style={{ wordBreak: "break-word" }}>
+                      <Link href={`/movie/?id=${i.movie_id}`}>{i.source_title}</Link>
+                      {i.message && <div className="small error">{i.message}</div>}
+                    </td>
+                    <td>{i.quality}</td>
+                    <td className="small">{i.indexer ?? "—"}</td>
+                    <td className="small muted">{formatDate(i.date)}</td>
+                    <td>
+                      <button onClick={() => remove(i)}>Unblock</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="row end" style={{ marginTop: "1rem" }}>
+            <button className="danger" onClick={clear}>
+              Clear blocklist
+            </button>
+          </div>
+        </>
       )}
     </>
   );

@@ -249,3 +249,16 @@ export interface DecisionConfig {
   availability_delay: number;
   prefer_indexer_flags: boolean;
 }
+
+export interface BlocklistItem {
+  id: number;
+  movie_id: number;
+  movie_title: string;
+  source_title: string;
+  quality: string;
+  protocol: string;
+  indexer: string | null;
+  size: number | null;
+  message: string | null;
+  date: string;
+}
