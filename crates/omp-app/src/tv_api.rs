@@ -39,6 +39,7 @@ pub(crate) fn routes() -> Router<Arc<App>> {
         )
         .route("/series/{id}/monitor", post(apply_monitor))
         .route("/series/import", post(import_series))
+        .route("/series/editor", put(edit_series))
         .route("/rootfolder/{id}/unmapped-series", get(unmapped_series))
 }
 
@@ -561,6 +562,52 @@ async fn update_series(
     Path(id): Path<i64>,
     Json(req): Json<UpdateSeries>,
 ) -> ApiResult {
+    apply_update(&app, id, req).await?;
+    get_series(State(app), Path(id)).await
+}
+
+#[derive(Deserialize)]
+struct EditSeries {
+    series_ids: Vec<i64>,
+    #[serde(flatten)]
+    changes: UpdateSeries,
+}
+
+/// Applies the same changes to many series (the series editor). All or none:
+/// the changes are checked on the first before anything is saved.
+async fn edit_series(State(app): Shared, Json(req): Json<EditSeries>) -> ApiResult {
+    if req.series_ids.is_empty() {
+        return Err(ApiError::bad_request("choose at least one series"));
+    }
+    if req.changes.path.is_some() {
+        return Err(ApiError::bad_request(
+            "a path can only be changed for one series at a time",
+        ));
+    }
+    for id in &req.series_ids {
+        app.db.series().get(*id).await?;
+    }
+    for id in &req.series_ids {
+        apply_update(
+            &app,
+            *id,
+            UpdateSeries {
+                series_type: req.changes.series_type.clone(),
+                monitored: req.changes.monitored,
+                monitor_new_items: req.changes.monitor_new_items.clone(),
+                quality_profile_id: req.changes.quality_profile_id,
+                season_folder: req.changes.season_folder,
+                use_scene_numbering: req.changes.use_scene_numbering,
+                path: None,
+                tags: req.changes.tags.clone(),
+            },
+        )
+        .await?;
+    }
+    Ok(Json(json!({ "updated": req.series_ids.len() })))
+}
+
+async fn apply_update(app: &App, id: i64, req: UpdateSeries) -> Result<(), ApiError> {
     let current = app.db.series().get(id).await?;
     if let Some(p) = req.quality_profile_id {
         app.db
@@ -594,7 +641,7 @@ async fn update_series(
             },
         )
         .await?;
-    get_series(State(app), Path(id)).await
+    Ok(())
 }
 
 #[derive(Deserialize, Default)]

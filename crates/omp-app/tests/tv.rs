@@ -727,3 +727,54 @@ async fn existing_series_folders_can_be_adopted_with_their_files() {
     let (_, again) = call(&r, Method::POST, "/api/v1/series/import", Some(body)).await;
     assert_eq!(again["results"][0]["ok"], false);
 }
+
+#[tokio::test]
+async fn the_series_editor_changes_several_series_at_once() {
+    let r = rig(true).await;
+    let root = add_root(&r).await;
+    let p = profile(&r).await;
+    let (_, series) = call(
+        &r,
+        Method::POST,
+        "/api/v1/series",
+        Some(json!({ "tmdb_id": 1396, "quality_profile_id": p, "root_folder_path": root })),
+    )
+    .await;
+    let id = series["id"].as_i64().unwrap();
+    let edit = |body: Value| call(&r, Method::PUT, "/api/v1/series/editor", Some(body));
+
+    assert_eq!(
+        edit(json!({ "series_ids": [] , "monitored": false }))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        edit(json!({ "series_ids": [id], "path": "/x" })).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        edit(json!({ "series_ids": [id, 999], "monitored": false }))
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        get(&r, &format!("/api/v1/series/{id}")).await.1["monitored"],
+        true,
+        "nothing changed"
+    );
+    assert_eq!(
+        edit(json!({ "series_ids": [id], "series_type": "weird" }))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+
+    let (s, body) = edit(json!({ "series_ids": [id], "monitored": false, "series_type": "anime", "season_folder": false })).await;
+    assert_eq!((s, body["updated"].clone()), (StatusCode::OK, json!(1)));
+    let (_, one) = get(&r, &format!("/api/v1/series/{id}")).await;
+    assert_eq!(one["monitored"], false);
+    assert_eq!(one["series_type"], "anime");
+    assert_eq!(one["season_folder"], false);
+}
