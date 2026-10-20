@@ -246,6 +246,8 @@ export interface ReleaseProfile {
   ignored: string[];
   indexer_id: number;
   tags: number[];
+  air_date_restriction: boolean;
+  air_date_grace_period_hours: number;
 }
 
 export type Condition =

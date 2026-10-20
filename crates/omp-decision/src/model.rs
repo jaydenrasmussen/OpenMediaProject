@@ -110,6 +110,10 @@ pub struct IndexerInfo {
     pub tags: Vec<i32>,
     /// Present for torrent indexers.
     pub torrent: Option<TorrentIndexerSettings>,
+    /// TV: when a season search finds single episodes of a season whose last
+    /// episode aired more than this many days ago, ask for the season pack
+    /// instead. 0 turns the rule off.
+    pub season_pack_max_single_episode_age_days: u32,
 }
 
 #[derive(Debug, Clone, Default)]

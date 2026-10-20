@@ -88,6 +88,8 @@ pub enum RejectionReason {
     ExistingFileHasMoreEpisodes,
     UnknownReleaseGroup,
     ReleaseGroupDoesNotMatch,
+    BeforeAirDate,
+    NotSeasonPack,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

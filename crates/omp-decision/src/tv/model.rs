@@ -90,6 +90,8 @@ pub struct TvSearchContext {
     pub series_id: i64,
     /// The episodes the search is for.
     pub episode_ids: Vec<i64>,
+    /// Season and air time of each episode searched for.
+    pub episodes: Vec<(i32, Option<DateTime<Utc>>)>,
     pub kind: TvSearchKind,
     pub user_invoked: bool,
     pub interactive: bool,

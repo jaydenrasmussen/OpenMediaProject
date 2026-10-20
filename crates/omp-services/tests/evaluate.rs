@@ -448,6 +448,8 @@ async fn release_profiles_filter_by_title_terms() {
             ignored: vec!["x264".into()],
             indexer_id: 0,
             tags: vec![],
+            air_date_restriction: false,
+            air_date_grace_period_hours: 0,
         })
         .await
         .unwrap();

@@ -235,6 +235,8 @@ async fn release_profiles_crud() {
         ignored: vec!["cam".into(), "/ts\\b/i".into()],
         indexer_id: 0,
         tags: vec![1, 2],
+        air_date_restriction: true,
+        air_date_grace_period_hours: 6,
     };
     p.id = repo.insert(&p).await.unwrap();
     assert_eq!(repo.list().await.unwrap(), std::slice::from_ref(&p));

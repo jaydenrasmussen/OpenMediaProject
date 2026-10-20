@@ -42,11 +42,14 @@ impl TvDecisionData for Env {
     fn indexer_blocked_till(&self, _: i32) -> Option<DateTime<Utc>> {
         None
     }
-    fn indexer(&self, _: i32) -> Option<IndexerInfo> {
-        None
+    fn indexer(&self, id: i32) -> Option<IndexerInfo> {
+        self.inner.indexers.iter().find(|i| i.id == id).cloned()
     }
-    fn release_profiles(&self, _: &[i32], _: i32) -> Vec<ReleaseProfile> {
-        vec![]
+    fn release_profiles(&self, tags: &[i32], indexer_id: i32) -> Vec<ReleaseProfile> {
+        ReleaseProfile::enabled_for(&self.inner.release_profiles, tags, indexer_id)
+            .into_iter()
+            .cloned()
+            .collect()
     }
     fn history_for_episode(&self, _: i64) -> Vec<HistoryEntry> {
         vec![]
@@ -167,6 +170,7 @@ fn search(kind: TvSearchKind, episode_ids: Vec<i64>) -> TvDecisionInfo {
         search: Some(TvSearchContext {
             series_id: 1,
             episode_ids,
+            episodes: vec![],
             kind,
             user_invoked: false,
             interactive: false,
@@ -389,4 +393,60 @@ fn season_packs_rank_above_single_episodes_and_better_quality_above_both() {
     let mut all = vec![&s, &p, &b];
     compare::sort_best_first(&mut all, &e);
     assert!(std::ptr::eq(all[0], &b) && std::ptr::eq(all[2], &s));
+}
+
+#[test]
+fn air_date_restriction_holds_back_releases_published_before_the_episode_aired() {
+    let mut f = fx(SHOW);
+    // The release came out an hour ago; the episode airs in two hours.
+    f.episodes[0].air_date_utc = Some(now() + Duration::hours(2));
+    let mut e = env();
+    e.inner.release_profiles = vec![ReleaseProfile {
+        id: 1,
+        name: "air".into(),
+        enabled: true,
+        required: vec![],
+        ignored: vec![],
+        indexer_id: 0,
+        tags: vec![],
+        air_date_restriction: true,
+        air_date_grace_period_hours: 0,
+    }];
+    assert_eq!(
+        f.reasons(&TvDecisionInfo::default(), &e),
+        [R::BeforeAirDate]
+    );
+    // Once it has aired the release is fine, and without the setting it always is.
+    f.episodes[0].air_date_utc = Some(now() - Duration::hours(5));
+    assert!(f.reasons(&TvDecisionInfo::default(), &e).is_empty());
+    e.inner.release_profiles[0].air_date_restriction = false;
+    f.episodes[0].air_date_utc = Some(now() + Duration::hours(2));
+    assert!(f.reasons(&TvDecisionInfo::default(), &e).is_empty());
+}
+
+#[test]
+fn old_seasons_ask_for_the_pack_when_the_indexer_says_so() {
+    let f = fx(SHOW);
+    let mut e = env();
+    e.inner.indexers = vec![IndexerInfo {
+        id: 1,
+        season_pack_max_single_episode_age_days: 7,
+        ..Default::default()
+    }];
+    let mut info = search(TvSearchKind::Season { season: 1 }, vec![1, 2]);
+    // A season whose last episode aired a month ago.
+    info.search.as_mut().unwrap().episodes = vec![
+        (1, Some(now() - Duration::days(40))),
+        (1, Some(now() - Duration::days(30))),
+    ];
+    assert!(f.reasons(&info, &e).contains(&R::NotSeasonPack));
+    // A recent season still takes single episodes.
+    info.search.as_mut().unwrap().episodes = vec![
+        (1, Some(now() - Duration::days(3))),
+        (1, Some(now() - Duration::days(10))),
+    ];
+    assert!(!f.reasons(&info, &e).contains(&R::NotSeasonPack));
+    // A single-episode search never insists on a pack.
+    info.search.as_mut().unwrap().episodes = vec![(1, Some(now() - Duration::days(40)))];
+    assert!(!f.reasons(&info, &e).contains(&R::NotSeasonPack));
 }

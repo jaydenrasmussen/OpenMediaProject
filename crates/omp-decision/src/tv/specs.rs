@@ -1060,6 +1060,75 @@ spec!(
 );
 
 spec!(
+    AirDate,
+    "AirDate",
+    fn evaluate(&self, s: &EpisodeSubject<'_>, _: &TvDecisionInfo, env: Env) -> Verdict {
+        let profiles = env.release_profiles(&s.series.tags, s.release.indexer_id);
+        let Some(best) = profiles
+            .iter()
+            .max_by_key(|p| (p.air_date_restriction, p.air_date_grace_period_hours))
+        else {
+            return Verdict::Accept;
+        };
+        if !best.air_date_restriction {
+            return Verdict::Accept;
+        }
+        let grace = Duration::hours(i64::from(best.air_date_grace_period_hours));
+        for e in s.episodes {
+            let Some(aired) = e.air_date_utc else {
+                return Verdict::reject(R::BeforeAirDate, "No air date available");
+            };
+            if s.release.publish_date < aired + grace {
+                return Verdict::reject(
+                    R::BeforeAirDate,
+                    format!(
+                        "Release date {} is before adjusted air date of {} (Air Date: {aired}. Grace period {} hours)",
+                        s.release.publish_date,
+                        aired + grace,
+                        best.air_date_grace_period_hours
+                    ),
+                );
+            }
+        }
+        Verdict::Accept
+    }
+);
+
+spec!(
+    SeasonPackOnly,
+    "SeasonPackOnly",
+    fn evaluate(&self, s: &EpisodeSubject<'_>, info: &TvDecisionInfo, env: Env) -> Verdict {
+        let Some(c) = info.search.as_ref().filter(|c| c.episodes.len() > 1) else {
+            return Verdict::Accept;
+        };
+        let days = env
+            .indexer(s.release.indexer_id)
+            .map_or(0, |i| i.season_pack_max_single_episode_age_days);
+        if days == 0 || s.series.series_type != SeriesType::Standard || s.parsed.full_season {
+            return Verdict::Accept;
+        }
+        let Some(first) = s.episodes.first() else {
+            return Verdict::Accept;
+        };
+        let latest = c
+            .episodes
+            .iter()
+            .filter(|(season, _)| *season == first.season_number)
+            .filter_map(|(_, aired)| *aired)
+            .max();
+        if latest.is_some_and(|l| l < env.now() - Duration::days(i64::from(days))) {
+            return Verdict::reject(
+                R::NotSeasonPack,
+                format!(
+                    "Last episode in this season aired more than {days} days ago, season pack required."
+                ),
+            );
+        }
+        Verdict::Accept
+    }
+);
+
+spec!(
     FreeSpace,
     "FreeSpace",
     fn priority(&self) -> Priority {
@@ -1116,6 +1185,8 @@ pub fn default_tv_specs() -> Vec<Box<dyn TvSpecification>> {
         Box::new(SameEpisodesGrab),
         Box::new(SeriesMatch),
         Box::new(SeasonMatch),
+        Box::new(SeasonPackOnly),
+        Box::new(AirDate),
         Box::new(SingleEpisodeSearchMatch),
         Box::new(EpisodeRequested),
         Box::new(Proper),

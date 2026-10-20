@@ -22,6 +22,9 @@ pub struct IndexerSettings {
     pub anime_categories: Vec<i32>,
     /// Also search anime by season and episode, not only absolute number.
     pub anime_standard_format_search: bool,
+    /// TV: in a season search, single episodes of a season whose last episode
+    /// aired more than this many days ago are refused (the pack is wanted).
+    pub season_search_maximum_single_episode_age: u32,
     /// Extra query parameters, each starting with `&`.
     pub additional_parameters: String,
     /// Leave the year out of text searches.
@@ -42,6 +45,7 @@ impl Default for IndexerSettings {
             tv_categories: vec![5030, 5040],
             anime_categories: vec![],
             anime_standard_format_search: false,
+            season_search_maximum_single_episode_age: 0,
             additional_parameters: String::new(),
             remove_year: false,
             minimum_seeders: 1,

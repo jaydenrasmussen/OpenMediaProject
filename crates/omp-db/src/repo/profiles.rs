@@ -384,6 +384,8 @@ fn release_profile_from_row(r: &SqliteRow) -> Result<ReleaseProfile> {
         ignored: r.try_get::<Json<Vec<String>>, _>("ignored")?.0,
         indexer_id: r.try_get("indexer_id")?,
         tags: r.try_get::<Json<Vec<i32>>, _>("tags")?.0,
+        air_date_restriction: r.try_get("air_date_restriction")?,
+        air_date_grace_period_hours: r.try_get("air_date_grace_period_hours")?,
     })
 }
 
@@ -399,8 +401,9 @@ impl ReleaseProfiles<'_> {
 
     pub async fn insert(&self, p: &ReleaseProfile) -> Result<i32> {
         let id = sqlx::query(
-            "INSERT INTO release_profiles (name, enabled, required, ignored, indexer_id, tags)
-             VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO release_profiles (name, enabled, required, ignored, indexer_id, tags,
+             air_date_restriction, air_date_grace_period_hours)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&p.name)
         .bind(p.enabled)
@@ -408,6 +411,8 @@ impl ReleaseProfiles<'_> {
         .bind(Json(&p.ignored))
         .bind(p.indexer_id)
         .bind(Json(&p.tags))
+        .bind(p.air_date_restriction)
+        .bind(p.air_date_grace_period_hours)
         .execute(self.0)
         .await?
         .last_insert_rowid();
@@ -417,7 +422,8 @@ impl ReleaseProfiles<'_> {
     pub async fn update(&self, p: &ReleaseProfile) -> Result<()> {
         let done = sqlx::query(
             "UPDATE release_profiles SET name = ?, enabled = ?, required = ?, ignored = ?,
-             indexer_id = ?, tags = ? WHERE id = ?",
+             indexer_id = ?, tags = ?, air_date_restriction = ?, air_date_grace_period_hours = ?
+             WHERE id = ?",
         )
         .bind(&p.name)
         .bind(p.enabled)
@@ -425,6 +431,8 @@ impl ReleaseProfiles<'_> {
         .bind(Json(&p.ignored))
         .bind(p.indexer_id)
         .bind(Json(&p.tags))
+        .bind(p.air_date_restriction)
+        .bind(p.air_date_grace_period_hours)
         .bind(p.id)
         .execute(self.0)
         .await?;

@@ -297,6 +297,10 @@ async fn run_query(
             search: Some(TvSearchContext {
                 series_id: series.id,
                 episode_ids: episodes.iter().map(|e| e.id).collect(),
+                episodes: episodes
+                    .iter()
+                    .map(|e| (e.season_number, e.air_date_utc))
+                    .collect(),
                 kind: query.kind,
                 user_invoked: ctx.user_invoked,
                 interactive: mode == SearchMode::Interactive,

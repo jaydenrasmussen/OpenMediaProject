@@ -21,6 +21,12 @@ pub struct ReleaseProfile {
     pub indexer_id: i32,
     /// Empty means every movie.
     pub tags: Vec<i32>,
+    /// TV only: refuse releases published before the episode aired.
+    #[serde(default)]
+    pub air_date_restriction: bool,
+    /// Hours after the air time a release may be grabbed.
+    #[serde(default)]
+    pub air_date_grace_period_hours: i32,
 }
 
 impl ReleaseProfile {
@@ -134,6 +140,8 @@ mod tests {
             ignored: vec![],
             indexer_id: indexer,
             tags: tags.to_vec(),
+            air_date_restriction: false,
+            air_date_grace_period_hours: 0,
         }
     }
 

@@ -147,8 +147,9 @@ pub struct TvSnapshot {
 }
 
 fn indexer_info(p: &omp_db::repo::Provider) -> IndexerInfo {
+    let all: IndexerSettings = serde_json::from_value(p.settings.clone()).unwrap_or_default();
     let torrent = (p.implementation == "torznab").then(|| {
-        let s: IndexerSettings = serde_json::from_value(p.settings.clone()).unwrap_or_default();
+        let s = all.clone();
         TorrentIndexerSettings {
             minimum_seeders: s.minimum_seeders,
             required_flags: s.required_flags.into_iter().map(IndexerFlags).collect(),
@@ -158,6 +159,7 @@ fn indexer_info(p: &omp_db::repo::Provider) -> IndexerInfo {
         id: p.id as i32,
         tags: p.tags.clone(),
         torrent,
+        season_pack_max_single_episode_age_days: all.season_search_maximum_single_episode_age,
     }
 }
 

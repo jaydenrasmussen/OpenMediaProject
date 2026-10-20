@@ -300,6 +300,8 @@ fn profile_with(required: &[&str], ignored: &[&str]) -> ReleaseProfile {
         ignored: ignored.iter().map(|s| s.to_string()).collect(),
         indexer_id: 0,
         tags: vec![],
+        air_date_restriction: false,
+        air_date_grace_period_hours: 0,
     }
 }
 
@@ -348,6 +350,7 @@ fn torrent_indexer_rules() {
             minimum_seeders: 5,
             required_flags: vec![IndexerFlags::G_FREELEECH, IndexerFlags::G_INTERNAL],
         }),
+        season_pack_max_single_episode_age_days: 0,
     }];
     assert_eq!(
         reason(verdict(&TorrentSeeding, &fx, &env)),
@@ -380,6 +383,7 @@ fn indexer_tags_must_overlap_movie_tags() {
         id: 1,
         tags: vec![3],
         torrent: None,
+        season_pack_max_single_episode_age_days: 0,
     }];
     assert_eq!(
         reason(verdict(&IndexerTag, &fx, &env)),

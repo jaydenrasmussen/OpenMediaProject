@@ -34,6 +34,10 @@ function Fields({ settings, onChange }: { settings: Record<string, unknown>; onC
         <span>Anime categories (empty skips anime)</span>
         <input type="text" defaultValue={list("anime_categories")} placeholder="5070" onBlur={(e) => set("anime_categories", numbers(e.target.value))} />
       </label>
+      <label className="field">
+        <span>Season search: require the pack once the season is older than (days, 0 off)</span>
+        <input type="number" min={0} value={Number(settings.season_search_maximum_single_episode_age ?? 0)} onChange={(e) => set("season_search_maximum_single_episode_age", Number(e.target.value))} />
+      </label>
       <label className="check">
         <input type="checkbox" checked={settings.anime_standard_format_search === true} onChange={(e) => set("anime_standard_format_search", e.target.checked)} /> Also search anime by season and episode number
       </label>

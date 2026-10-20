@@ -213,7 +213,7 @@ function Delay({ tags }: { tags: Tag[] }) {
   );
 }
 
-const NEW_RELEASE: ReleaseProfile = { id: 0, name: "", enabled: true, required: [], ignored: [], indexer_id: 0, tags: [] };
+const NEW_RELEASE: ReleaseProfile = { id: 0, name: "", enabled: true, required: [], ignored: [], indexer_id: 0, tags: [], air_date_restriction: false, air_date_grace_period_hours: 0 };
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 
 function Release({ tags }: { tags: Tag[] }) {
@@ -278,6 +278,15 @@ function Release({ tags }: { tags: Tag[] }) {
             <span>Must not contain (one per line)</span>
             <textarea rows={3} defaultValue={draft.ignored.join("\n")} onChange={(e) => set({ ignored: lines(e.target.value) })} style={{ width: "100%" }} />
           </label>
+          <label className="check">
+            <input type="checkbox" checked={draft.air_date_restriction} onChange={(e) => set({ air_date_restriction: e.target.checked })} /> TV: don’t grab releases published before the episode aired
+          </label>
+          {draft.air_date_restriction && (
+            <label className="field">
+              <span>Grace period after the air time (hours)</span>
+              <input type="number" min={0} value={draft.air_date_grace_period_hours} onChange={(e) => set({ air_date_grace_period_hours: Number(e.target.value) })} />
+            </label>
+          )}
           <label className="check">
             <input type="checkbox" checked={draft.enabled} onChange={(e) => set({ enabled: e.target.checked })} /> Enabled
           </label>

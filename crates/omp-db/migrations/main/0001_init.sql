@@ -80,7 +80,9 @@ CREATE TABLE release_profiles (
     required   TEXT NOT NULL DEFAULT '[]',
     ignored    TEXT NOT NULL DEFAULT '[]',
     indexer_id INTEGER NOT NULL DEFAULT 0,
-    tags       TEXT NOT NULL DEFAULT '[]'
+    tags       TEXT NOT NULL DEFAULT '[]',
+    air_date_restriction INTEGER NOT NULL DEFAULT 0,
+    air_date_grace_period_hours INTEGER NOT NULL DEFAULT 0
 );
 
 -- ---- library ---------------------------------------------------------------
