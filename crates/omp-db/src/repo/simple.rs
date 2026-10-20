@@ -86,3 +86,59 @@ impl RootFolders<'_> {
         Ok(())
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct ImportExclusion {
+    pub tmdb_id: i64,
+    pub title: String,
+    pub year: i32,
+}
+
+pub struct ImportExclusions<'a>(pub(crate) &'a SqlitePool);
+
+impl ImportExclusions<'_> {
+    pub async fn list(&self) -> Result<Vec<ImportExclusion>> {
+        Ok(sqlx::query_as(
+            "SELECT tmdb_id, title, year FROM import_exclusions ORDER BY title COLLATE NOCASE",
+        )
+        .fetch_all(self.0)
+        .await?)
+    }
+
+    /// Adding the same movie twice is fine.
+    pub async fn add(&self, tmdb_id: i64, title: &str, year: i32) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO import_exclusions (tmdb_id, title, year) VALUES (?, ?, ?)
+             ON CONFLICT(tmdb_id) DO UPDATE SET title = excluded.title, year = excluded.year",
+        )
+        .bind(tmdb_id)
+        .bind(title)
+        .bind(year)
+        .execute(self.0)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn remove(&self, tmdb_id: i64) -> Result<()> {
+        let done = sqlx::query("DELETE FROM import_exclusions WHERE tmdb_id = ?")
+            .bind(tmdb_id)
+            .execute(self.0)
+            .await?;
+        if done.rows_affected() == 0 {
+            return Err(DbError::NotFound);
+        }
+        Ok(())
+    }
+
+    pub async fn contains(&self, tmdb_id: i64) -> Result<bool> {
+        Ok(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM import_exclusions WHERE tmdb_id = ?",
+            )
+            .bind(tmdb_id)
+            .fetch_one(self.0)
+            .await?
+                > 0,
+        )
+    }
+}

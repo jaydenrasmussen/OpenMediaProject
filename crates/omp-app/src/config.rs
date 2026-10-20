@@ -20,6 +20,8 @@ pub struct AppConfig {
     pub backup_interval: Duration,
     /// How often movie details are re-read from the metadata provider.
     pub refresh_interval: Duration,
+    /// How often import lists are read.
+    pub list_interval: Duration,
     /// Folders scanned for plugins; a plugin id in a later folder replaces the same id in an earlier one.
     pub plugin_dirs: Vec<PathBuf>,
     /// The category our downloads are filed under in the download clients.
@@ -41,6 +43,7 @@ impl AppConfig {
             process_interval: Duration::from_secs(60),
             backup_interval: Duration::from_secs(7 * 24 * 3600),
             refresh_interval: Duration::from_secs(12 * 3600),
+            list_interval: Duration::from_secs(6 * 3600),
             plugin_dirs: vec![data_dir.join("plugins")],
             data_dir,
             download_category: "movies".into(),

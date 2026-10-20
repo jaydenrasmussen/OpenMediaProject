@@ -24,9 +24,14 @@ WORKDIR /src
 RUN rustup target add wasm32-wasip2
 COPY wit wit
 COPY plugins/webhook plugins/webhook
-RUN cd plugins/webhook && cargo build --release --locked --target wasm32-wasip2 \
-    && mkdir -p /out/webhook \
-    && cp target/wasm32-wasip2/release/webhook.wasm plugin.toml /out/webhook/
+COPY plugins/custom-list plugins/custom-list
+RUN set -eux; \
+    for p in webhook custom-list; do \
+      (cd plugins/$p && cargo build --release --locked --target wasm32-wasip2); \
+      mkdir -p /out/$p; \
+      cp plugins/$p/plugin.toml /out/$p/; \
+      cp plugins/$p/target/wasm32-wasip2/release/*.wasm /out/$p/; \
+    done
 
 # ---- Bundled tools: official 7-Zip (has the RAR codec; distro builds may not), par2, static ffprobe ----
 FROM debian:bookworm-slim AS tools

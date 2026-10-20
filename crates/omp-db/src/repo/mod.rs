@@ -18,4 +18,4 @@ pub use profiles::{
     CustomFormats, DelayProfiles, QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles,
 };
 pub use providers::{Provider, ProviderKind, Providers};
-pub use simple::{RootFolder, RootFolders, Tag, Tags};
+pub use simple::{ImportExclusion, ImportExclusions, RootFolder, RootFolders, Tag, Tags};

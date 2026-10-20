@@ -11,11 +11,16 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use omp_app::{App, AppConfig, router};
-use omp_core::{history::HistoryEvent, movie::MovieStatus, quality::QualityModel};
+use omp_core::{
+    history::HistoryEvent,
+    movie::{MovieMetadata, MovieStatus},
+    quality::QualityModel,
+};
 use omp_db::{
     Db,
     repo::{HistoryRecord, NewMovie},
 };
+use omp_metadata::{MetadataError, MovieMetadataProvider};
 use omp_services::{MediaProbe, NoDiskCheck, ProbeInfo};
 use serde_json::{Value, json};
 use tokio::{
@@ -32,6 +37,57 @@ impl MediaProbe for NoProbe {
     async fn probe(&self, _: &std::path::Path) -> Option<ProbeInfo> {
         None
     }
+}
+
+/// Knows two movies.
+struct FakeTmdb;
+
+#[async_trait]
+impl MovieMetadataProvider for FakeTmdb {
+    async fn movie(&self, tmdb_id: i64) -> Result<MovieMetadata, MetadataError> {
+        let (title, year) = match tmdb_id {
+            603 => ("The Matrix", 1999),
+            604 => ("The Matrix Reloaded", 2003),
+            _ => return Err(MetadataError::NotFound),
+        };
+        Ok(MovieMetadata {
+            tmdb_id,
+            title: title.into(),
+            original_title: title.into(),
+            original_language: "en".into(),
+            year,
+            runtime: 130,
+            status: MovieStatus::Released,
+            ..Default::default()
+        })
+    }
+    async fn search(&self, _: &str, _: Option<i32>) -> Result<Vec<MovieMetadata>, MetadataError> {
+        Ok(vec![])
+    }
+    async fn movie_by_imdb_id(&self, _: &str) -> Result<MovieMetadata, MetadataError> {
+        Err(MetadataError::NotFound)
+    }
+}
+
+/// Serves `body` to every request.
+async fn serve_json(body: &'static str) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/list.json", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+            });
+        }
+    });
+    url
 }
 
 /// Builds `plugins/<name>` and lays it out the way the app expects.
@@ -128,12 +184,13 @@ async fn rig(with_plugin: bool) -> Rig {
     if with_plugin {
         install_plugin(&plugin_dir, "webhook", "webhook.wasm");
         install_plugin(&plugin_dir, "toy-indexer", "toy_indexer.wasm");
+        install_plugin(&plugin_dir, "custom-list", "custom_list.wasm");
     }
     config.plugin_dirs = vec![plugin_dir];
     let app = App::new(
         config,
         Db::in_memory().await.unwrap(),
-        None,
+        Some(Arc::new(FakeTmdb)),
         Arc::new(NoProbe),
         Arc::new(NoDiskCheck),
     )
@@ -187,7 +244,11 @@ async fn plugins_are_listed_and_describe_their_settings() {
         .collect();
     assert_eq!(
         kinds,
-        [("toy-indexer", "indexer"), ("webhook", "notification")]
+        [
+            ("custom-list", "list"),
+            ("toy-indexer", "indexer"),
+            ("webhook", "notification")
+        ]
     );
     assert_eq!(list["problems"], json!([]));
     let (s, schema) = call(&r, Method::GET, "/api/v1/plugin/webhook/schema", None).await;
@@ -441,4 +502,138 @@ async fn indexer_plugins_are_validated_tested_and_searched() {
     assert_eq!(releases.len(), 1, "{found}");
     assert_eq!(releases[0]["title"], "The Matrix 1080p WEB-DL");
     assert_eq!(releases[0]["indexer"], "Toy");
+}
+
+#[tokio::test]
+async fn import_lists_add_movies_once_and_respect_exclusions() {
+    let r = rig(true).await;
+    let url = serve_json(
+        r#"[{"tmdbId": 603, "title": "The Matrix", "year": 1999},
+            {"tmdb_id": "604", "title": "The Matrix Reloaded"},
+            {"title": "no id, ignored"}]"#,
+    )
+    .await;
+
+    let root = r._dir.path().join("movies");
+    std::fs::create_dir_all(&root).unwrap();
+    let root = root.to_string_lossy().into_owned();
+    assert_eq!(
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/rootfolder",
+            Some(json!({ "path": root }))
+        )
+        .await
+        .0,
+        StatusCode::CREATED
+    );
+    let profile = r.app.db.quality_profiles().list().await.unwrap()[0].id;
+    let list = |root: &str, profile: i32| {
+        json!({
+            "name": "Mirror", "implementation": "custom-list", "plugin_id": "custom-list",
+            "settings": {
+                "quality_profile_id": profile, "root_folder_path": root,
+                "settings": { "url": url },
+            },
+        })
+    };
+
+    // The destination has to exist.
+    for bad in [list("/nowhere", profile), list(&root, 9999)] {
+        assert_eq!(
+            call(&r, Method::POST, "/api/v1/importlist", Some(bad))
+                .await
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let (_, tested) = call(
+        &r,
+        Method::POST,
+        "/api/v1/importlist/test",
+        Some(list(&root, profile)),
+    )
+    .await;
+    assert_eq!(tested["ok"], true, "{tested}");
+    let (s, saved) = call(
+        &r,
+        Method::POST,
+        "/api/v1/importlist",
+        Some(list(&root, profile)),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{saved}");
+
+    let sync = || {
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/command",
+            Some(json!({ "name": "ImportListSync", "wait": true })),
+        )
+    };
+    assert_eq!(sync().await.0, StatusCode::OK);
+    let titles = |movies: Value| -> Vec<String> {
+        let mut t: Vec<_> = movies
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["title"].as_str().unwrap().to_owned())
+            .collect();
+        t.sort();
+        t
+    };
+    let (_, movies) = call(&r, Method::GET, "/api/v1/movie", None).await;
+    assert_eq!(
+        titles(movies.clone()),
+        ["The Matrix", "The Matrix Reloaded"]
+    );
+
+    // Syncing again changes nothing.
+    assert_eq!(sync().await.0, StatusCode::OK);
+    let (_, again) = call(&r, Method::GET, "/api/v1/movie", None).await;
+    assert_eq!(again.as_array().unwrap().len(), 2);
+
+    // Removing a movie "and excluding it" keeps the list from adding it back.
+    let reloaded = movies
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["tmdb_id"] == 604)
+        .unwrap();
+    let id = reloaded["id"].as_i64().unwrap();
+    assert_eq!(
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/movie/{id}?add_exclusion=true"),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(sync().await.0, StatusCode::OK);
+    let (_, left) = call(&r, Method::GET, "/api/v1/movie", None).await;
+    assert_eq!(titles(left), ["The Matrix"]);
+    let (_, exclusions) = call(&r, Method::GET, "/api/v1/exclusion", None).await;
+    assert_eq!(exclusions[0]["tmdb_id"], 604);
+
+    // Lifting the exclusion lets the next sync add it again.
+    assert_eq!(
+        call(&r, Method::DELETE, "/api/v1/exclusion/604", None)
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(&r, Method::DELETE, "/api/v1/exclusion/604", None)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(sync().await.0, StatusCode::OK);
+    let (_, back) = call(&r, Method::GET, "/api/v1/movie", None).await;
+    assert_eq!(back.as_array().unwrap().len(), 2);
 }

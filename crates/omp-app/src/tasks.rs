@@ -192,7 +192,26 @@ pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
             }
         })
     };
-    vec![rss, process, backup, refresh, notify]
+    let lists = {
+        let app = app.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(2 * 60)).await;
+            let mut tick = tokio::time::interval(app.config.list_interval);
+            loop {
+                tick.tick().await;
+                match crate::lists::sync_once(&app).await {
+                    Ok(r) if r.added > 0 || !r.problems.is_empty() => tracing::info!(
+                        added = r.added,
+                        problems = r.problems.len(),
+                        "import lists synced"
+                    ),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("import list sync failed: {e}"),
+                }
+            }
+        })
+    };
+    vec![rss, process, backup, refresh, notify, lists]
 }
 
 /// Re-reads movie details from the metadata provider: release dates, status

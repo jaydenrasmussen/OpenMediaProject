@@ -29,7 +29,7 @@ type Shared = State<Arc<App>>;
 pub(crate) type ApiResult<T = Json<Value>> = Result<T, ApiError>;
 
 #[derive(Debug)]
-pub struct ApiError(pub(crate) StatusCode, pub(crate) String);
+pub(crate) struct ApiError(pub(crate) StatusCode, pub(crate) String);
 
 impl ApiError {
     pub(crate) fn internal(m: impl Into<String>) -> Self {
@@ -273,18 +273,18 @@ async fn get_movie(State(app): Shared, Path(id): Path<i64>) -> ApiResult {
 }
 
 #[derive(Deserialize)]
-struct AddMovie {
-    tmdb_id: i64,
-    quality_profile_id: i32,
-    root_folder_path: String,
+pub(crate) struct AddMovie {
+    pub(crate) tmdb_id: i64,
+    pub(crate) quality_profile_id: i32,
+    pub(crate) root_folder_path: String,
     #[serde(default = "yes")]
-    monitored: bool,
-    minimum_availability: Option<String>,
+    pub(crate) monitored: bool,
+    pub(crate) minimum_availability: Option<String>,
     #[serde(default)]
-    tags: Vec<i32>,
+    pub(crate) tags: Vec<i32>,
     /// Search for the movie right away.
     #[serde(default)]
-    search_now: bool,
+    pub(crate) search_now: bool,
 }
 
 fn yes() -> bool {
@@ -295,6 +295,13 @@ async fn add_movie(
     State(app): Shared,
     Json(req): Json<AddMovie>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    let record = add_to_library(&app, req).await?;
+    Ok((StatusCode::CREATED, Json(movie_json(&record, None))))
+}
+
+/// Adds a movie from the metadata provider to the library. Shared by the
+/// API and import lists.
+pub(crate) async fn add_to_library(app: &Arc<App>, req: AddMovie) -> Result<MovieRecord, ApiError> {
     let Some(provider) = app.metadata.clone() else {
         return Err(ApiError::unavailable(
             "no metadata provider is configured (set TMDB_READ_TOKEN)",
@@ -372,7 +379,7 @@ async fn add_movie(
         })
         .await?;
     // The folder may already hold the movie.
-    let _ = tasks::rescan_movie_once(&app, id).await;
+    let _ = tasks::rescan_movie_once(app, id).await;
     let record = app.db.movies().get(id).await?;
     if req.search_now && req.monitored {
         let app = app.clone();
@@ -382,7 +389,7 @@ async fn add_movie(
             }
         });
     }
-    Ok((StatusCode::CREATED, Json(movie_json(&record, None))))
+    Ok(record)
 }
 
 #[derive(Deserialize)]
@@ -431,8 +438,40 @@ async fn update_movie(
     get_movie(State(app), Path(id)).await
 }
 
-async fn delete_movie(State(app): Shared, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+#[derive(Deserialize, Default)]
+struct DeleteMovie {
+    /// Stop import lists adding this movie again.
+    #[serde(default)]
+    add_exclusion: bool,
+}
+
+async fn delete_movie(
+    State(app): Shared,
+    Path(id): Path<i64>,
+    Query(q): Query<DeleteMovie>,
+) -> ApiResult<StatusCode> {
+    if q.add_exclusion {
+        let m = app.db.movies().get(id).await?;
+        app.db
+            .import_exclusions()
+            .add(m.movie.tmdb_id, &m.movie.title, m.movie.year)
+            .await?;
+    }
     app.db.movies().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_exclusions(State(app): Shared) -> ApiResult {
+    let rows = app.db.import_exclusions().list().await?;
+    Ok(Json(Value::Array(
+        rows.iter()
+            .map(|e| json!({ "tmdb_id": e.tmdb_id, "title": e.title, "year": e.year }))
+            .collect(),
+    )))
+}
+
+async fn delete_exclusion(State(app): Shared, Path(tmdb_id): Path<i64>) -> ApiResult<StatusCode> {
+    app.db.import_exclusions().remove(tmdb_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -683,6 +722,16 @@ async fn command(
                         .map_err(|e| e.to_string()),
                     None => Err("RefreshMovie needs a movie_id".into()),
                 },
+                "ImportListSync" => crate::lists::sync_once(&app)
+                    .await
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| {
+                        if r.problems.is_empty() {
+                            Ok(())
+                        } else {
+                            Err(r.problems.join("; "))
+                        }
+                    }),
                 "RefreshMovies" => tasks::refresh_movies_once(&app, None)
                     .await
                     .map(|_| ())
@@ -699,6 +748,7 @@ async fn command(
             | "RescanMovie"
             | "RefreshMovie"
             | "RefreshMovies"
+            | "ImportListSync"
     ) {
         return Err(ApiError::bad_request(format!(
             "unknown command '{}'",
@@ -1247,6 +1297,44 @@ fn validate_notification(app: &App, p: &Provider) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// An import list is a list plugin plus what to do with the movies it names.
+async fn validate_import_list(app: &App, p: &Provider) -> Result<(), ApiError> {
+    let Some(plugin_id) = p.plugin_id.as_deref() else {
+        return Err(ApiError::bad_request("choose a list plugin"));
+    };
+    if app.plugins.list(plugin_id).is_none() {
+        return Err(ApiError::bad_request(format!(
+            "no list plugin '{plugin_id}' is installed"
+        )));
+    }
+    let s = crate::lists::ListSettings::from_provider(p).map_err(ApiError::bad_request)?;
+    if !app
+        .db
+        .root_folders()
+        .list()
+        .await?
+        .iter()
+        .any(|r| r.path == s.root_folder_path)
+    {
+        return Err(ApiError::bad_request(
+            "root_folder_path is not a configured root folder",
+        ));
+    }
+    app.db
+        .quality_profiles()
+        .get(s.quality_profile_id)
+        .await
+        .map_err(|_| ApiError::bad_request("unknown quality_profile_id"))?;
+    if let Some(m) = s.minimum_availability.as_deref()
+        && parse_status(m).is_none()
+    {
+        return Err(ApiError::bad_request(format!(
+            "unknown minimum_availability '{m}'"
+        )));
+    }
+    Ok(())
+}
+
 /// An indexer that names a plugin must name an installed indexer plugin.
 fn validate_indexer_plugin(app: &App, p: &Provider) -> Result<(), ApiError> {
     match p.plugin_id.as_deref() {
@@ -1270,6 +1358,9 @@ async fn save_provider(
     }
     if kind == ProviderKind::Indexer {
         validate_indexer_plugin(&app, &p)?;
+    }
+    if kind == ProviderKind::ImportList {
+        validate_import_list(&app, &p).await?;
     }
     let status = match id {
         Some(id) => {
@@ -1560,7 +1651,11 @@ async fn test_provider(app: Arc<App>, kind: ProviderKind, body: ProviderBody) ->
     if kind == ProviderKind::Indexer {
         validate_indexer_plugin(&app, &p)?;
     }
+    if kind == ProviderKind::ImportList {
+        validate_import_list(&app, &p).await?;
+    }
     let outcome = match kind {
+        ProviderKind::ImportList => crate::lists::fetch(&app, &p).await.map(|_| ()),
         ProviderKind::Indexer => match p
             .plugin_id
             .as_deref()
@@ -1739,6 +1834,11 @@ pub fn router(app: Arc<App>) -> Router {
     let api = provider_routes!(api, "/indexer", ProviderKind::Indexer);
     let api = provider_routes!(api, "/downloadclient", ProviderKind::DownloadClient);
     let api = provider_routes!(api, "/notification", ProviderKind::Notification);
+    let api = provider_routes!(api, "/importlist", ProviderKind::ImportList);
+    let api = api.route("/exclusion", get(list_exclusions)).route(
+        "/exclusion/{tmdb_id}",
+        axum::routing::delete(delete_exclusion),
+    );
     let api = api
         .route("/plugin", get(list_plugins))
         .route("/plugin/{id}/schema", get(plugin_schema));
