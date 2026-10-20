@@ -174,6 +174,13 @@ impl ImportResult {
     }
 }
 
+/// A person chose these files and what they are, so the usual checks (sample,
+/// upgrade, already imported...) are skipped. Only a quality can be forced.
+#[derive(Debug, Clone, Default)]
+pub struct ManualImport {
+    pub quality: Option<QualityModel>,
+}
+
 pub struct ImportRequest<'a> {
     pub movie_id: i64,
     /// A file, or the folder the download client put its output in.
@@ -184,6 +191,7 @@ pub struct ImportRequest<'a> {
     /// The client still needs the files (seeding), so copy instead of move.
     pub can_move_files: bool,
     pub now: DateTime<Utc>,
+    pub manual: Option<ManualImport>,
 }
 
 pub struct Importer<'a> {
@@ -208,6 +216,11 @@ pub(crate) fn extension_of(path: &Path) -> String {
     path.extension()
         .map(|e| format!(".{}", e.to_string_lossy()))
         .unwrap_or_default()
+}
+
+/// Every media file at or under `root`, for screens that list a download.
+pub async fn list_media_files(root: &Path) -> std::io::Result<Vec<PathBuf>> {
+    find_media_files(root).await
 }
 
 pub(crate) async fn find_media_files(root: &Path) -> std::io::Result<Vec<PathBuf>> {
@@ -325,7 +338,10 @@ impl Importer<'_> {
 
         for path in &paths {
             let mut rejections = Vec::new();
-            let candidate = self.describe(path, req).await;
+            let mut candidate = self.describe(path, req).await;
+            if let Some(q) = req.manual.as_ref().and_then(|m| m.quality) {
+                candidate.quality = q;
+            }
 
             if in_working_folder(path, &self.config.working_folders) {
                 rejections.push(ImportRejection::Unpacking);
@@ -371,6 +387,9 @@ impl Importer<'_> {
                 rejections.push(r);
             }
 
+            if req.manual.is_some() {
+                rejections.clear();
+            }
             if rejections.is_empty() {
                 approved.push(candidate);
             } else {

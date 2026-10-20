@@ -177,6 +177,7 @@ async fn run(
         download_title: "The.Matrix.1999.1080p.BluRay.x264-GRP",
         can_move_files: can_move,
         now: now(),
+        manual: None,
     })
     .await
     .unwrap()

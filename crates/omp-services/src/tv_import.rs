@@ -41,6 +41,7 @@ pub struct TvImportRequest<'a> {
     pub episode_ids: &'a [i64],
     pub can_move_files: bool,
     pub now: DateTime<Utc>,
+    pub manual: Option<crate::import::ManualImport>,
 }
 
 pub struct TvImporter<'a> {
@@ -159,6 +160,9 @@ impl TvImporter<'_> {
                     paths.len(),
                 )
                 .await;
+            if let Some(q) = req.manual.as_ref().and_then(|m| m.quality) {
+                candidate.quality = q;
+            }
             if candidate.episodes.is_empty() {
                 result.files.push(FileResult {
                     path: path.clone(),
@@ -269,6 +273,9 @@ impl TvImporter<'_> {
                 }
             }
 
+            if req.manual.is_some() {
+                rejections.clear();
+            }
             if rejections.is_empty() {
                 candidate.release_hash = from_download
                     .as_ref()
@@ -364,6 +371,14 @@ impl TvImporter<'_> {
             && file_count == 1
         {
             episodes = pick_episodes(d, all_episodes, s);
+        }
+        // A person who picked the episodes by hand is right, whatever the name says.
+        if req.manual.is_some() && !req.episode_ids.is_empty() {
+            episodes = all_episodes
+                .iter()
+                .filter(|e| req.episode_ids.contains(&e.id))
+                .cloned()
+                .collect();
         }
         episodes.sort_by_key(|e| (e.season_number, e.episode_number));
         let size = tokio::fs::metadata(path)

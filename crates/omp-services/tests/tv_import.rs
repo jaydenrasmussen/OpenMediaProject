@@ -174,6 +174,7 @@ impl Lib {
             episode_ids,
             can_move_files: true,
             now: now(),
+            manual: None,
         })
         .await
         .unwrap()

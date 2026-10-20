@@ -37,7 +37,7 @@ pub use formats::{input_for_file, input_for_history, input_for_release, matching
 pub use grab::{GrabContext, GrabbedRelease, ProcessedDecisions, grab_selected, process_decisions};
 pub use import::{
     FileOutcome, FileResult, ImportConfig, ImportMode, ImportRejection, ImportRequest,
-    ImportResult, Importer, MediaProbe, ProbeInfo,
+    ImportResult, Importer, ManualImport, MediaProbe, ProbeInfo, list_media_files,
 };
 pub use media::naming_media;
 pub use process::{ProcessOptions, ProcessResult, process_downloads};

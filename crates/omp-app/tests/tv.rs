@@ -778,3 +778,114 @@ async fn the_series_editor_changes_several_series_at_once() {
     assert_eq!(one["series_type"], "anime");
     assert_eq!(one["season_folder"], false);
 }
+
+#[tokio::test]
+async fn manual_import_lists_matches_and_imports_what_a_person_chose() {
+    let r = rig(true).await;
+    let root = add_root(&r).await;
+    let p = profile(&r).await;
+    let (_, series) = call(
+        &r,
+        Method::POST,
+        "/api/v1/series",
+        Some(json!({ "tmdb_id": 1396, "quality_profile_id": p, "root_folder_path": root })),
+    )
+    .await;
+    let series_id = series["id"].as_i64().unwrap();
+    let folder = r.dir.path().join("data/downloads/Some.Release");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("Breaking.Bad.S01E01.720p.BluRay.x264-GRP.mkv"),
+        b"x",
+    )
+    .unwrap();
+    std::fs::write(folder.join("mystery.mkv"), b"x").unwrap();
+    let folder_s = folder.to_string_lossy().into_owned();
+
+    let (s, files) = get(
+        &r,
+        &format!("/api/v1/manualimport?path={}", folder_s.replace(' ', "%20")),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{files}");
+    let known = files
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"].as_str().unwrap().starts_with("Breaking"))
+        .unwrap();
+    assert_eq!(known["series"]["id"], series_id);
+    assert_eq!(known["episodes"][0]["episode_number"], 1);
+    let mystery = files
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "mystery.mkv")
+        .unwrap();
+    assert!(mystery["series"].is_null() && mystery["movie"].is_null());
+
+    // Files outside the downloads folder are never read or imported.
+    assert_eq!(
+        get(&r, "/api/v1/manualimport?path=/etc").await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let outside = r.dir.path().join("tv/stray.mkv");
+    std::fs::write(&outside, b"x").unwrap();
+    let (s, _) = call(
+        &r,
+        Method::POST,
+        "/api/v1/manualimport",
+        Some(json!({ "items": [{ "path": outside, "series_id": series_id, "episode_ids": [1] }] })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
+    // The person says the mystery file is episode 2.
+    let (_, eps) = get(&r, &format!("/api/v1/episode?series_id={series_id}")).await;
+    let ep2 = eps
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["season_number"] == 1 && e["episode_number"] == 2)
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let (s, res) = call(
+        &r,
+        Method::POST,
+        "/api/v1/manualimport",
+        Some(json!({ "items": [
+            { "path": mystery["path"], "series_id": series_id, "episode_ids": [ep2] },
+            { "path": known["path"], "series_id": series_id, "episode_ids": [known["episodes"][0]["id"]] },
+        ] })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{res}");
+    assert!(
+        res["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|x| x["ok"] == true),
+        "{res}"
+    );
+    let (_, eps) = get(&r, &format!("/api/v1/episode?series_id={series_id}")).await;
+    let with_file = eps
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| !e["file"].is_null())
+        .count();
+    assert_eq!(with_file, 2);
+    assert_eq!(
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/manualimport",
+            Some(json!({ "items": [] }))
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+}

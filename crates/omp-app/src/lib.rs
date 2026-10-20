@@ -12,6 +12,7 @@ mod health;
 mod ical;
 mod lists;
 mod logs;
+mod manual_import;
 mod notify;
 mod plugins;
 mod releases;

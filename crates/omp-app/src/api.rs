@@ -2320,7 +2320,8 @@ pub fn router(app: Arc<App>) -> Router {
     let api = provider_routes!(api, "/importlist", ProviderKind::ImportList);
     let api = api
         .merge(crate::tv_api::routes())
-        .merge(crate::tv_activity::routes());
+        .merge(crate::tv_activity::routes())
+        .merge(crate::manual_import::routes());
     let api = api
         .route("/system/task", get(list_tasks))
         .route("/rename", get(rename_previews))

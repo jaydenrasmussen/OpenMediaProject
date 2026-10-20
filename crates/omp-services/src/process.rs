@@ -88,6 +88,7 @@ pub async fn process_downloads(
                     episode_ids: &tracked.episode_ids,
                     can_move_files: tracked.item.can_move_files,
                     now: options.now,
+                    manual: None,
                 })
                 .await?
         } else if let Some(movie_id) = tracked.movie_id {
@@ -100,6 +101,7 @@ pub async fn process_downloads(
                     download_title: &tracked.item.title,
                     can_move_files: tracked.item.can_move_files,
                     now: options.now,
+                    manual: None,
                 })
                 .await?
         } else {

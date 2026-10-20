@@ -2808,6 +2808,7 @@ dependencies = [
  "omp-decision",
  "omp-downloads",
  "omp-indexers",
+ "omp-library",
  "omp-metadata",
  "omp-naming",
  "omp-parser",

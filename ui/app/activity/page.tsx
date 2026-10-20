@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { ManualImport } from "../components/ManualImport";
 import { LoadState } from "../components/Page";
 import { useToast } from "../components/toast";
 import { del, get } from "../lib/api";
@@ -61,6 +62,7 @@ function Queue() {
   usePoll(q.reload, 30000); // a safety net if the socket is down
 
   const [removing, setRemoving] = useState<QueueItem | null>(null);
+  const [importing, setImporting] = useState<string | null>(null);
   const [blocklist, setBlocklist] = useState(true);
   const [deleteData, setDeleteData] = useState(false);
 
@@ -124,7 +126,12 @@ function Queue() {
                     <span className="small muted">{percent(i.size, i.size_left)}%</span>
                   </td>
                   <td className="num">{formatSize(i.size)}</td>
-                  <td>
+                  <td className="row">
+                    {(i.state === "ImportBlocked" || i.state === "ImportPending") && (
+                      <button onClick={() => setImporting(i.download_id)} aria-label={`Import ${i.title} by hand`}>
+                        Manual import
+                      </button>
+                    )}
                     <button className="danger" onClick={() => setRemoving(i)} aria-label={`Remove ${i.title}`}>
                       Remove
                     </button>
@@ -134,6 +141,15 @@ function Queue() {
             </tbody>
           </table>
         </div>
+      )}
+      {importing && (
+        <ManualImport
+          downloadId={importing}
+          onClose={(done) => {
+            setImporting(null);
+            if (done) q.reload();
+          }}
+        />
       )}
       {removing && (
         <section className="card stack" style={{ marginTop: "1rem" }}>
