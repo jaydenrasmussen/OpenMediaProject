@@ -9,6 +9,7 @@ mod ffprobe;
 mod formats;
 mod grab;
 mod import;
+mod media;
 mod process;
 mod rename;
 mod scan;
@@ -29,6 +30,7 @@ pub use import::{
     FileOutcome, FileResult, ImportConfig, ImportMode, ImportRejection, ImportRequest,
     ImportResult, Importer, MediaProbe, ProbeInfo,
 };
+pub use media::naming_media;
 pub use process::{ProcessOptions, ProcessResult, process_downloads};
 pub use rename::{RenamePreview, rename_movie, rename_preview, rename_previews};
 pub use scan::{RescanResult, UnmappedFolder, rescan_movie, unmapped_folders};

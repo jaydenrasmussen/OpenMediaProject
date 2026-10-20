@@ -560,7 +560,10 @@ impl Importer<'_> {
             relative_path: c.path.file_name().map(|n| n.to_string_lossy().into_owned()),
             path: Some(c.path.to_string_lossy().into_owned()),
             edition: Some(c.edition.clone()).filter(|e| !e.is_empty()),
-            media: None,
+            media: c
+                .probe
+                .as_ref()
+                .and_then(|p| crate::media::naming_media(&p.raw, Some(&c.scene_name))),
             custom_formats,
         };
         let name = build_file_name(&naming_movie, &naming_file, &self.config.naming)?;

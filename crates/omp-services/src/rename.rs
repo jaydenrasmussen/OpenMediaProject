@@ -71,7 +71,10 @@ async fn target_name(
                 .into_owned(),
         ),
         edition: file.edition.clone().filter(|e| !e.is_empty()),
-        media: None,
+        media: file
+            .media_info
+            .as_ref()
+            .and_then(|raw| crate::media::naming_media(raw, file.scene_name.as_deref())),
         custom_formats,
     };
     let name = build_file_name(&naming_movie, &naming_file, naming)
