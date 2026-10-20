@@ -29,11 +29,88 @@ fn options(url: &str) -> Result<SqliteConnectOptions> {
         .busy_timeout(Duration::from_secs(5)))
 }
 
+/// File name a restore waits under until the next start.
+const STAGED_RESTORE: &str = "omp.db.restore";
+
 impl Db {
+    /// Checks that `backup` is a database this version can run: it opens,
+    /// passes SQLite's integrity check and was made by this version or an
+    /// older one.
+    pub async fn verify_backup(backup: &Path) -> Result<()> {
+        let options = SqliteConnectOptions::new()
+            .filename(backup)
+            .read_only(true)
+            .create_if_missing(false);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .map_err(|e| crate::DbError::Corrupt(format!("cannot open the backup: {e}")))?;
+        let check: String = sqlx::query_scalar("PRAGMA integrity_check")
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| crate::DbError::Corrupt(format!("cannot read the backup: {e}")))?;
+        if check != "ok" {
+            return Err(crate::DbError::Corrupt(format!(
+                "the backup is damaged: {check}"
+            )));
+        }
+        let newest: Option<i64> = sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await
+            .map_err(|_| {
+                crate::DbError::Corrupt("this is not an OpenMediaProject backup".into())
+            })?;
+        pool.close().await;
+        let known = sqlx::migrate!("./migrations/main")
+            .migrations
+            .iter()
+            .map(|m| m.version)
+            .max();
+        if newest > known {
+            return Err(crate::DbError::Corrupt(
+                "the backup comes from a newer version of OpenMediaProject".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Lines up `backup` to replace the database the next time the app
+    /// starts. The running database is untouched until then.
+    pub async fn stage_restore(dir: &Path, backup: &Path) -> Result<()> {
+        Self::verify_backup(backup).await?;
+        std::fs::copy(backup, dir.join(STAGED_RESTORE))
+            .map_err(|e| crate::DbError::Corrupt(format!("cannot stage the restore: {e}")))?;
+        Ok(())
+    }
+
+    /// Swaps in a staged restore, keeping the database it replaces as
+    /// `omp.db.before-restore`. Returns whether there was one.
+    fn apply_staged_restore(dir: &Path) -> std::io::Result<bool> {
+        let staged = dir.join(STAGED_RESTORE);
+        if !staged.is_file() {
+            return Ok(false);
+        }
+        let current = dir.join("omp.db");
+        if current.exists() {
+            std::fs::rename(&current, dir.join("omp.db.before-restore"))?;
+        }
+        // Leftover journal files belong to the old database.
+        for suffix in ["-wal", "-shm"] {
+            let _ = std::fs::remove_file(dir.join(format!("omp.db{suffix}")));
+        }
+        std::fs::rename(&staged, &current)?;
+        Ok(true)
+    }
+
     /// Opens (creating if needed) `omp.db` and `logs.db` in `dir` and
-    /// applies pending migrations.
+    /// applies pending migrations. A restore staged with
+    /// [`Self::stage_restore`] is applied first.
     pub async fn open(dir: &Path) -> Result<Self> {
         std::fs::create_dir_all(dir).map_err(|e| crate::DbError::Corrupt(e.to_string()))?;
+        if Self::apply_staged_restore(dir).map_err(|e| crate::DbError::Corrupt(e.to_string()))? {
+            tracing::info!("restored the database from a backup");
+        }
         let main = SqlitePoolOptions::new()
             .max_connections(8)
             .connect_with(options(&format!(

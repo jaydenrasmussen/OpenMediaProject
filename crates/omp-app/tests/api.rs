@@ -1716,3 +1716,51 @@ async fn deleting_files_refuses_folders_outside_the_root_folders() {
     assert_eq!(s, StatusCode::BAD_REQUEST);
     assert!(std::path::Path::new(&root).is_dir());
 }
+
+#[tokio::test]
+async fn a_backup_can_be_staged_for_restore() {
+    let r = build_rig(true, true).await;
+    let (_, made) = call(&r, Method::POST, "/api/v1/system/backup", None).await;
+    let name = made["name"].as_str().unwrap().to_owned();
+
+    assert_eq!(
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/system/backup/not-a-backup/restore",
+            None
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/system/backup/omp_backup_20200101_000000.db/restore",
+            None
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND,
+        "a well-formed name that does not exist"
+    );
+    let (s, staged) = call(
+        &r,
+        Method::POST,
+        &format!("/api/v1/system/backup/{name}/restore"),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{staged}");
+    assert_eq!(staged["restart_required"], true);
+    assert!(r.dir.path().join("data/omp.db.restore").is_file());
+
+    assert_eq!(
+        call(&r, Method::POST, "/api/v1/system/restart", None)
+            .await
+            .0,
+        StatusCode::ACCEPTED
+    );
+}

@@ -52,6 +52,7 @@ pub struct App {
     /// Interactive search results, kept so a chosen release can be grabbed.
     pub(crate) search_cache: std::sync::Mutex<crate::releases::SearchCache>,
     tasks: std::sync::Mutex<std::collections::BTreeMap<&'static str, TaskStatus>>,
+    shutdown: tokio::sync::Notify,
     pub(crate) rss_lock: tokio::sync::Mutex<()>,
     pub(crate) process_lock: tokio::sync::Mutex<()>,
     registry: RwLock<Arc<ClientRegistry>>,
@@ -95,6 +96,7 @@ impl App {
                 .map_err(|e| anyhow::anyhow!("{}", e.1))?,
             search_cache: std::sync::Mutex::default(),
             tasks: std::sync::Mutex::default(),
+            shutdown: tokio::sync::Notify::new(),
             rss_lock: tokio::sync::Mutex::new(()),
             process_lock: tokio::sync::Mutex::new(()),
             registry: RwLock::new(Arc::new(ClientRegistry::default())),
@@ -139,6 +141,17 @@ impl App {
 
     pub fn task_statuses(&self) -> Vec<TaskStatus> {
         self.tasks.lock().unwrap().values().cloned().collect()
+    }
+
+    /// Asks the server to stop (the container's restart policy brings it
+    /// back). Used after a restore.
+    pub fn request_shutdown(&self) {
+        self.shutdown.notify_one();
+    }
+
+    /// Resolves when [`Self::request_shutdown`] is called.
+    pub async fn shutdown_requested(&self) {
+        self.shutdown.notified().await;
     }
 
     /// The key programs use in the `X-Api-Key` header.

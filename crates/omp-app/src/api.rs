@@ -12,7 +12,7 @@ use axum::{
 };
 use omp_core::{history::HistoryEvent, movie::MovieStatus};
 use omp_db::{
-    DbError,
+    Db, DbError,
     repo::{HistoryRecord, MovieFileRecord, MovieRecord, NewMovie, Provider, ProviderKind},
 };
 use omp_naming::{NamingMovie, build_movie_folder};
@@ -245,6 +245,37 @@ async fn delete_backup(State(app): Shared, Path(name): Path<String>) -> ApiResul
         .await
         .map_err(|_| ApiError::not_found("no such backup"))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Stages a backup to replace the database when the app next starts.
+async fn restore_backup(
+    State(app): Shared,
+    Path(name): Path<String>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let path = crate::backups::path_of(&app, &name)
+        .filter(|p| p.is_file())
+        .ok_or_else(|| ApiError::not_found("no such backup"))?;
+    Db::stage_restore(&app.config.data_dir, &path)
+        .await
+        .map_err(|e| ApiError::bad_request(e.to_string()))?;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "restart_required": true })),
+    ))
+}
+
+/// Stops the server so a restart policy can bring it back (after a restore).
+async fn restart(State(app): Shared) -> (StatusCode, Json<Value>) {
+    let app = app.clone();
+    tokio::spawn(async move {
+        // Let the response go out first.
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        app.request_shutdown();
+    });
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({ "status": "restarting" })),
+    )
 }
 
 async fn system_status(State(app): Shared) -> Json<Value> {
@@ -2148,6 +2179,8 @@ pub fn router(app: Arc<App>) -> Router {
     let api = api
         .route("/system/task", get(list_tasks))
         .route("/rename", get(rename_previews))
+        .route("/system/backup/{name}/restore", post(restore_backup))
+        .route("/system/restart", post(restart))
         .route("/calendar/feed.ics", get(calendar_feed))
         .route("/log", get(list_logs).delete(clear_logs));
     let api = api.route("/exclusion", get(list_exclusions)).route(

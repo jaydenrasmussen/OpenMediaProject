@@ -88,6 +88,24 @@ function Backups() {
       setBusy(false);
     }
   }
+  const [staged, setStaged] = useState<string | null>(null);
+  async function restore(b: BackupInfo) {
+    if (!confirm(`Restore ${b.name}?\n\nThe library, settings and history go back to how they were then. Your current database is kept as omp.db.before-restore. The change happens when the app restarts.`)) return;
+    try {
+      await post(`/system/backup/${encodeURIComponent(b.name)}/restore`);
+      setStaged(b.name);
+    } catch (e) {
+      notify(errorMessage(e), "bad");
+    }
+  }
+  async function restart() {
+    try {
+      await post("/system/restart");
+      notify("Restarting. Reload the page in a few seconds.", "good");
+    } catch (e) {
+      notify(errorMessage(e), "bad");
+    }
+  }
   async function remove(b: BackupInfo) {
     if (!confirm(`Delete ${b.name}?`)) return;
     try {
@@ -107,8 +125,18 @@ function Backups() {
         </button>
       </div>
       <p className="muted small">
-        A copy of the database is made every week and the last seven are kept. To restore one, stop the app, put the file in the data folder as <code>omp.db</code> (delete <code>omp.db-wal</code> and <code>omp.db-shm</code> next to it), and start it again.
+        A copy of the database is made every week and the last seven are kept. Restoring one takes effect when the app restarts.
       </p>
+      {staged && (
+        <div className="card spread" style={{ marginBottom: ".5rem" }}>
+          <span>
+            <strong>{staged}</strong> will be restored when the app restarts.
+          </span>
+          <button className="primary" onClick={restart}>
+            Restart now
+          </button>
+        </div>
+      )}
       <LoadState loading={backups.loading} error={backups.error} hasData={!!backups.data} />
       {backups.data?.length === 0 && <p className="muted">No backups yet.</p>}
       {backups.data?.map((b) => (
@@ -121,9 +149,12 @@ function Backups() {
               {formatDate(b.created)} · {formatSize(b.size)}
             </div>
           </div>
-          <button className="danger" onClick={() => remove(b)}>
-            Delete
-          </button>
+          <div className="row">
+            <button onClick={() => restore(b)}>Restore</button>
+            <button className="danger" onClick={() => remove(b)}>
+              Delete
+            </button>
+          </div>
         </div>
       ))}
     </>
