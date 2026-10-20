@@ -269,14 +269,15 @@ async fn rss_sync_grabs_the_best_release_per_episode_and_writes_episode_history(
     let history = r.db.episode_history().for_episode(e2.id).await.unwrap();
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].quality.quality, Quality::WEBDL_1080P);
+    let idx = r.db.providers().list(ProviderKind::Indexer).await.unwrap()[0].id;
     assert!(
         r.db.providers()
-            .last_tv_rss_sync(1)
+            .last_tv_rss_sync(idx)
             .await
             .unwrap()
             .is_some()
-            || true
     );
+    assert!(r.db.providers().last_rss_sync(idx).await.unwrap().is_none());
 }
 
 #[tokio::test]
