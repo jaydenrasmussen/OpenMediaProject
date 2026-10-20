@@ -3,6 +3,7 @@
 pub mod common;
 pub mod files;
 pub mod language;
+pub mod netre;
 pub mod normalize;
 pub mod quality;
 pub mod re;
