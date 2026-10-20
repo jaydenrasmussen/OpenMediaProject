@@ -12,6 +12,7 @@ const NAV = [
   { href: "/", label: "Movies" },
   { href: "/add/", label: "Add movie" },
   { href: "/import/", label: "Import" },
+  { href: "/calendar/", label: "Calendar" },
   { href: "/wanted/", label: "Wanted" },
   { href: "/activity/", label: "Activity" },
   { href: "/settings/", label: "Settings" },

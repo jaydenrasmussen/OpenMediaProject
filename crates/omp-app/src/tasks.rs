@@ -164,7 +164,48 @@ pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
             }
         })
     };
-    vec![rss, process, backup]
+    let refresh = {
+        let app = app.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(5 * 60)).await;
+            let mut tick = tokio::time::interval(app.config.refresh_interval);
+            loop {
+                tick.tick().await;
+                match refresh_movies_once(&app, None).await {
+                    Ok(n) => tracing::info!(updated = n, "movie metadata refreshed"),
+                    Err(e) => tracing::warn!("movie refresh failed: {e}"),
+                }
+            }
+        })
+    };
+    vec![rss, process, backup, refresh]
+}
+
+/// Re-reads movie details from the metadata provider: release dates, status
+/// and artwork change after a movie is added. Returns how many were updated.
+/// One movie failing (renamed or removed upstream) does not stop the rest.
+pub async fn refresh_movies_once(app: &App, only: Option<i64>) -> Result<usize, ServiceError> {
+    let Some(provider) = app.metadata.clone() else {
+        return Ok(0);
+    };
+    let movies = match only {
+        Some(id) => vec![app.db.movies().get(id).await?],
+        None => app.db.movies().list().await?,
+    };
+    let mut updated = 0;
+    for m in &movies {
+        match provider.movie(m.movie.tmdb_id).await {
+            Ok(meta) => {
+                app.db.movies().upsert_metadata(&meta).await?;
+                updated += 1;
+            }
+            Err(e) => tracing::warn!(movie = %m.movie.title, "metadata refresh failed: {e}"),
+        }
+        if only.is_none() {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
+    Ok(updated)
 }
 
 /// Looks at a movie's folder and records or forgets its file.

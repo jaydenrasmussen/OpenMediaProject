@@ -59,6 +59,17 @@ function MovieDetail() {
     }
   }
 
+  async function runCommand(name: string, done: string) {
+    try {
+      await post("/command", { name, movie_id: id, wait: true });
+      notify(done, "good");
+      movie.reload();
+      history.reload();
+    } catch (e) {
+      notify(errorMessage(e), "bad");
+    }
+  }
+
   async function remove() {
     if (!m || !confirm(`Remove “${m.title}” from the library? Files on disk are kept.`)) return;
     try {
@@ -100,6 +111,12 @@ function MovieDetail() {
                 </button>
                 <button onClick={() => setShowSearch((s) => !s)}>{showSearch ? "Hide interactive search" : "Interactive search"}</button>
                 <button onClick={toggleMonitored}>{m.monitored ? "Unmonitor" : "Monitor"}</button>
+                <button onClick={() => runCommand("RescanMovie", "Folder scanned.")} title="Look at the movie folder for a file">
+                  Rescan
+                </button>
+                <button onClick={() => runCommand("RefreshMovie", "Details refreshed.")} title="Re-read dates and details from TMDB">
+                  Refresh
+                </button>
                 <button className="danger" onClick={remove}>
                   Remove
                 </button>

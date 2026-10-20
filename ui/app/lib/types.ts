@@ -29,6 +29,9 @@ export interface Movie {
   genres: string[];
   certification: string | null;
   collection: string | null;
+  in_cinemas: string | null;
+  digital_release: string | null;
+  physical_release: string | null;
   images: Cover[];
   monitored: boolean;
   minimum_availability: string;

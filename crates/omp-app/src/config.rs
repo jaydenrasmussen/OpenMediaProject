@@ -18,6 +18,8 @@ pub struct AppConfig {
     pub process_interval: Duration,
     /// How often the database is backed up (Radarr: weekly).
     pub backup_interval: Duration,
+    /// How often movie details are re-read from the metadata provider.
+    pub refresh_interval: Duration,
     /// The category our downloads are filed under in the download clients.
     pub download_category: String,
 }
@@ -37,6 +39,7 @@ impl AppConfig {
             rss_interval: Duration::from_secs(15 * 60),
             process_interval: Duration::from_secs(60),
             backup_interval: Duration::from_secs(7 * 24 * 3600),
+            refresh_interval: Duration::from_secs(12 * 3600),
             download_category: "movies".into(),
         }
     }

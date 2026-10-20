@@ -122,6 +122,9 @@ fn movie_json(m: &MovieRecord, file: Option<&MovieFileRecord>) -> Value {
         "genres": m.metadata.genres,
         "certification": m.metadata.certification,
         "collection": m.metadata.collection_title,
+        "in_cinemas": m.metadata.in_cinemas,
+        "digital_release": m.metadata.digital_release,
+        "physical_release": m.metadata.physical_release,
         "images": m.metadata.images,
         "monitored": m.movie.monitored,
         "minimum_availability": status_name(m.movie.minimum_availability),
@@ -673,20 +676,40 @@ async fn command(
                         .map_err(|e| e.to_string()),
                     None => Err("RescanMovie needs a movie_id".into()),
                 },
+                "RefreshMovie" => match movie_id {
+                    Some(id) => tasks::refresh_movies_once(&app, Some(id))
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("RefreshMovie needs a movie_id".into()),
+                },
+                "RefreshMovies" => tasks::refresh_movies_once(&app, None)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
                 other => Err(format!("unknown command '{other}'")),
             }
         }
     };
     if !matches!(
         cmd.name.as_str(),
-        "RssSync" | "ProcessDownloads" | "MoviesSearch" | "RescanMovie"
+        "RssSync"
+            | "ProcessDownloads"
+            | "MoviesSearch"
+            | "RescanMovie"
+            | "RefreshMovie"
+            | "RefreshMovies"
     ) {
         return Err(ApiError::bad_request(format!(
             "unknown command '{}'",
             cmd.name
         )));
     }
-    if matches!(cmd.name.as_str(), "MoviesSearch" | "RescanMovie") && cmd.movie_id.is_none() {
+    if matches!(
+        cmd.name.as_str(),
+        "MoviesSearch" | "RescanMovie" | "RefreshMovie"
+    ) && cmd.movie_id.is_none()
+    {
         return Err(ApiError::bad_request(format!(
             "{} needs a movie_id",
             cmd.name

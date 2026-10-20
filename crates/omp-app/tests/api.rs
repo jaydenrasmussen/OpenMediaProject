@@ -584,6 +584,36 @@ async fn commands_validate_and_run() {
     )
     .await;
     assert_eq!(s, StatusCode::ACCEPTED);
+
+    // Refreshing needs a movie for the single form; the bulk form is fine with none.
+    let refresh = |body: Value| call(&r, Method::POST, "/api/v1/command", Some(body));
+    assert_eq!(
+        refresh(json!({ "name": "RefreshMovie" })).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        refresh(json!({ "name": "RefreshMovies", "wait": true }))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let root = add_root(&r).await;
+    let (_, profiles) = get(&r, "/api/v1/qualityprofile").await;
+    let (_, m) = call(
+        &r,
+        Method::POST,
+        "/api/v1/movie",
+        Some(json!({ "tmdb_id": 603, "quality_profile_id": profiles[0]["id"], "root_folder_path": root })),
+    )
+    .await;
+    let id = m["id"].as_i64().unwrap();
+    assert_eq!(
+        refresh(json!({ "name": "RefreshMovie", "movie_id": id, "wait": true }))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert!(m.get("digital_release").is_some(), "dates are exposed");
 }
 
 #[tokio::test]
