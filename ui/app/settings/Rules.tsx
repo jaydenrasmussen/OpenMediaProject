@@ -5,6 +5,7 @@ import { LoadState } from "../components/Page";
 import { useToast } from "../components/toast";
 import { del, get, post, put } from "../lib/api";
 import { errorMessage, useLoad } from "../lib/hooks";
+import { TagPicker } from "../components/TagPicker";
 import type { DelayProfile, ReleaseProfile, Tag } from "../lib/types";
 
 export function Rules() {
@@ -62,24 +63,6 @@ function Tags({ tags }: { tags: ReturnType<typeof useLoad<Tag[]>> }) {
         </button>
       </form>
     </section>
-  );
-}
-
-function TagPicker({ all, value, onChange }: { all: Tag[]; value: number[]; onChange: (v: number[]) => void }) {
-  if (all.length === 0) return <p className="muted small">No tags yet. With none selected this applies to everything.</p>;
-  return (
-    <div className="row">
-      {all.map((t) => (
-        <label key={t.id} className="check">
-          <input
-            type="checkbox"
-            checked={value.includes(t.id)}
-            onChange={(e) => onChange(e.target.checked ? [...value, t.id] : value.filter((v) => v !== t.id))}
-          />{" "}
-          {t.label}
-        </label>
-      ))}
-    </div>
   );
 }
 

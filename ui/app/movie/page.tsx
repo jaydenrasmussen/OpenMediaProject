@@ -6,11 +6,12 @@ import { Suspense, useState } from "react";
 import { LoadState } from "../components/Page";
 import { Poster } from "../components/Poster";
 import { Releases } from "../components/Releases";
+import { TagPicker } from "../components/TagPicker";
 import { useToast } from "../components/toast";
 import { del, get, post, put } from "../lib/api";
 import { formatDate, formatRuntime, formatSize } from "../lib/format";
 import { errorMessage, useLoad } from "../lib/hooks";
-import type { HistoryItem, Movie } from "../lib/types";
+import type { HistoryItem, Movie, QualityProfile, Tag } from "../lib/types";
 
 export default function MoviePage() {
   // useSearchParams needs a Suspense boundary in a static export.
@@ -38,6 +39,7 @@ function MovieDetail() {
   const movie = useLoad(() => get<Movie>(`/movie/${id}`), [id]);
   const history = useLoad(() => get<HistoryItem[]>(`/history?movie_id=${id}`), [id]);
   const [showSearch, setShowSearch] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   if (!id) return <p className="error">No movie selected.</p>;
   const m = movie.data;
@@ -129,6 +131,7 @@ function MovieDetail() {
                 </button>
                 <button onClick={() => setShowSearch((s) => !s)}>{showSearch ? "Hide interactive search" : "Interactive search"}</button>
                 <button onClick={toggleMonitored}>{m.monitored ? "Unmonitor" : "Monitor"}</button>
+                <button onClick={() => setEditing((v) => !v)}>{editing ? "Close settings" : "Settings"}</button>
                 <button onClick={() => runCommand("RescanMovie", "Folder scanned.")} title="Look at the movie folder for a file">
                   Rescan
                 </button>
@@ -166,6 +169,8 @@ function MovieDetail() {
                   </div>
                 </section>
               )}
+
+              {editing && <MovieSettings movie={m} onSaved={() => movie.reload()} />}
 
               <div className="card">
                 <h3 style={{ marginTop: 0 }}>File</h3>
@@ -239,5 +244,62 @@ function MovieDetail() {
         </>
       )}
     </>
+  );
+}
+
+function MovieSettings({ movie, onSaved }: { movie: Movie; onSaved: () => void }) {
+  const notify = useToast();
+  const profiles = useLoad(() => get<QualityProfile[]>("/qualityprofile"));
+  const allTags = useLoad(() => get<Tag[]>("/tag"));
+  const [profile, setProfile] = useState(movie.quality_profile_id);
+  const [availability, setAvailability] = useState(movie.minimum_availability);
+  const [tags, setTags] = useState(movie.tags);
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    setBusy(true);
+    try {
+      await put(`/movie/${movie.id}`, { quality_profile_id: profile, minimum_availability: availability, tags });
+      notify("Saved.", "good");
+      onSaved();
+    } catch (e) {
+      notify(errorMessage(e), "bad");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card stack">
+      <div className="form-grid">
+        <label className="field">
+          <span>Quality profile</span>
+          <select value={profile} onChange={(e) => setProfile(Number(e.target.value))}>
+            {profiles.data?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Minimum availability</span>
+          <select value={availability} onChange={(e) => setAvailability(e.target.value)}>
+            <option value="announced">Announced</option>
+            <option value="inCinemas">In cinemas</option>
+            <option value="released">Released</option>
+          </select>
+        </label>
+      </div>
+      <div>
+        <span className="small muted">Tags</span>
+        <TagPicker all={allTags.data ?? []} value={tags} onChange={setTags} empty="No tags yet. Add some in Settings, then pick them here." />
+      </div>
+      <div className="row end">
+        <button className="primary" onClick={save} disabled={busy}>
+          Save
+        </button>
+      </div>
+    </section>
   );
 }

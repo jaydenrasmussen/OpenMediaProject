@@ -6,11 +6,12 @@ import { Suspense, useState } from "react";
 import { LoadState } from "../../components/Page";
 import { Poster } from "../../components/Poster";
 import { Releases } from "../../components/Releases";
+import { TagPicker } from "../../components/TagPicker";
 import { useToast } from "../../components/toast";
 import { del, get, post, put } from "../../lib/api";
 import { formatDate, formatSize } from "../../lib/format";
 import { errorMessage, useLoad } from "../../lib/hooks";
-import type { Episode, EpisodeHistoryItem, QualityProfile, Series } from "../../lib/types";
+import type { Episode, EpisodeHistoryItem, QualityProfile, Series, Tag } from "../../lib/types";
 
 export default function SeriesPage() {
   // useSearchParams needs a Suspense boundary in a static export.
@@ -321,12 +322,14 @@ function SeriesSettings({ series, profiles, onSaved }: { series: Series; profile
   const [seasonFolder, setSeasonFolder] = useState(series.season_folder);
   const [newItems, setNewItems] = useState(series.monitor_new_items);
   const [monitor, setMonitor] = useState("");
+  const [tags, setTags] = useState(series.tags);
+  const allTags = useLoad(() => get<Tag[]>("/tag"));
   const [busy, setBusy] = useState(false);
 
   async function save() {
     setBusy(true);
     try {
-      await put(`/series/${series.id}`, { series_type: type, quality_profile_id: profile, season_folder: seasonFolder, monitor_new_items: newItems });
+      await put(`/series/${series.id}`, { series_type: type, quality_profile_id: profile, season_folder: seasonFolder, monitor_new_items: newItems, tags });
       if (monitor) await post(`/series/${series.id}/monitor`, { monitor });
       notify("Saved.", "good");
       onSaved();
@@ -384,6 +387,10 @@ function SeriesSettings({ series, profiles, onSaved }: { series: Series; profile
       <label className="check">
         <input type="checkbox" checked={seasonFolder} onChange={(e) => setSeasonFolder(e.target.checked)} /> Season folders
       </label>
+      <div>
+        <span className="small muted">Tags</span>
+        <TagPicker all={allTags.data ?? []} value={tags} onChange={setTags} empty="No tags yet. Add some in Settings, then pick them here." />
+      </div>
       <div className="row end">
         <button className="primary" onClick={save} disabled={busy}>
           Save
