@@ -63,7 +63,7 @@ pub trait PluginIndexers: Send + Sync {
 }
 
 enum Source {
-    Builtin(IndexerClient),
+    Builtin(Box<IndexerClient>),
     Plugin(Arc<dyn PluginIndexers>),
 }
 
@@ -147,7 +147,7 @@ impl IndexerPool {
             match build_client(&provider) {
                 Ok(client) => indexers.push(PoolIndexer {
                     provider,
-                    source: Source::Builtin(client.with_rate_limit(rate_limit)),
+                    source: Source::Builtin(Box::new(client.with_rate_limit(rate_limit))),
                 }),
                 Err(e) => tracing::warn!(indexer = %provider.name, "skipped: {e}"),
             }
