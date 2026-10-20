@@ -15,7 +15,10 @@ use omp_core::{
     history::HistoryEvent,
     release::{DownloadProtocol, IndexerFlags},
 };
-use omp_db::{Db, repo::HistoryRecord};
+use omp_db::{
+    Db,
+    repo::{EpisodeHistoryRecord, HistoryRecord, TvBlocklistEntry},
+};
 use omp_downloads::{ClientItem, ClientRegistry, DownloadItemStatus};
 
 use crate::evaluate::ServiceError;
@@ -41,6 +44,9 @@ pub struct TrackedDownload {
     pub item: ClientItem,
     pub state: TrackedState,
     pub movie_id: Option<i64>,
+    /// For a TV grab: the series and the episodes it covers.
+    pub series_id: Option<i64>,
+    pub episode_ids: Vec<i64>,
     pub indexer: Option<String>,
     pub added: Option<DateTime<Utc>>,
     pub warnings: Vec<String>,
@@ -80,11 +86,19 @@ pub struct DownloadMonitor {
     tracked: Mutex<HashMap<String, TrackedDownload>>,
 }
 
-fn state_from_history(history: &[HistoryRecord]) -> TrackedState {
-    history
+fn state_from_history(
+    history: &[HistoryRecord],
+    episode_history: &[EpisodeHistoryRecord],
+) -> TrackedState {
+    let events = history
         .iter()
+        .map(|h| h.event)
+        .chain(episode_history.iter().map(|h| h.event));
+    events
+        .collect::<Vec<_>>()
+        .into_iter()
         .rev()
-        .find_map(|h| match h.event {
+        .find_map(|e| match e {
             HistoryEvent::DownloadFolderImported => Some(TrackedState::Imported),
             HistoryEvent::DownloadFailed => Some(TrackedState::Failed),
             HistoryEvent::DownloadIgnored => Some(TrackedState::Ignored),
@@ -173,7 +187,16 @@ impl DownloadMonitor {
             for item in items {
                 let history = db.history().by_download_id(&item.download_id).await?;
                 let grabbed = history.iter().rfind(|h| h.event == HistoryEvent::Grabbed);
+                let ep_history = db
+                    .episode_history()
+                    .by_download_id(&item.download_id)
+                    .await?;
+                let tv_grabs: Vec<&EpisodeHistoryRecord> = ep_history
+                    .iter()
+                    .filter(|h| h.event == HistoryEvent::Grabbed)
+                    .collect();
                 let ours = grabbed.is_some()
+                    || !tv_grabs.is_empty()
                     || options.category.is_some() && item.category == options.category;
                 if !ours {
                     continue;
@@ -185,10 +208,14 @@ impl DownloadMonitor {
                     client_name: rc.name.clone(),
                     protocol: rc.protocol(),
                     item: item.clone(),
-                    state: state_from_history(&history),
+                    state: state_from_history(&history, &ep_history),
                     movie_id: grabbed.map(|g| g.movie_id),
+                    series_id: tv_grabs.first().map(|g| g.series_id),
+                    episode_ids: tv_grabs.iter().map(|g| g.episode_id).collect(),
                     indexer: grabbed.and_then(|g| g.data.get("indexer").cloned()),
-                    added: grabbed.map(|g| g.date),
+                    added: grabbed
+                        .map(|g| g.date)
+                        .or_else(|| tv_grabs.first().map(|g| g.date)),
                     warnings: Vec::new(),
                     trackable: true,
                 });
@@ -197,10 +224,14 @@ impl DownloadMonitor {
                 if entry.movie_id.is_none() {
                     entry.movie_id = grabbed.map(|g| g.movie_id);
                 }
+                if entry.series_id.is_none() && !tv_grabs.is_empty() {
+                    entry.series_id = tv_grabs.first().map(|g| g.series_id);
+                    entry.episode_ids = tv_grabs.iter().map(|g| g.episode_id).collect();
+                }
 
                 if entry.state == TrackedState::Downloading
                     && entry.item.status == DownloadItemStatus::Failed
-                    && mark_failed(db, entry, grabbed, options).await?
+                    && mark_failed(db, entry, grabbed, &tv_grabs, options).await?
                 {
                     result.newly_failed.push(id.clone());
                     if options.remove_failed {
@@ -208,7 +239,7 @@ impl DownloadMonitor {
                     }
                 }
                 let was_waiting = matches!(entry.state, TrackedState::ImportPending);
-                check_completed(entry, grabbed);
+                check_completed(entry, grabbed.is_some() || !tv_grabs.is_empty());
                 if !was_waiting && entry.state == TrackedState::ImportPending {
                     result.newly_pending.push(id);
                 }
@@ -227,8 +258,28 @@ async fn mark_failed(
     db: &Db,
     t: &mut TrackedDownload,
     grabbed: Option<&HistoryRecord>,
+    tv_grabs: &[&EpisodeHistoryRecord],
     options: &MonitorOptions,
 ) -> Result<bool, ServiceError> {
+    if grabbed.is_none() && !tv_grabs.is_empty() {
+        t.state = TrackedState::FailedPending;
+        let message = t
+            .item
+            .message
+            .clone()
+            .unwrap_or_else(|| "Download failed".into());
+        record_tv_failure(
+            db,
+            tv_grabs,
+            &t.item.download_id,
+            t.protocol,
+            message,
+            options.now,
+        )
+        .await?;
+        t.state = TrackedState::Failed;
+        return Ok(true);
+    }
     let Some(grab) = grabbed else {
         t.warn("Download wasn't grabbed here, skipping failure handling.");
         return Ok(false);
@@ -311,9 +362,76 @@ pub async fn record_failure(
     Ok(())
 }
 
+/// As [`record_failure`] for a TV grab: one failed event per episode and one
+/// blocklist entry for the release.
+pub async fn record_tv_failure(
+    db: &Db,
+    grabs: &[&EpisodeHistoryRecord],
+    download_id: &str,
+    protocol: DownloadProtocol,
+    message: String,
+    now: DateTime<Utc>,
+) -> Result<(), ServiceError> {
+    let Some(first) = grabs.first() else {
+        return Ok(());
+    };
+    for g in grabs {
+        db.episode_history()
+            .insert(&EpisodeHistoryRecord {
+                id: 0,
+                series_id: g.series_id,
+                episode_id: g.episode_id,
+                event: HistoryEvent::DownloadFailed,
+                date: now,
+                source_title: g.source_title.clone(),
+                quality: g.quality,
+                languages: g.languages.clone(),
+                download_id: Some(download_id.to_owned()),
+                data: [
+                    ("message".to_owned(), message.clone()),
+                    (
+                        "indexer".to_owned(),
+                        g.data.get("indexer").cloned().unwrap_or_default(),
+                    ),
+                ]
+                .into(),
+            })
+            .await?;
+    }
+    let data = &first.data;
+    db.tv_blocklist()
+        .insert(&TvBlocklistEntry {
+            entry: BlocklistEntry {
+                id: 0,
+                movie_id: first.series_id,
+                source_title: first.source_title.clone(),
+                quality: first.quality,
+                languages: first.languages.clone(),
+                published_date: data
+                    .get("published_date")
+                    .and_then(|d| DateTime::parse_from_rfc3339(d).ok())
+                    .map(|d| d.with_timezone(&Utc)),
+                size: data.get("size").and_then(|s| s.parse().ok()),
+                protocol,
+                indexer: data.get("indexer").cloned(),
+                indexer_flags: IndexerFlags(
+                    data.get("indexer_flags")
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0),
+                ),
+                torrent_info_hash: data.get("torrent_info_hash").cloned(),
+                message: Some(message),
+                date: now,
+            },
+            episode_ids: grabs.iter().map(|g| g.episode_id).collect(),
+        })
+        .await?;
+    Ok(())
+}
+
 /// A finished download that is still waiting moves to ImportPending when it
 /// can be tied to a movie, and to ImportBlocked when it cannot.
-fn check_completed(t: &mut TrackedDownload, grabbed: Option<&HistoryRecord>) {
+fn check_completed(t: &mut TrackedDownload, grabbed: bool) {
     if t.item.status != DownloadItemStatus::Completed {
         return;
     }
@@ -327,8 +445,8 @@ fn check_completed(t: &mut TrackedDownload, grabbed: Option<&HistoryRecord>) {
         t.warn("Download client did not report where the files are.");
         return;
     }
-    if grabbed.is_none() && t.movie_id.is_none() {
-        t.warn("Movie title mismatch, automatic import is not possible. Manual import required.");
+    if !grabbed && t.movie_id.is_none() && t.series_id.is_none() {
+        t.warn("Title mismatch, automatic import is not possible. Manual import required.");
         t.state = TrackedState::ImportBlocked;
         return;
     }

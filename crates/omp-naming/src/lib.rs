@@ -4,11 +4,16 @@
 //! Radarr formats keep working.
 
 mod builder;
+mod episodes;
 mod iso;
 mod text;
 
 pub use builder::{
-    ColonReplacement, DEFAULT_RELEASE_GROUP, NamingConfig, NamingFile, NamingMedia, NamingMovie,
-    build_file_name, build_movie_folder, series_folder,
+    ColonReplacement, DEFAULT_RELEASE_GROUP, MultiEpisodeStyle, NamingConfig, NamingFile,
+    NamingMedia, NamingMovie, build_file_name, build_movie_folder, series_folder,
+};
+pub use episodes::{
+    NamingEpisode, NamingSeries, NamingSeriesType, build_episode_file_name, build_season_folder,
+    build_series_folder,
 };
 pub use text::{clean_file_name, clean_folder_name, clean_title, clean_title_the, title_the};

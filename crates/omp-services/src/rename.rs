@@ -76,6 +76,7 @@ async fn target_name(
             .as_ref()
             .and_then(|raw| crate::media::naming_media(raw, file.scene_name.as_deref())),
         custom_formats,
+        release_hash: None,
     };
     let name = build_file_name(&naming_movie, &naming_file, naming)
         .map_err(|e| ServiceError::Io(format!("naming failed: {e}")))?;

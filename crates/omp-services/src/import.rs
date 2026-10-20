@@ -575,6 +575,7 @@ impl Importer<'_> {
                 .as_ref()
                 .and_then(|p| crate::media::naming_media(&p.raw, Some(&c.scene_name))),
             custom_formats,
+            release_hash: None,
         };
         let name = build_file_name(&naming_movie, &naming_file, &self.config.naming)?;
         let relative = format!("{name}{extension}");

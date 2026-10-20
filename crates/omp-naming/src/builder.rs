@@ -26,6 +26,24 @@ pub enum ColonReplacement {
     Smart,
 }
 
+/// How the numbers of a multi-episode file are written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MultiEpisodeStyle {
+    /// `S01E01-02-03`
+    Extend,
+    /// `S01E01.S01E02`
+    Duplicate,
+    /// `S01E01E02`
+    Repeat,
+    /// `S01E01-E02`
+    Scene,
+    /// `S01E01-02`
+    Range,
+    /// `S01E01-E02`, first to last only
+    PrefixedRange,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NamingConfig {
@@ -34,6 +52,14 @@ pub struct NamingConfig {
     pub colon_replacement: ColonReplacement,
     pub standard_movie_format: String,
     pub movie_folder_format: String,
+    pub rename_episodes: bool,
+    pub multi_episode_style: MultiEpisodeStyle,
+    pub standard_episode_format: String,
+    pub daily_episode_format: String,
+    pub anime_episode_format: String,
+    pub series_folder_format: String,
+    pub season_folder_format: String,
+    pub specials_folder_format: String,
 }
 
 impl Default for NamingConfig {
@@ -44,6 +70,17 @@ impl Default for NamingConfig {
             colon_replacement: ColonReplacement::Smart,
             movie_folder_format: "{Movie Title} ({Release Year})".into(),
             standard_movie_format: "{Movie Title} ({Release Year}) {Quality Full}".into(),
+            rename_episodes: false,
+            multi_episode_style: MultiEpisodeStyle::PrefixedRange,
+            standard_episode_format:
+                "{Series Title} - S{season:00}E{episode:00} - {Episode Title} {Quality Full}".into(),
+            daily_episode_format: "{Series Title} - {Air-Date} - {Episode Title} {Quality Full}"
+                .into(),
+            anime_episode_format:
+                "{Series Title} - S{season:00}E{episode:00} - {Episode Title} {Quality Full}".into(),
+            series_folder_format: "{Series TitleYear}".into(),
+            season_folder_format: "Season {season}".into(),
+            specials_folder_format: "Specials".into(),
         }
     }
 }
@@ -91,6 +128,7 @@ pub struct NamingFile {
     pub media: Option<NamingMedia>,
     /// Names of the custom formats that opted in to being part of file names.
     pub custom_formats: Vec<String>,
+    pub release_hash: Option<String>,
 }
 
 static TOKEN: LazyLock<Re> = LazyLock::new(|| {
@@ -98,7 +136,7 @@ static TOKEN: LazyLock<Re> = LazyLock::new(|| {
         r"(?<tag>\{[-{ ._\[(]*(?:imdb(?:id)?-|edition-))?\{(?<prefix>[-{ ._\[(]*)(?<token>(?:[a-z0-9]+)(?:(?<separator>[- ._]+)(?:[a-z0-9]+))?)(?::(?<customFormat>[ ,a-z0-9|+-]+(?<![- ])))?(?<suffix>[-} ._)\]]*)\}",
     )
 });
-static TRIM_TRAILING: LazyLock<Re> = LazyLock::new(|| Re::new(r"[- ._]+$"));
+pub(crate) static TRIM_TRAILING: LazyLock<Re> = LazyLock::new(|| Re::new(r"[- ._]+$"));
 static RESERVED: LazyLock<Re> =
     LazyLock::new(|| Re::ci(r"^(?:aux|com[1-9]|con|lpt[1-9]|nul|prn)\."));
 static ORDINAL: LazyLock<Re> =
@@ -106,16 +144,16 @@ static ORDINAL: LazyLock<Re> =
 static UPPER_WORDS: LazyLock<Re> =
     LazyLock::new(|| Re::ci(r"((?:\b|_)(?:IMAX|3D|SDR|HDR|DV)(?:\b|_))"));
 
-struct TokenMatch<'a> {
-    prefix: &'a str,
-    suffix: &'a str,
+pub(crate) struct TokenMatch<'a> {
+    pub(crate) prefix: &'a str,
+    pub(crate) suffix: &'a str,
     /// The `:...` part, if any.
-    custom: Option<&'a str>,
+    pub(crate) custom: Option<&'a str>,
 }
 
 impl TokenMatch<'_> {
     /// A fallback that only applies when the pattern puts nothing around the token.
-    fn default_value(&self, value: &str) -> String {
+    pub(crate) fn default_value(&self, value: &str) -> String {
         if self.prefix.is_empty() && self.suffix.is_empty() {
             value.to_owned()
         } else {
@@ -124,14 +162,14 @@ impl TokenMatch<'_> {
     }
 }
 
-struct Context<'a> {
-    movie: &'a NamingMovie,
-    file: Option<&'a NamingFile>,
-    multiple_tokens: bool,
+pub(crate) struct Context<'a> {
+    pub(crate) movie: &'a NamingMovie,
+    pub(crate) file: Option<&'a NamingFile>,
+    pub(crate) multiple_tokens: bool,
 }
 
 /// Token names compare without spaces, punctuation or case.
-fn simplify(token: &str) -> String {
+pub(crate) fn simplify(token: &str) -> String {
     token
         .chars()
         .filter(|c| c.is_alphanumeric())
@@ -145,7 +183,7 @@ fn max_length(formatter: Option<&str>) -> i32 {
 
 /// Shortens `input` for a `:N` (keep the start) or `:-N` (keep the end)
 /// formatter, marking the cut with `{ellipsis}`.
-fn truncate(input: &str, formatter: Option<&str>) -> String {
+pub(crate) fn truncate(input: &str, formatter: Option<&str>) -> String {
     if input.trim().is_empty() {
         return String::new();
     }
@@ -355,7 +393,7 @@ impl Context<'_> {
         }
     }
 
-    fn file_value(&self, file: &NamingFile, token: &str, m: &TokenMatch<'_>) -> String {
+    pub(crate) fn file_value(&self, file: &NamingFile, token: &str, m: &TokenMatch<'_>) -> String {
         let custom = m.custom;
         let proper = if file.revision_version > 1 {
             "Proper"
@@ -475,24 +513,29 @@ fn replace_tokens(pattern: &str, ctx: &Context<'_>, config: &NamingConfig) -> St
     })
 }
 
-fn finish_ellipsis(s: &str) -> String {
+pub(crate) fn finish_ellipsis(s: &str) -> String {
     // Radarr only matches the lower case form; a pattern like {MOVIE TITLE:10}
     // upper-cases the marker, so match any case.
     static ELLIPSIS: LazyLock<Re> = LazyLock::new(|| Re::ci(r"\{ellipsis\}"));
     ELLIPSIS.replace_all(s, "...")
 }
 
-fn replace_reserved_device_names(s: &str) -> String {
+pub(crate) fn replace_reserved_device_names(s: &str) -> String {
     RESERVED.replace_with(s, |c| c.whole_str().replace('.', "_"))
 }
 
-fn split_pattern(pattern: &str) -> impl Iterator<Item = &str> {
+pub(crate) fn split_pattern(pattern: &str) -> impl Iterator<Item = &str> {
     pattern.split(['\\', '/']).filter(|s| !s.is_empty())
 }
 
 /// The file name (no extension) for a movie file. With renaming off this is
 /// the original release name. A path pattern (`Folder/File`) yields a
 /// relative path with `/` separators.
+/// The release name a file came in with, cleaned for use as a file name.
+pub(crate) fn original_title_of(file: &NamingFile) -> String {
+    original_title(file, false)
+}
+
 pub fn build_file_name(
     movie: &NamingMovie,
     file: &NamingFile,
