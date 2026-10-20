@@ -106,6 +106,7 @@ function AddForm({ tmdbId }: { tmdbId: number }) {
   const [monitor, setMonitor] = useState("all");
   const [type, setType] = useState("");
   const [seasonFolder, setSeasonFolder] = useState(true);
+  const [searchNow, setSearchNow] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const rootValue = root || roots.data?.[0]?.path || "";
@@ -121,6 +122,7 @@ function AddForm({ tmdbId }: { tmdbId: number }) {
         monitor,
         series_type: type || undefined,
         season_folder: seasonFolder,
+        search_now: searchNow,
       });
       router.push(`/series/show/?id=${series.id}`);
     } catch (err) {
@@ -184,6 +186,9 @@ function AddForm({ tmdbId }: { tmdbId: number }) {
         <label className="check">
           <input type="checkbox" checked={seasonFolder} onChange={(e) => setSeasonFolder(e.target.checked)} /> Season folders
         </label>
+      <label className="check">
+        <input type="checkbox" checked={searchNow} onChange={(e) => setSearchNow(e.target.checked)} /> Search for missing episodes now
+      </label>
         <button className="primary" onClick={add} disabled={busy || !rootValue || profileValue === ""}>
           {busy ? "Adding…" : "Add series"}
         </button>

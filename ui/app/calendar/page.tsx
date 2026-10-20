@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { LoadState } from "../components/Page";
 import { get } from "../lib/api";
 import { useLoad } from "../lib/hooks";
-import type { Movie } from "../lib/types";
+import type { Movie, WantedEpisode } from "../lib/types";
 
 /** The iCal address for calendar apps, with the API key they need. */
 function FeedLink() {
@@ -29,8 +29,13 @@ const KINDS = [
 
 interface Entry {
   day: string; // YYYY-MM-DD
-  movie: Movie;
+  key: string;
+  link: string;
+  title: string;
+  year?: number;
   kind: string;
+  has_file: boolean;
+  monitored: boolean;
 }
 
 export default function Calendar() {
@@ -42,20 +47,38 @@ export default function Calendar() {
   const [onlyMonitored, setOnlyMonitored] = useState(true);
 
   const prefix = `${cursor.year}-${String(cursor.month + 1).padStart(2, "0")}`;
+  const last = new Date(cursor.year, cursor.month + 1, 0).getDate();
+  const episodes = useLoad(
+    () => get<WantedEpisode[]>(`/calendar/episodes?start=${prefix}-01&end=${prefix}-${String(last).padStart(2, "0")}&unmonitored=${!onlyMonitored}`),
+    [prefix, onlyMonitored],
+  );
   const days = useMemo(() => {
     const entries: Entry[] = [];
     for (const m of movies.data ?? []) {
       if (onlyMonitored && !m.monitored) continue;
       for (const k of KINDS) {
         const date = m[k.key];
-        if (date?.startsWith(prefix)) entries.push({ day: date.slice(0, 10), movie: m, kind: k.label });
+        if (date?.startsWith(prefix))
+          entries.push({ day: date.slice(0, 10), key: `m${m.id}-${k.key}`, link: `/movie/?id=${m.id}`, title: m.title, year: m.year, kind: k.label, has_file: m.has_file, monitored: m.monitored });
       }
     }
-    entries.sort((a, b) => a.day.localeCompare(b.day) || a.movie.title.localeCompare(b.movie.title));
+    for (const e of episodes.data ?? []) {
+      if (!e.air_date) continue;
+      entries.push({
+        day: e.air_date,
+        key: `e${e.id}`,
+        link: `/series/show/?id=${e.series_id}`,
+        title: `${e.series_title} ${e.season_number}x${String(e.episode_number).padStart(2, "0")} ${e.title}`,
+        kind: "Episode",
+        has_file: e.quality != null,
+        monitored: e.monitored,
+      });
+    }
+    entries.sort((a, b) => a.day.localeCompare(b.day) || a.title.localeCompare(b.title));
     const grouped = new Map<string, Entry[]>();
     for (const e of entries) grouped.set(e.day, [...(grouped.get(e.day) ?? []), e]);
     return [...grouped.entries()];
-  }, [movies.data, prefix, onlyMonitored]);
+  }, [movies.data, episodes.data, prefix, onlyMonitored]);
 
   const shift = (d: number) => {
     const next = new Date(cursor.year, cursor.month + d, 1);
@@ -80,21 +103,21 @@ export default function Calendar() {
           →
         </button>
       </div>
-      <LoadState loading={movies.loading} error={movies.error} hasData={!!movies.data} />
+      <LoadState loading={movies.loading || episodes.loading} error={movies.error ?? episodes.error} hasData={!!movies.data && !!episodes.data} />
       <FeedLink />
-      {movies.data && days.length === 0 && <p className="muted">No releases this month.</p>}
+      {movies.data && episodes.data && days.length === 0 && <p className="muted">Nothing is due this month.</p>}
       <div className="stack">
         {days.map(([day, entries]) => (
           <section key={day} className="card">
             <strong>{new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</strong>
             {entries.map((e) => (
-              <div key={`${e.movie.id}-${e.kind}`} className="spread" style={{ marginTop: ".4rem" }}>
+              <div key={e.key} className="spread" style={{ marginTop: ".4rem" }}>
                 <span>
-                  <Link href={`/movie/?id=${e.movie.id}`}>{e.movie.title}</Link> <span className="muted">({e.movie.year})</span>
+                  <Link href={e.link}>{e.title}</Link> {e.year != null && <span className="muted">({e.year})</span>}
                 </span>
                 <span className="row">
                   <span className="badge">{e.kind}</span>
-                  {e.movie.has_file ? <span className="badge good">Downloaded</span> : e.movie.monitored ? <span className="badge warn">Wanted</span> : <span className="badge">Unmonitored</span>}
+                  {e.has_file ? <span className="badge good">Downloaded</span> : e.monitored ? <span className="badge warn">Wanted</span> : <span className="badge">Unmonitored</span>}
                 </span>
               </div>
             ))}

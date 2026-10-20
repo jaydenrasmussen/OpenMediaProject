@@ -164,6 +164,51 @@ function Naming() {
           </select>
         </label>
       </div>
+      <h3>Episode naming</h3>
+      <label className="check">
+        <input type="checkbox" checked={cfg.naming.rename_episodes} onChange={(e) => setNaming({ rename_episodes: e.target.checked })} /> Rename imported episodes
+      </label>
+      <div className="form-grid">
+        <label className="field">
+          <span>Standard episode format</span>
+          <input type="text" value={cfg.naming.standard_episode_format} onChange={(e) => setNaming({ standard_episode_format: e.target.value })} disabled={!cfg.naming.rename_episodes} />
+        </label>
+        <label className="field">
+          <span>Daily episode format</span>
+          <input type="text" value={cfg.naming.daily_episode_format} onChange={(e) => setNaming({ daily_episode_format: e.target.value })} disabled={!cfg.naming.rename_episodes} />
+        </label>
+        <label className="field">
+          <span>Anime episode format</span>
+          <input type="text" value={cfg.naming.anime_episode_format} onChange={(e) => setNaming({ anime_episode_format: e.target.value })} disabled={!cfg.naming.rename_episodes} />
+        </label>
+        <label className="field">
+          <span>Series folder format</span>
+          <input type="text" value={cfg.naming.series_folder_format} onChange={(e) => setNaming({ series_folder_format: e.target.value })} />
+        </label>
+        <label className="field">
+          <span>Season folder format</span>
+          <input type="text" value={cfg.naming.season_folder_format} onChange={(e) => setNaming({ season_folder_format: e.target.value })} />
+        </label>
+        <label className="field">
+          <span>Specials folder format</span>
+          <input type="text" value={cfg.naming.specials_folder_format} onChange={(e) => setNaming({ specials_folder_format: e.target.value })} />
+        </label>
+        <label className="field">
+          <span>Multi-episode style</span>
+          <select value={cfg.naming.multi_episode_style} onChange={(e) => setNaming({ multi_episode_style: e.target.value as ImportConfig["naming"]["multi_episode_style"] })}>
+            <option value="extend">Extend (S01E01-02-03)</option>
+            <option value="duplicate">Duplicate (S01E01.S01E02)</option>
+            <option value="repeat">Repeat (S01E01E02E03)</option>
+            <option value="scene">Scene (S01E01-E02-E03)</option>
+            <option value="range">Range (S01E01-03)</option>
+            <option value="prefixed_range">Prefixed range (S01E01-E03)</option>
+          </select>
+        </label>
+      </div>
+      <p className="muted small">
+        Tokens: <code>{"{Series Title}"}</code> <code>{"{Series TitleYear}"}</code> <code>{"{season:00}"}</code> <code>{"{episode:00}"}</code> <code>{"{absolute:000}"}</code>{" "}
+        <code>{"{Episode Title}"}</code> <code>{"{Air-Date}"}</code> <code>{"{Quality Full}"}</code> <code>{"{Release Group}"}</code>… Sonarr’s formats work as they are.
+      </p>
       <label className="check">
         <input type="checkbox" checked={cfg.naming.replace_illegal_characters} onChange={(e) => setNaming({ replace_illegal_characters: e.target.checked })} /> Replace illegal characters (otherwise they are removed)
       </label>

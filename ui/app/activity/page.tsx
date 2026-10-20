@@ -7,7 +7,7 @@ import { useToast } from "../components/toast";
 import { del, get } from "../lib/api";
 import { formatDate, formatSize, percent } from "../lib/format";
 import { errorMessage, useLoad, usePoll } from "../lib/hooks";
-import type { BlocklistItem, HistoryItem, QueueItem } from "../lib/types";
+import type { BlocklistItem, EpisodeHistoryItem, HistoryItem, QueueItem, TvBlocklistItem } from "../lib/types";
 
 const STATE_BADGE: Record<string, string> = {
   Downloading: "accent",
@@ -27,6 +27,9 @@ const EVENT_LABEL: Record<string, string> = {
   movieFolderImported: "Folder imported",
   movieFileRenamed: "Renamed",
   downloadIgnored: "Ignored",
+  episodeFileDeleted: "File deleted",
+  seriesFolderImported: "Folder imported",
+  episodeFileRenamed: "Renamed",
 };
 
 export default function Activity() {
@@ -91,7 +94,13 @@ function Queue() {
               {q.data.map((i) => (
                 <tr key={i.download_id}>
                   <td style={{ wordBreak: "break-word" }}>
-                    {i.movie_id ? <Link href={`/movie/?id=${i.movie_id}`}>{i.title}</Link> : i.title}
+                    {i.movie_id ? (
+                      <Link href={`/movie/?id=${i.movie_id}`}>{i.title}</Link>
+                    ) : i.series_id ? (
+                      <Link href={`/series/show/?id=${i.series_id}`}>{i.title}</Link>
+                    ) : (
+                      i.title
+                    )}
                     {i.message && <div className="small error">{i.message}</div>}
                     {i.warnings.map((w) => (
                       <div key={w} className="small warn">
@@ -145,12 +154,21 @@ function Queue() {
   );
 }
 
+type BlockRow = { key: string; tv: boolean; id: number; link: string; source_title: string; message: string | null; quality: string; indexer: string | null; date: string };
+
 function Blocklist() {
   const notify = useToast();
-  const b = useLoad(() => get<BlocklistItem[]>("/blocklist?limit=200"));
-  async function remove(i: BlocklistItem) {
+  const b = useLoad(async () => {
+    const [movies, series] = await Promise.all([get<BlocklistItem[]>("/blocklist?limit=200"), get<TvBlocklistItem[]>("/blocklist/series?limit=200")]);
+    const rows: BlockRow[] = [
+      ...movies.map((m) => ({ key: `m${m.id}`, tv: false, id: m.id, link: `/movie/?id=${m.movie_id}`, source_title: m.source_title, message: m.message, quality: m.quality, indexer: m.indexer, date: m.date })),
+      ...series.map((t) => ({ key: `s${t.id}`, tv: true, id: t.id, link: `/series/show/?id=${t.series_id}`, source_title: t.source_title, message: t.message, quality: t.quality, indexer: t.indexer, date: t.date })),
+    ];
+    return rows.sort((a, c) => c.date.localeCompare(a.date));
+  });
+  async function remove(i: BlockRow) {
     try {
-      await del(`/blocklist/${i.id}`);
+      await del(i.tv ? `/blocklist/series/${i.id}` : `/blocklist/${i.id}`);
       b.reload();
     } catch (err) {
       notify(errorMessage(err), "bad");
@@ -160,6 +178,7 @@ function Blocklist() {
     if (!confirm("Clear the whole blocklist? Those releases can be grabbed again.")) return;
     try {
       await del("/blocklist");
+      await del("/blocklist/series");
       b.reload();
     } catch (err) {
       notify(errorMessage(err), "bad");
@@ -184,9 +203,9 @@ function Blocklist() {
               </thead>
               <tbody>
                 {b.data.map((i) => (
-                  <tr key={i.id}>
+                  <tr key={i.key}>
                     <td style={{ wordBreak: "break-word" }}>
-                      <Link href={`/movie/?id=${i.movie_id}`}>{i.source_title}</Link>
+                      <Link href={i.link}>{i.source_title}</Link>
                       {i.message && <div className="small error">{i.message}</div>}
                     </td>
                     <td>{i.quality}</td>
@@ -213,9 +232,28 @@ function Blocklist() {
 
 const PAGE = 50;
 
+type HistoryRow = { key: string; link: string; label?: string; event: string; source_title: string; message?: string; quality: string; date: string };
+
 function History() {
   const [page, setPage] = useState(0);
-  const h = useLoad(() => get<HistoryItem[]>(`/history?limit=${PAGE}&offset=${page * PAGE}`), [page]);
+  const h = useLoad(async () => {
+    const q = `limit=${PAGE}&offset=${page * PAGE}`;
+    const [movies, episodes] = await Promise.all([get<HistoryItem[]>(`/history?${q}`), get<EpisodeHistoryItem[]>(`/history/episode?${q}`)]);
+    const rows: HistoryRow[] = [
+      ...movies.map((m) => ({ key: `m${m.id}`, link: `/movie/?id=${m.movie_id}`, event: m.event, source_title: m.source_title, message: m.data.message, quality: m.quality, date: m.date })),
+      ...episodes.map((e) => ({
+        key: `e${e.id}`,
+        link: `/series/show/?id=${e.series_id}`,
+        label: `${e.series_title ?? ""} ${e.season_number}x${String(e.episode_number ?? 0).padStart(2, "0")}`,
+        event: e.event,
+        source_title: e.source_title,
+        message: e.data.message,
+        quality: e.quality,
+        date: e.date,
+      })),
+    ];
+    return rows.sort((a, b) => b.date.localeCompare(a.date)).slice(0, PAGE);
+  }, [page]);
   return (
     <>
       <LoadState loading={h.loading} error={h.error} hasData={!!h.data} />
@@ -233,15 +271,16 @@ function History() {
             </thead>
             <tbody>
               {h.data.map((i) => (
-                <tr key={i.id}>
+                <tr key={i.key}>
                   <td>
                     <span className={`badge ${i.event === "downloadFailed" ? "bad" : i.event === "grabbed" ? "accent" : "good"}`}>
                       {EVENT_LABEL[i.event] ?? i.event}
                     </span>
                   </td>
                   <td style={{ wordBreak: "break-word" }}>
-                    <Link href={`/movie/?id=${i.movie_id}`}>{i.source_title}</Link>
-                    {i.data.message && <div className="small error">{i.data.message}</div>}
+                    <Link href={i.link}>{i.source_title}</Link>
+                    {i.label && <div className="small muted">{i.label}</div>}
+                    {i.message && <div className="small error">{i.message}</div>}
                   </td>
                   <td>{i.quality}</td>
                   <td className="small muted">{formatDate(i.date)}</td>

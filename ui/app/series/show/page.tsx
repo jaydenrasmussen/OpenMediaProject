@@ -5,11 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { LoadState } from "../../components/Page";
 import { Poster } from "../../components/Poster";
+import { Releases } from "../../components/Releases";
 import { useToast } from "../../components/toast";
 import { del, get, post, put } from "../../lib/api";
 import { formatDate, formatSize } from "../../lib/format";
 import { errorMessage, useLoad } from "../../lib/hooks";
-import type { Episode, QualityProfile, Series } from "../../lib/types";
+import type { Episode, EpisodeHistoryItem, QualityProfile, Series } from "../../lib/types";
 
 export default function SeriesPage() {
   // useSearchParams needs a Suspense boundary in a static export.
@@ -20,6 +21,16 @@ export default function SeriesPage() {
   );
 }
 
+const EVENT_LABEL: Record<string, string> = {
+  grabbed: "Grabbed",
+  downloadFolderImported: "Imported",
+  downloadFailed: "Download failed",
+  episodeFileDeleted: "File deleted",
+  seriesFolderImported: "Folder imported",
+  episodeFileRenamed: "Renamed",
+  downloadIgnored: "Ignored",
+};
+
 function SeriesDetail() {
   const id = Number(useSearchParams().get("id"));
   const router = useRouter();
@@ -27,6 +38,8 @@ function SeriesDetail() {
   const series = useLoad(() => get<Series>(`/series/${id}`), [id]);
   const episodes = useLoad(() => get<Episode[]>(`/episode?series_id=${id}`), [id]);
   const profiles = useLoad(() => get<QualityProfile[]>("/qualityprofile"));
+  const history = useLoad(() => get<EpisodeHistoryItem[]>(`/history/episode?series_id=${id}`), [id]);
+  const [interactive, setInteractive] = useState<{ episode?: number; season?: number } | null>(null);
   const [removing, setRemoving] = useState(false);
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -37,6 +50,7 @@ function SeriesDetail() {
   const reload = () => {
     series.reload();
     episodes.reload();
+    history.reload();
   };
 
   async function run<T>(work: () => Promise<T>, done?: string) {
@@ -48,6 +62,13 @@ function SeriesDetail() {
       notify(errorMessage(e), "bad");
     }
   }
+
+  const search = (command: Record<string, unknown>, done: string) =>
+    run(() => post("/command", { ...command, series_id: id }), done);
+  const searchMissing = () => search({ name: "SeriesSearch" }, "Search started. Check Activity for the result.");
+  const searchSeason = (n: number) => search({ name: "SeasonSearch", season_number: n }, `Searching season ${n}.`);
+  const searchEpisode = (e: Episode) => search({ name: "EpisodeSearch", episode_id: e.id }, `Searching ${e.title}.`);
+  const rescan = () => run(() => post("/command", { name: "RescanSeries", series_id: id, wait: true }), "Folder scanned.");
 
   const toggleSeries = () => run(() => put(`/series/${id}`, { monitored: !s!.monitored }));
   const refresh = () => run(() => post("/command", { name: "RefreshSeries", series_id: id, wait: true }), "Details refreshed.");
@@ -113,7 +134,16 @@ function SeriesDetail() {
               </div>
               <div className="row">
                 <button onClick={toggleSeries}>{s.monitored ? "Unmonitor" : "Monitor"}</button>
+                <button className="primary" onClick={searchMissing} disabled={!s.monitored} title={s.monitored ? "Look for every missing monitored episode" : "Monitor the series first"}>
+                  Search missing
+                </button>
                 <button onClick={refresh}>Refresh</button>
+                <button onClick={rescan} title="Look at the series folder for episode files">
+                  Rescan
+                </button>
+                <Link href={`/rename/?series_id=${s.id}`} className="button">
+                  Rename
+                </Link>
                 <button onClick={() => setEditing((v) => !v)}>{editing ? "Close settings" : "Settings"}</button>
                 <button className="danger" onClick={() => setRemoving((v) => !v)}>
                   Remove
@@ -154,10 +184,34 @@ function SeriesDetail() {
                       {info?.episode_file_count ?? 0}/{info?.episode_count ?? 0}
                     </span>
                   </button>
-                  <label className="check">
-                    <input type="checkbox" checked={info?.monitored ?? false} onChange={(e) => toggleSeason(n, e.target.checked)} /> Monitored
-                  </label>
+                  <div className="row">
+                    <button onClick={() => searchSeason(n)} title="Search for a season pack or the missing episodes">
+                      Search
+                    </button>
+                    <button onClick={() => setInteractive(interactive?.season === n ? null : { season: n })}>Interactive</button>
+                    <label className="check">
+                      <input type="checkbox" checked={info?.monitored ?? false} onChange={(e) => toggleSeason(n, e.target.checked)} /> Monitored
+                    </label>
+                  </div>
                 </div>
+                {interactive?.season === n && (
+                  <Releases
+                    searchPath={`/release/episode?series_id=${id}&season=${n}`}
+                    grabPath="/release/episode"
+                    title={`Interactive search: ${n === 0 ? "specials" : `season ${n}`}`}
+                    canGrab={(r) => r.matched_series_id != null}
+                    onGrabbed={reload}
+                  />
+                )}
+                {interactive?.episode !== undefined && list.some((e) => e.id === interactive.episode) && (
+                  <Releases
+                    searchPath={`/release/episode?episode_id=${interactive.episode}`}
+                    grabPath="/release/episode"
+                    title="Interactive search"
+                    canGrab={(r) => r.matched_series_id != null}
+                    onGrabbed={reload}
+                  />
+                )}
                 {isOpen(n) && (
                   <div className="table-wrap" style={{ marginTop: ".5rem" }}>
                     <table>
@@ -168,6 +222,7 @@ function SeriesDetail() {
                           <th>Title</th>
                           <th>Air date</th>
                           <th>File</th>
+                          <th />
                         </tr>
                       </thead>
                       <tbody>
@@ -197,6 +252,14 @@ function SeriesDetail() {
                                 <span className="muted">—</span>
                               )}
                             </td>
+                            <td className="row end">
+                              <button onClick={() => searchEpisode(e)} aria-label={`Search for ${e.title}`} title="Search">
+                                Search
+                              </button>
+                              <button onClick={() => setInteractive(interactive?.episode === e.id ? null : { episode: e.id })} aria-label={`Interactive search for ${e.title}`}>
+                                Manual
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -206,6 +269,42 @@ function SeriesDetail() {
               </section>
             );
           })}
+          <h2>History</h2>
+          <LoadState loading={history.loading} error={history.error} hasData={!!history.data} />
+          {history.data && history.data.length === 0 && <p className="muted">Nothing has happened yet.</p>}
+          {history.data && history.data.length > 0 && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Episode</th>
+                    <th>Release</th>
+                    <th>Quality</th>
+                    <th>When</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.data.map((h) => (
+                    <tr key={h.id}>
+                      <td>
+                        <span className={`badge ${h.event === "downloadFailed" ? "bad" : h.event === "grabbed" ? "accent" : "good"}`}>{EVENT_LABEL[h.event] ?? h.event}</span>
+                      </td>
+                      <td className="small">
+                        {h.season_number}x{String(h.episode_number ?? 0).padStart(2, "0")} {h.episode_title}
+                      </td>
+                      <td style={{ wordBreak: "break-word" }}>
+                        {h.source_title}
+                        {h.data.message && <div className="small error">{h.data.message}</div>}
+                      </td>
+                      <td>{h.quality}</td>
+                      <td className="small muted">{formatDate(h.date)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           <p className="muted small" style={{ marginTop: "1rem" }}>
             <Link href="/series/">Back to series</Link>
           </p>

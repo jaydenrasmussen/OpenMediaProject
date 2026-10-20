@@ -69,7 +69,10 @@ export interface Release {
   quality: string | null;
   release_group: string | null;
   custom_format_score: number;
-  matched_movie_id: number | null;
+  matched_movie_id?: number | null;
+  matched_series_id?: number | null;
+  /** Episodes (or "Season pack") a TV release covers. */
+  episodes?: string[];
   approved: boolean;
   temporarily_rejected: boolean;
   rejections: string[];
@@ -85,6 +88,8 @@ export interface QueueItem {
   download_id: string;
   title: string;
   movie_id: number | null;
+  series_id?: number | null;
+  episode_ids?: number[];
   state: string;
   status: string;
   client: string;
@@ -179,6 +184,14 @@ export interface ImportConfig {
     colon_replacement: "delete" | "dash" | "space_dash" | "space_dash_space" | "smart";
     standard_movie_format: string;
     movie_folder_format: string;
+    rename_episodes: boolean;
+    multi_episode_style: "extend" | "duplicate" | "repeat" | "scene" | "range" | "prefixed_range";
+    standard_episode_format: string;
+    daily_episode_format: string;
+    anime_episode_format: string;
+    series_folder_format: string;
+    season_folder_format: string;
+    specials_folder_format: string;
   };
 }
 
@@ -414,4 +427,57 @@ export interface SeriesLookupResult {
   images: Cover[];
   suggested_type: "standard" | "daily" | "anime";
   in_library: number | null;
+}
+
+export interface EpisodeHistoryItem {
+  id: number;
+  series_id: number;
+  series_title: string | null;
+  episode_id: number;
+  season_number: number | null;
+  episode_number: number | null;
+  episode_title: string | null;
+  event: string;
+  date: string;
+  source_title: string;
+  quality: string;
+  download_id: string | null;
+  data: Record<string, string>;
+}
+
+export interface WantedEpisode {
+  id: number;
+  series_id: number;
+  series_title: string;
+  season_number: number;
+  episode_number: number;
+  title: string;
+  air_date: string | null;
+  air_date_utc: string | null;
+  monitored: boolean;
+  last_search_time: string | null;
+  quality: string | null;
+}
+
+export interface TvBlocklistItem {
+  id: number;
+  series_id: number;
+  series_title: string;
+  episode_ids: number[];
+  source_title: string;
+  quality: string;
+  protocol: string;
+  indexer: string | null;
+  size: number | null;
+  message: string | null;
+  date: string;
+}
+
+export interface EpisodeRenamePreview {
+  series_id: number;
+  series_title: string;
+  episode_file_id: number;
+  episode_ids: number[];
+  existing: string;
+  new: string;
 }
