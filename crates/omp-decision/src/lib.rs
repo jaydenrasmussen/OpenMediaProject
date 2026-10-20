@@ -10,6 +10,7 @@ pub mod engine;
 pub mod model;
 pub mod reason;
 pub mod specs;
+pub mod tv;
 
 pub use engine::{Decision, DecisionEngine};
 pub use model::{DecisionData, DecisionInfo, ReleaseSource, SearchContext, Subject};

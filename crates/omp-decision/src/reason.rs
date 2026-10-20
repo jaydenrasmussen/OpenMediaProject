@@ -73,6 +73,21 @@ pub enum RejectionReason {
     DiskCustomFormatScore,
     DiskCustomFormatScoreIncrement,
     DiskUpgradesNotAllowed,
+    UnknownSeries,
+    UnknownEpisode,
+    MatchesAnotherSeries,
+    SeriesNotMonitored,
+    EpisodeNotMonitored,
+    WrongEpisode,
+    WrongSeason,
+    WrongSeries,
+    FullSeason,
+    FullSeasonNotAired,
+    MultiSeason,
+    SplitEpisode,
+    ExistingFileHasMoreEpisodes,
+    UnknownReleaseGroup,
+    ReleaseGroupDoesNotMatch,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
