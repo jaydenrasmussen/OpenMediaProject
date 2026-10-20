@@ -71,6 +71,8 @@ pub struct ImportConfig {
     pub recycle_bin_cleanup_days: u32,
     /// Stop monitoring a movie once its file is deleted by hand.
     pub unmonitor_deleted: bool,
+    /// Look for another release when a download fails.
+    pub redownload_failed: bool,
     pub naming: NamingConfig,
 }
 
@@ -86,6 +88,7 @@ impl Default for ImportConfig {
             recycle_bin: String::new(),
             recycle_bin_cleanup_days: 7,
             unmonitor_deleted: false,
+            redownload_failed: true,
             naming: NamingConfig::default(),
         }
     }

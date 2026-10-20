@@ -137,6 +137,9 @@ function Naming() {
         </label>
       </div>
       <label className="check">
+        <input type="checkbox" checked={cfg.redownload_failed} onChange={(e) => set({ redownload_failed: e.target.checked })} /> Look for another release when a download fails
+      </label>
+      <label className="check">
         <input type="checkbox" checked={cfg.unmonitor_deleted} onChange={(e) => set({ unmonitor_deleted: e.target.checked })} /> Stop monitoring a movie when its file is deleted
       </label>
 

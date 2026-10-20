@@ -237,7 +237,7 @@ pub async fn push_release_once(
 }
 
 /// One pass of the download loop: refresh, import, clean up.
-pub async fn process_downloads_once(app: &App) -> Result<Option<ProcessResult>, ServiceError> {
+pub async fn process_downloads_once(app: &Arc<App>) -> Result<Option<ProcessResult>, ServiceError> {
     let Ok(_running) = app.process_lock.try_lock() else {
         return Ok(None);
     };
@@ -257,7 +257,43 @@ pub async fn process_downloads_once(app: &App) -> Result<Option<ProcessResult>, 
         },
     )
     .await?;
+    if config.redownload_failed {
+        for id in &result.refresh.newly_failed {
+            if let Some(tracked) = app.monitor.get(id) {
+                redownload(app, &tracked);
+            }
+        }
+    }
     Ok(Some(result))
+}
+
+/// Looks for another release after a download failed (its release is
+/// blocklisted by then). Runs in the background; a failed search is logged.
+fn redownload(app: &Arc<App>, tracked: &omp_services::TrackedDownload) {
+    let movie_id = tracked.movie_id;
+    let series_id = tracked.series_id;
+    let episode_ids = tracked.episode_ids.clone();
+    let app = app.clone();
+    tokio::spawn(async move {
+        let result = if let Some(id) = movie_id {
+            search_movie_once(&app, id, SearchMode::Automatic, false)
+                .await
+                .map(|_| ())
+        } else if let (Some(_), [episode]) = (series_id, episode_ids.as_slice()) {
+            search_episode_once(&app, *episode, SearchMode::Automatic, false)
+                .await
+                .map(|_| ())
+        } else if let Some(series) = series_id {
+            search_missing_once(&app, Some(series), false)
+                .await
+                .map(|_| ())
+        } else {
+            Ok(())
+        };
+        if let Err(e) = result {
+            tracing::warn!("search after a failed download failed: {e}");
+        }
+    });
 }
 
 /// Runs `job` every `every` (after `delay`), recording each run for the

@@ -178,6 +178,7 @@ export interface ImportConfig {
   recycle_bin: string;
   recycle_bin_cleanup_days: number;
   unmonitor_deleted: boolean;
+  redownload_failed: boolean;
   naming: {
     rename_movies: boolean;
     replace_illegal_characters: boolean;
