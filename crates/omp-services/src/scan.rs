@@ -30,14 +30,14 @@ pub struct RescanResult {
     pub has_file: bool,
 }
 
-fn extension_of(path: &Path) -> String {
+pub(crate) fn extension_of(path: &Path) -> String {
     path.extension()
         .map(|e| format!(".{}", e.to_string_lossy()))
         .unwrap_or_default()
 }
 
 /// Every media file under `root`, deepest folders included.
-async fn media_files(root: &Path) -> std::io::Result<Vec<PathBuf>> {
+pub(crate) async fn media_files(root: &Path) -> std::io::Result<Vec<PathBuf>> {
     let mut found = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {

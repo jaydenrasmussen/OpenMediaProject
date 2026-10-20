@@ -909,6 +909,17 @@ async fn command(
                     Some(id) => crate::tv_api::refresh(&app, Some(id)).await.map(|_| ()),
                     None => Err("RefreshSeries needs a series_id".into()),
                 },
+                "RescanSeries" => match series_id {
+                    Some(id) => omp_services::rescan_series(&app.db, id, chrono::Utc::now())
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("RescanSeries needs a series_id".into()),
+                },
+                "RenameSeries" => tasks::rename_series_once(&app, series_id)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
                 "EpisodeSearch" => match episode_id {
                     Some(id) => tasks::search_episode_once(&app, id, SearchMode::Automatic, true)
                         .await
@@ -955,6 +966,8 @@ async fn command(
             | "RefreshMovies"
             | "RefreshSeries"
             | "RefreshAllSeries"
+            | "RescanSeries"
+            | "RenameSeries"
             | "EpisodeSearch"
             | "SeasonSearch"
             | "SeriesSearch"
@@ -969,7 +982,9 @@ async fn command(
         )));
     }
     let missing = match cmd.name.as_str() {
-        "RefreshSeries" | "SeriesSearch" => cmd.series_id.is_none().then_some("a series_id"),
+        "RefreshSeries" | "SeriesSearch" | "RescanSeries" => {
+            cmd.series_id.is_none().then_some("a series_id")
+        }
         "EpisodeSearch" => cmd.episode_id.is_none().then_some("an episode_id"),
         "SeasonSearch" => (cmd.series_id.is_none() || cmd.season_number.is_none())
             .then_some("a series_id and a season_number"),

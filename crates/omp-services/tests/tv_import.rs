@@ -328,3 +328,93 @@ async fn a_lone_file_with_an_unreadable_name_takes_the_grabbed_episode() {
         "{r:?}"
     );
 }
+
+#[tokio::test]
+async fn rescan_records_existing_files_and_forgets_missing_ones() {
+    let lib = Lib::new().await;
+    let series = lib.db.series().get(lib.series).await.unwrap();
+    let season = Path::new(&series.path).join("Season 1");
+    std::fs::create_dir_all(&season).unwrap();
+    std::fs::write(
+        season.join("Some.Show.S01E01.720p.WEB-DL.x264-GRP.mkv"),
+        b"x",
+    )
+    .unwrap();
+    std::fs::write(
+        season.join("Some.Show.S01E02E03.1080p.BluRay.x264-GRP.mkv"),
+        b"x",
+    )
+    .unwrap();
+    std::fs::write(season.join("random name.mkv"), b"x").unwrap();
+
+    let r = omp_services::rescan_series(&lib.db, lib.series, now())
+        .await
+        .unwrap();
+    assert_eq!((r.added, r.removed), (2, 0));
+    assert_eq!(r.unmatched, ["Season 1/random name.mkv"]);
+    let eps = lib.episodes().await;
+    let with_file: Vec<_> = eps
+        .iter()
+        .filter(|e| e.episode_file_id.is_some())
+        .map(|e| e.episode_number)
+        .collect();
+    assert_eq!(with_file, [1, 2, 3]);
+    assert_eq!(eps[1].episode_file_id, eps[2].episode_file_id);
+
+    // Scanning again changes nothing; deleting a file is noticed.
+    let again = omp_services::rescan_series(&lib.db, lib.series, now())
+        .await
+        .unwrap();
+    assert_eq!((again.added, again.removed), (0, 0));
+    std::fs::remove_file(season.join("Some.Show.S01E01.720p.WEB-DL.x264-GRP.mkv")).unwrap();
+    let r = omp_services::rescan_series(&lib.db, lib.series, now())
+        .await
+        .unwrap();
+    assert_eq!((r.added, r.removed), (0, 1));
+    assert!(lib.episodes().await[0].episode_file_id.is_none());
+}
+
+#[tokio::test]
+async fn renaming_moves_files_to_the_naming_format() {
+    let lib = Lib::new().await;
+    let series = lib.db.series().get(lib.series).await.unwrap();
+    std::fs::create_dir_all(&series.path).unwrap();
+    std::fs::write(
+        Path::new(&series.path).join("Some.Show.S01E01.1080p.WEB-DL.x264-GRP.mkv"),
+        b"x",
+    )
+    .unwrap();
+    omp_services::rescan_series(&lib.db, lib.series, now())
+        .await
+        .unwrap();
+
+    let previews =
+        omp_services::episode_rename_previews(&lib.db, &lib.config.naming, Some(lib.series))
+            .await
+            .unwrap();
+    assert_eq!(previews.len(), 1);
+    assert_eq!(
+        previews[0].new,
+        "Season 1/Some Show - S01E01 - Title 1 WEBDL-1080p.mkv"
+    );
+
+    let n = omp_services::rename_series(&lib.db, &lib.config.naming, lib.series, now())
+        .await
+        .unwrap();
+    assert_eq!(n, 1);
+    assert!(Path::new(&series.path).join(&previews[0].new).exists());
+    assert!(
+        omp_services::episode_rename_previews(&lib.db, &lib.config.naming, None)
+            .await
+            .unwrap()
+            .is_empty(),
+        "nothing left to rename"
+    );
+    let off = omp_naming::NamingConfig::default();
+    assert!(
+        omp_services::episode_rename_previews(&lib.db, &off, None)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}

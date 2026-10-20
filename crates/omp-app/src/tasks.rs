@@ -487,6 +487,30 @@ pub async fn rename_movies_once(app: &App, only: Option<i64>) -> Result<usize, S
     Ok(renamed)
 }
 
+/// Renames series files to match the naming format: one series or all.
+pub async fn rename_series_once(app: &App, only: Option<i64>) -> Result<usize, ServiceError> {
+    let naming = load_import_config(&app.db).await?.naming;
+    let ids: Vec<i64> = match only {
+        Some(id) => vec![id],
+        None => omp_services::episode_rename_previews(&app.db, &naming, None)
+            .await?
+            .into_iter()
+            .map(|p| p.series_id)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+    };
+    let mut renamed = 0;
+    for id in ids {
+        match omp_services::rename_series(&app.db, &naming, id, chrono::Utc::now()).await {
+            Ok(n) => renamed += n,
+            Err(e) if only.is_some() => return Err(e),
+            Err(e) => tracing::warn!(series_id = id, "rename failed: {e}"),
+        }
+    }
+    Ok(renamed)
+}
+
 /// Looks at a movie's folder and records or forgets its file.
 pub async fn rescan_movie_once(
     app: &App,

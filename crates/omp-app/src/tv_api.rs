@@ -11,7 +11,7 @@ use axum::{
 use chrono::Utc;
 use omp_core::tv::{MonitorMode, NewItemMonitor, SeriesInfo, SeriesType};
 use omp_db::repo::{EpisodeFileRecord, EpisodeRecord, SeriesRecord, SeriesUpdate};
-use omp_naming::series_folder;
+use omp_naming::{NamingSeries, build_series_folder};
 use omp_services::{AddSeries, add_series, apply_monitor_mode, load_import_config, refresh_series};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -381,6 +381,9 @@ struct AddSeriesBody {
     use_scene_numbering: bool,
     #[serde(default)]
     tags: Vec<i32>,
+    /// Look for missing episodes as soon as the series is added.
+    #[serde(default)]
+    search_now: bool,
 }
 
 fn yes() -> bool {
@@ -424,6 +427,7 @@ async fn add_series_handler(
     let series_type = req.series_type.as_deref().map(parse_type).transpose()?;
     let monitor = parse_monitor(&req.monitor)?;
     let monitor_new_items = parse_new_items(&req.monitor_new_items)?;
+    let search_now = req.search_now;
 
     if app
         .db
@@ -441,7 +445,17 @@ async fn add_series_handler(
     let info = provider.series(req.tmdb_id).await.map_err(metadata_error)?;
     let naming = load_import_config(&app.db).await?.naming;
     let path = PathBuf::from(&req.root_folder_path)
-        .join(series_folder(&info.title, info.year, &naming))
+        .join(build_series_folder(
+            &NamingSeries {
+                title: info.title.clone(),
+                year: info.year,
+                imdb_id: info.imdb_id.clone(),
+                tvdb_id: info.tvdb_id,
+                tmdb_id: info.tmdb_id,
+                ..Default::default()
+            },
+            &naming,
+        ))
         .to_string_lossy()
         .into_owned();
 
@@ -464,6 +478,18 @@ async fn add_series_handler(
         Utc::now(),
     )
     .await?;
+    // The folder may already hold episodes (an existing library).
+    if let Err(e) = omp_services::rescan_series(&app.db, id, Utc::now()).await {
+        tracing::warn!(series_id = id, "scanning the series folder failed: {e}");
+    }
+    if search_now {
+        let app = app.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::tasks::search_missing_once(&app, Some(id), true).await {
+                tracing::warn!(series_id = id, "search for the new series failed: {e}");
+            }
+        });
+    }
     let s = app.db.series().get(id).await?;
     let episodes = app.db.episodes().for_series(id).await?;
     Ok((StatusCode::CREATED, Json(series_json(&s, &episodes, &[]))))
@@ -710,7 +736,12 @@ pub(crate) async fn refresh(app: &App, only: Option<i64>) -> Result<usize, Strin
     let mut refreshed = 0;
     for id in ids {
         match refresh_series(&app.db, &*provider, id).await {
-            Ok(_) => refreshed += 1,
+            Ok(_) => {
+                refreshed += 1;
+                if let Err(e) = omp_services::rescan_series(&app.db, id, Utc::now()).await {
+                    tracing::warn!(series_id = id, "scanning the series folder failed: {e}");
+                }
+            }
             Err(e) if only.is_some() => return Err(e.to_string()),
             Err(e) => tracing::warn!(series_id = id, "series refresh failed: {e}"),
         }

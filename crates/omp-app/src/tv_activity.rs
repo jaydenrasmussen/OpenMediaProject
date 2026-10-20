@@ -32,6 +32,7 @@ pub(crate) fn routes() -> Router<Arc<App>> {
         .route("/wanted/episodes/missing", get(wanted_missing))
         .route("/wanted/episodes/cutoff", get(wanted_cutoff))
         .route("/calendar/episodes", get(calendar))
+        .route("/rename/episodes", get(rename_previews))
 }
 
 fn paging(limit: Option<i64>, offset: Option<i64>) -> (i64, i64) {
@@ -222,7 +223,7 @@ async fn history(State(app): Shared, Query(q): Query<HistoryQuery>) -> ApiResult
                     "season_number": e.map(|e| e.season_number),
                     "episode_number": e.map(|e| e.episode_number),
                     "episode_title": e.map(|e| e.title.clone()),
-                    "event": event_name(h.event),
+                    "event": episode_event_name(h.event),
                     "date": h.date,
                     "source_title": h.source_title,
                     "quality": h.quality.quality.name,
@@ -408,4 +409,39 @@ async fn calendar(State(app): Shared, Query(q): Query<CalendarQuery>) -> ApiResu
             .then(a["series_title"].as_str().cmp(&b["series_title"].as_str()))
     });
     Ok(Json(Value::Array(out)))
+}
+
+#[derive(Deserialize)]
+struct RenameQuery {
+    series_id: Option<i64>,
+}
+
+/// Files whose names differ from the current episode naming format.
+async fn rename_previews(State(app): Shared, Query(q): Query<RenameQuery>) -> ApiResult {
+    let naming = omp_services::load_import_config(&app.db).await?.naming;
+    let previews = omp_services::episode_rename_previews(&app.db, &naming, q.series_id).await?;
+    Ok(Json(Value::Array(
+        previews
+            .iter()
+            .map(|p| {
+                json!({
+                    "series_id": p.series_id,
+                    "series_title": p.series_title,
+                    "episode_file_id": p.episode_file_id,
+                    "episode_ids": p.episode_ids,
+                    "existing": p.existing,
+                    "new": p.new,
+                })
+            })
+            .collect(),
+    )))
+}
+
+fn episode_event_name(e: omp_core::history::HistoryEvent) -> &'static str {
+    match event_name(e) {
+        "movieFileDeleted" => "episodeFileDeleted",
+        "movieFileRenamed" => "episodeFileRenamed",
+        "movieFolderImported" => "seriesFolderImported",
+        other => other,
+    }
 }
