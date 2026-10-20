@@ -14,6 +14,7 @@ use serde_json::Value;
 use crate::app::App;
 
 const CURSOR_KEY: &str = "notification_cursor";
+const EPISODE_CURSOR_KEY: &str = "notification_cursor_episodes";
 
 /// Event kinds a notification can subscribe to.
 pub const TRIGGERS: &[&str] = &["grab", "import", "download-failed"];
@@ -72,6 +73,10 @@ pub fn test_event() -> Event {
 /// Delivers history events recorded since the last call. Returns how many
 /// notifications were sent.
 pub async fn dispatch_once(app: &App) -> anyhow::Result<usize> {
+    Ok(dispatch_movies(app).await? + dispatch_episodes(app).await?)
+}
+
+async fn dispatch_movies(app: &App) -> anyhow::Result<usize> {
     let cursor = match app.db.config().get(CURSOR_KEY).await? {
         Some(v) => v.parse::<i64>().unwrap_or(0),
         None => {
@@ -139,5 +144,126 @@ pub async fn dispatch_once(app: &App) -> anyhow::Result<usize> {
         }
     }
     app.db.config().set(CURSOR_KEY, &newest.to_string()).await?;
+    Ok(sent)
+}
+
+fn episode_label(season: i32, episodes: &[i32]) -> String {
+    match episodes {
+        [] => format!("Season {season}"),
+        [one] => format!("S{season:02}E{one:02}"),
+        [first, .., last] => format!("S{season:02}E{first:02}-E{last:02}"),
+    }
+}
+
+/// As [`dispatch_movies`] for episode history. A release that covers
+/// several episodes (a season pack) is announced once.
+async fn dispatch_episodes(app: &App) -> anyhow::Result<usize> {
+    let cursor = match app.db.config().get(EPISODE_CURSOR_KEY).await? {
+        Some(v) => v.parse::<i64>().unwrap_or(0),
+        None => {
+            let last = app.db.episode_history().last_id().await?;
+            app.db
+                .config()
+                .set(EPISODE_CURSOR_KEY, &last.to_string())
+                .await?;
+            return Ok(0);
+        }
+    };
+    let events = app.db.episode_history().after(cursor, 200).await?;
+    let Some(newest) = events.last().map(|e| e.id) else {
+        return Ok(0);
+    };
+    let targets: Vec<Provider> = app
+        .db
+        .providers()
+        .list(ProviderKind::Notification)
+        .await?
+        .into_iter()
+        .filter(|p| p.enabled)
+        .collect();
+
+    // One announcement per (event, download) or per row when there is no download.
+    let mut groups: Vec<(
+        &'static str,
+        &'static str,
+        Vec<&omp_db::repo::EpisodeHistoryRecord>,
+    )> = Vec::new();
+    for h in &events {
+        let (kind, title) = match h.event {
+            HistoryEvent::Grabbed => ("grab", "Release grabbed"),
+            HistoryEvent::DownloadFolderImported => ("import", "Episode imported"),
+            HistoryEvent::DownloadFailed => ("download-failed", "Download failed"),
+            _ => continue,
+        };
+        let existing = h.download_id.as_ref().and_then(|d| {
+            groups
+                .iter_mut()
+                .find(|(k, _, rows)| *k == kind && rows[0].download_id.as_ref() == Some(d))
+        });
+        match existing {
+            Some((_, _, rows)) => rows.push(h),
+            None => groups.push((kind, title, vec![h])),
+        }
+    }
+
+    let mut sent = 0;
+    for (kind, title, rows) in groups {
+        let wanting: Vec<&Provider> = targets
+            .iter()
+            .filter(|p| {
+                NotificationSettings::from_provider(p)
+                    .triggers
+                    .iter()
+                    .any(|t| t == kind)
+            })
+            .collect();
+        if wanting.is_empty() {
+            continue;
+        }
+        let first = rows[0];
+        let series = app
+            .db
+            .series()
+            .get(first.series_id)
+            .await
+            .map(|s| s.info.title)
+            .unwrap_or_default();
+        let mut by_season: std::collections::BTreeMap<i32, Vec<i32>> = Default::default();
+        for h in &rows {
+            if let Ok(e) = app.db.episodes().get(h.episode_id).await {
+                by_season
+                    .entry(e.season_number)
+                    .or_default()
+                    .push(e.episode_number);
+            }
+        }
+        let labels: Vec<String> = by_season
+            .iter_mut()
+            .map(|(season, eps)| {
+                eps.sort_unstable();
+                episode_label(*season, eps)
+            })
+            .collect();
+        let mut message = format!(
+            "{series} {}: {} ({})",
+            labels.join(", "),
+            first.source_title,
+            first.quality.quality.name
+        );
+        if let Some(reason) = first.data.get("message").filter(|m| !m.is_empty()) {
+            message = format!("{message}: {reason}");
+        }
+        let event = event_for(kind, title, message, None);
+        for p in wanting {
+            match send(app, p, &event).await {
+                Ok(()) => sent += 1,
+                Err(e) => tracing::warn!(notification = %p.name, "notification failed: {e}"),
+            }
+        }
+    }
+    app.db
+        .config()
+        .set(EPISODE_CURSOR_KEY, &newest.to_string())
+        .await?;
     Ok(sent)
 }

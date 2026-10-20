@@ -708,6 +708,23 @@ async fn delete_episode_file(State(app): Shared, Path(id): Path<i64>) -> ApiResu
             .map_err(|e| ApiError::internal(format!("could not delete the file: {e}")))?;
     }
     let episodes = app.db.episodes().for_file(id).await?;
+    for e in &episodes {
+        app.db
+            .episode_history()
+            .insert(&omp_db::repo::EpisodeHistoryRecord {
+                id: 0,
+                series_id: series.id,
+                episode_id: e.id,
+                event: omp_core::history::HistoryEvent::MovieFileDeleted,
+                date: Utc::now(),
+                source_title: file.relative_path.clone(),
+                quality: file.quality,
+                languages: file.languages.clone(),
+                download_id: None,
+                data: [("reason".to_owned(), "deleted by user".to_owned())].into(),
+            })
+            .await?;
+    }
     app.db.episode_files().delete(id).await?;
     if config.unmonitor_deleted {
         let ids: Vec<i64> = episodes.iter().map(|e| e.id).collect();
