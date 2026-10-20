@@ -1226,6 +1226,27 @@ async fn list_providers(app: Arc<App>, kind: ProviderKind) -> ApiResult {
     Ok(Json(Value::Array(rows.iter().map(provider_json).collect())))
 }
 
+/// A notification is a plugin plus the events it wants.
+fn validate_notification(app: &App, p: &Provider) -> Result<(), ApiError> {
+    let Some(plugin_id) = p.plugin_id.as_deref() else {
+        return Err(ApiError::bad_request("choose a notification plugin"));
+    };
+    if app.plugins.notification(plugin_id).is_none() {
+        return Err(ApiError::bad_request(format!(
+            "no notification plugin '{plugin_id}' is installed"
+        )));
+    }
+    let s = crate::notify::NotificationSettings::from_provider(p);
+    if let Some(bad) = s
+        .triggers
+        .iter()
+        .find(|t| !crate::notify::TRIGGERS.contains(&t.as_str()))
+    {
+        return Err(ApiError::bad_request(format!("unknown event '{bad}'")));
+    }
+    Ok(())
+}
+
 async fn save_provider(
     app: Arc<App>,
     kind: ProviderKind,
@@ -1234,6 +1255,9 @@ async fn save_provider(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let mut p = body.into_provider(id.unwrap_or(0), kind);
     validate_provider(kind, &p)?;
+    if kind == ProviderKind::Notification {
+        validate_notification(&app, &p)?;
+    }
     let status = match id {
         Some(id) => {
             let existing = app.db.providers().get(id).await?;
@@ -1484,13 +1508,48 @@ async fn put_decision_config(
     to_json(&c)
 }
 
+async fn list_plugins(State(app): Shared) -> Json<Value> {
+    let plugins: Vec<Value> = app
+        .plugins
+        .manifests()
+        .iter()
+        .map(|m| {
+            json!({
+                "id": m.id,
+                "name": m.name,
+                "version": m.version,
+                "kind": format!("{:?}", m.kind).to_lowercase(),
+                "description": m.description,
+                "allowed_hosts": m.allowed_hosts,
+            })
+        })
+        .collect();
+    Json(json!({ "plugins": plugins, "problems": app.plugins.problems() }))
+}
+
+async fn plugin_schema(State(app): Shared, Path(id): Path<String>) -> ApiResult {
+    match app.plugins.settings_schema(&id).await {
+        None => Err(ApiError::not_found("no such plugin")),
+        Some(Err(e)) => Err(ApiError::internal(format!("{e:#}"))),
+        Some(Ok(schema)) => serde_json::from_str(&schema)
+            .map(Json)
+            .map_err(|e| ApiError::internal(format!("the plugin's schema isn't JSON: {e}"))),
+    }
+}
+
 /// Tries a provider's settings without saving them.
 async fn test_provider(app: Arc<App>, kind: ProviderKind, body: ProviderBody) -> ApiResult {
     let p = body.into_provider(0, kind);
     validate_provider(kind, &p)?;
+    if kind == ProviderKind::Notification {
+        validate_notification(&app, &p)?;
+    }
     let outcome = match kind {
         ProviderKind::Indexer => omp_services::test_indexer(&p).await,
         ProviderKind::DownloadClient => crate::clients::test_client(&p, &app.config).await,
+        ProviderKind::Notification => {
+            crate::notify::send(&app, &p, &crate::notify::test_event()).await
+        }
         _ => Ok(()),
     };
     Ok(Json(match outcome {
@@ -1653,6 +1712,10 @@ pub fn router(app: Arc<App>) -> Router {
         );
     let api = provider_routes!(api, "/indexer", ProviderKind::Indexer);
     let api = provider_routes!(api, "/downloadclient", ProviderKind::DownloadClient);
+    let api = provider_routes!(api, "/notification", ProviderKind::Notification);
+    let api = api
+        .route("/plugin", get(list_plugins))
+        .route("/plugin/{id}/schema", get(plugin_schema));
 
     // Everything above needs a login session or the API key.
     let api = api.route_layer(axum::middleware::from_fn_with_state(

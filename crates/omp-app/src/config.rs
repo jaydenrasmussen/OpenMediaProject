@@ -20,6 +20,8 @@ pub struct AppConfig {
     pub backup_interval: Duration,
     /// How often movie details are re-read from the metadata provider.
     pub refresh_interval: Duration,
+    /// Folders scanned for plugins; a plugin id in a later folder replaces the same id in an earlier one.
+    pub plugin_dirs: Vec<PathBuf>,
     /// The category our downloads are filed under in the download clients.
     pub download_category: String,
 }
@@ -29,7 +31,6 @@ impl AppConfig {
         let data_dir: PathBuf = data_dir.into();
         Self {
             downloads_dir: data_dir.join("downloads"),
-            data_dir,
             ui_dir: PathBuf::from("ui/out"),
             addr: ([0, 0, 0, 0], 8080).into(),
             tmdb_token: None,
@@ -40,6 +41,8 @@ impl AppConfig {
             process_interval: Duration::from_secs(60),
             backup_interval: Duration::from_secs(7 * 24 * 3600),
             refresh_interval: Duration::from_secs(12 * 3600),
+            plugin_dirs: vec![data_dir.join("plugins")],
+            data_dir,
             download_category: "movies".into(),
         }
     }
@@ -65,6 +68,13 @@ impl AppConfig {
         }
         if let Some(v) = var("OMP_7ZZ") {
             c.sevenzip = v.into();
+        }
+        // The image ships first-party plugins; the user's own live in the data folder.
+        if let Some(v) = var("OMP_BUNDLED_PLUGINS_DIR") {
+            c.plugin_dirs.insert(0, v.into());
+        }
+        if let Some(v) = var("OMP_PLUGINS_DIR") {
+            c.plugin_dirs.push(v.into());
         }
         if let Some(v) = var("OMP_RSS_INTERVAL_MINUTES") {
             c.rss_interval = Duration::from_secs(v.parse::<u64>()?.max(1) * 60);

@@ -178,7 +178,19 @@ pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
             }
         })
     };
-    vec![rss, process, backup, refresh]
+    let notify = {
+        let app = app.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(Duration::from_secs(15));
+            loop {
+                tick.tick().await;
+                if let Err(e) = crate::notify::dispatch_once(&app).await {
+                    tracing::warn!("notifications failed: {e}");
+                }
+            }
+        })
+    };
+    vec![rss, process, backup, refresh, notify]
 }
 
 /// Re-reads movie details from the metadata provider: release dates, status

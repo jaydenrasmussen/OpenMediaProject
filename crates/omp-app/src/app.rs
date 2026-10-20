@@ -33,6 +33,7 @@ pub struct App {
     pub metadata: Option<Arc<dyn MovieMetadataProvider>>,
     pub probe: Arc<dyn MediaProbe>,
     pub disk: Arc<dyn DiskSpace>,
+    pub plugins: Arc<crate::plugins::Plugins>,
     pub started: DateTime<Utc>,
     /// A real password hash nobody knows the password to, checked when a login names an unknown user.
     pub(crate) dummy_hash: String,
@@ -67,12 +68,13 @@ impl App {
         seed_defaults(&db).await?;
         let app = Arc::new(Self {
             db,
-            config,
             engine: DecisionEngine::default(),
             monitor: DownloadMonitor::new(),
             metadata,
             probe,
             disk,
+            plugins: Arc::new(crate::plugins::Plugins::load(&config.plugin_dirs)),
+            config,
             started: Utc::now(),
             dummy_hash: crate::auth::hash_password(&format!("{:?}", Utc::now()))
                 .await

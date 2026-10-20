@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+async-trait = "0.1"
 argon2 = "0.5"
 axum.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
@@ -21,10 +22,12 @@ omp-indexers = { path = "../omp-indexers" }
 omp-metadata = { path = "../omp-metadata" }
 omp-naming = { path = "../omp-naming" }
 omp-parser = { path = "../omp-parser" }
+omp-plugin-host = { path = "../omp-plugin-host" }
 omp-quality = { path = "../omp-quality" }
 omp-services = { path = "../omp-services" }
 omp-torrent = { path = "../omp-torrent" }
 omp-usenet = { path = "../omp-usenet" }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -35,7 +38,6 @@ tower-http.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-async-trait = "0.1"
 http-body-util = "0.1"
 tempfile = "3"
 

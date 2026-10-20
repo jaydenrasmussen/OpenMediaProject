@@ -106,6 +106,28 @@ impl History<'_> {
             .collect()
     }
 
+    /// Events recorded after `id`, oldest first.
+    pub async fn after(&self, id: i64, limit: i64) -> Result<Vec<HistoryRecord>> {
+        sqlx::query("SELECT * FROM history WHERE id > ? ORDER BY id LIMIT ?")
+            .bind(id)
+            .bind(limit)
+            .fetch_all(self.0)
+            .await?
+            .iter()
+            .map(history_from_row)
+            .collect()
+    }
+
+    /// Id of the newest event, 0 when there are none.
+    pub async fn last_id(&self) -> Result<i64> {
+        Ok(
+            sqlx::query_scalar::<_, Option<i64>>("SELECT MAX(id) FROM history")
+                .fetch_one(self.0)
+                .await?
+                .unwrap_or(0),
+        )
+    }
+
     /// Every event that shares a download id, oldest first.
     pub async fn by_download_id(&self, download_id: &str) -> Result<Vec<HistoryRecord>> {
         sqlx::query("SELECT * FROM history WHERE download_id = ? ORDER BY date, id")
