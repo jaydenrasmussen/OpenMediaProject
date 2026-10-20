@@ -7,6 +7,7 @@ mod logs;
 mod movies;
 mod profiles;
 mod providers;
+mod scene;
 mod series;
 mod simple;
 mod tv_activity;
@@ -22,6 +23,7 @@ pub use profiles::{
     CustomFormats, DelayProfiles, QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles,
 };
 pub use providers::{Provider, ProviderKind, Providers};
+pub use scene::{SceneTitleRow, SceneTitles};
 pub use series::{
     EpisodeFileRecord, EpisodeFiles, EpisodeRecord, Episodes, NewSeries, SeasonRecord, Series,
     SeriesRecord, SeriesUpdate,

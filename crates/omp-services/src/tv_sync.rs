@@ -157,12 +157,17 @@ pub struct TvSearchResult {
     pub failures: Vec<IndexerFailure>,
 }
 
-fn tv_series(s: &SeriesRecord) -> TvSeries {
+fn tv_series(s: &SeriesRecord, extra: &[String]) -> TvSeries {
     let mut titles = vec![s.info.title.clone()];
     if !s.info.original_title.trim().is_empty() && s.info.original_title != s.info.title {
         titles.push(s.info.original_title.clone());
     }
     titles.extend(s.info.alternative_titles.iter().map(|t| t.title.clone()));
+    for t in extra {
+        if !titles.contains(t) {
+            titles.push(t.clone());
+        }
+    }
     TvSeries {
         tvdb_id: s.info.tvdb_id,
         imdb_id: s.info.imdb_id.clone(),
@@ -178,8 +183,56 @@ struct Query {
     kind: TvSearchKind,
 }
 
-fn season_query(series: &SeriesRecord, season: i32, episodes: &[EpisodeRecord]) -> Query {
-    let s = tv_series(series);
+/// Alternate scene titles to search by (those for the whole series).
+async fn extra_titles(db: &Db, series: &SeriesRecord) -> Result<Vec<String>, ServiceError> {
+    let Some(tvdb) = series.info.tvdb_id else {
+        return Ok(Vec::new());
+    };
+    Ok(db
+        .scene_titles()
+        .for_tvdb_id(tvdb)
+        .await?
+        .into_iter()
+        .filter(|t| t.season == -1)
+        .map(|t| t.search_title)
+        .collect())
+}
+
+/// The numbers to search by: scene numbers when the series follows them
+/// and the episode has them.
+fn search_numbers(series: &SeriesRecord, e: &EpisodeRecord) -> (i32, i32) {
+    match (
+        series.use_scene_numbering,
+        e.scene_season_number,
+        e.scene_episode_number,
+    ) {
+        (true, Some(season), Some(episode)) => (season, episode),
+        _ => (e.season_number, e.episode_number),
+    }
+}
+
+fn season_query(
+    series: &SeriesRecord,
+    season: i32,
+    episodes: &[EpisodeRecord],
+    extra: &[String],
+) -> Query {
+    let s = tv_series(series, extra);
+    // One scene season for the whole season, or the real one.
+    let season = if series.use_scene_numbering {
+        let scene: Vec<i32> = episodes
+            .iter()
+            .filter_map(|e| e.scene_season_number)
+            .collect();
+        match scene.first() {
+            Some(first) if scene.len() == episodes.len() && scene.iter().all(|x| x == first) => {
+                *first
+            }
+            _ => season,
+        }
+    } else {
+        season
+    };
     match series.series_type {
         SeriesType::Anime => Query {
             search: TvSearch::AnimeSeason {
@@ -206,8 +259,9 @@ fn season_query(series: &SeriesRecord, season: i32, episodes: &[EpisodeRecord]) 
     }
 }
 
-fn episode_query(series: &SeriesRecord, e: &EpisodeRecord) -> Query {
-    let s = tv_series(series);
+fn episode_query(series: &SeriesRecord, e: &EpisodeRecord, extra: &[String]) -> Query {
+    let s = tv_series(series, extra);
+    let (season, episode) = search_numbers(series, e);
     if e.season_number == 0 && series.series_type != SeriesType::Daily {
         return Query {
             search: TvSearch::Special {
@@ -228,9 +282,13 @@ fn episode_query(series: &SeriesRecord, e: &EpisodeRecord) -> Query {
         (SeriesType::Anime, _, Some(absolute)) => Query {
             search: TvSearch::AnimeEpisode {
                 series: s,
-                absolute,
-                season: e.season_number,
-                episode: e.episode_number,
+                absolute: if series.use_scene_numbering {
+                    e.scene_absolute_episode_number.unwrap_or(absolute)
+                } else {
+                    absolute
+                },
+                season,
+                episode,
             },
             kind: TvSearchKind::AnimeEpisode {
                 is_season_search: false,
@@ -239,13 +297,10 @@ fn episode_query(series: &SeriesRecord, e: &EpisodeRecord) -> Query {
         _ => Query {
             search: TvSearch::Episode {
                 series: s,
-                season: e.season_number,
-                episode: e.episode_number,
+                season,
+                episode,
             },
-            kind: TvSearchKind::SingleEpisode {
-                season: e.season_number,
-                episode: e.episode_number,
-            },
+            kind: TvSearchKind::SingleEpisode { season, episode },
         },
     }
 }
@@ -340,7 +395,8 @@ pub async fn search_episode(
 ) -> Result<TvSearchResult, ServiceError> {
     let episode = db.episodes().get(episode_id).await?;
     let series = db.series().get(episode.series_id).await?;
-    let query = episode_query(&series, &episode);
+    let extra = extra_titles(db, &series).await?;
+    let query = episode_query(&series, &episode, &extra);
     run_query(
         db,
         engine,
@@ -375,7 +431,8 @@ pub async fn search_season(
         .into_iter()
         .filter(|e| e.season_number == season && (mode == SearchMode::Interactive || e.monitored))
         .collect();
-    let query = season_query(&series, season, &episodes);
+    let extra = extra_titles(db, &series).await?;
+    let query = season_query(&series, season, &episodes, &extra);
     run_query(
         db, engine, indexers, registry, &series, query, &episodes, mode, ctx,
     )
@@ -404,6 +461,7 @@ pub async fn search_missing(
     if !series.monitored {
         return Ok(out);
     }
+    let extra = extra_titles(db, &series).await?;
     let all = db.episodes().for_series(series_id).await?;
     let mut seasons: Vec<i32> = all.iter().map(|e| e.season_number).collect();
     seasons.sort_unstable();
@@ -420,7 +478,7 @@ pub async fn search_missing(
         }
         let results = if missing.len() == aired.len() && missing.len() > 1 && season > 0 {
             let owned: Vec<EpisodeRecord> = missing.iter().map(|e| (*e).clone()).collect();
-            let q = season_query(&series, season, &owned);
+            let q = season_query(&series, season, &owned, &extra);
             vec![
                 run_query(
                     db,
@@ -438,7 +496,7 @@ pub async fn search_missing(
         } else {
             let mut v = Vec::new();
             for e in missing {
-                let q = episode_query(&series, e);
+                let q = episode_query(&series, e, &extra);
                 v.push(
                     run_query(
                         db,

@@ -165,6 +165,15 @@ CREATE TABLE movie_files (
 -- ---- TV ---------------------------------------------------------------------------
 -- A series keeps its provider metadata in the same row (it is refreshed in place).
 
+-- Alternate titles releases of a series go by (Sonarr's scene mapping list).
+CREATE TABLE scene_titles (
+    tvdb_id      INTEGER NOT NULL,
+    title        TEXT NOT NULL,
+    search_title TEXT NOT NULL,
+    season       INTEGER NOT NULL DEFAULT -1,
+    PRIMARY KEY (tvdb_id, title, season)
+);
+
 CREATE TABLE series (
     id                 INTEGER PRIMARY KEY,
     tmdb_id            INTEGER NOT NULL UNIQUE,

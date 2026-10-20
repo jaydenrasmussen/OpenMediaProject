@@ -485,6 +485,15 @@ async fn add_series_handler(
     if let Err(e) = omp_services::rescan_series(&app.db, id, Utc::now()).await {
         tracing::warn!(series_id = id, "scanning the series folder failed: {e}");
     }
+    if let Some(source) = app.scene_source.clone() {
+        let app = app.clone();
+        tokio::spawn(async move {
+            if let Err(e) = omp_services::refresh_scene_numbering(&app.db, &*source, Some(id)).await
+            {
+                tracing::warn!(series_id = id, "scene numbering lookup failed: {e}");
+            }
+        });
+    }
     if search_now {
         let app = app.clone();
         tokio::spawn(async move {

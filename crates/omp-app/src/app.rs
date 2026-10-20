@@ -45,6 +45,7 @@ pub struct App {
     pub monitor: DownloadMonitor,
     pub metadata: Option<Arc<dyn MovieMetadataProvider>>,
     pub series_metadata: Option<Arc<dyn SeriesMetadataProvider>>,
+    pub scene_source: Option<Arc<dyn omp_metadata::scene::SceneSource>>,
     pub probe: Arc<dyn MediaProbe>,
     pub disk: Arc<dyn DiskSpace>,
     pub plugins: Arc<crate::plugins::Plugins>,
@@ -73,11 +74,12 @@ impl App {
             .clone()
             .map(|t| Arc::new(TmdbProvider::new(t)));
         let probe = Arc::new(Ffprobe::new(config.ffprobe.clone()));
-        Self::with_series_metadata(
+        Self::build(
             config,
             db,
             tmdb.clone().map(|t| t as Arc<dyn MovieMetadataProvider>),
             tmdb.map(|t| t as Arc<dyn SeriesMetadataProvider>),
+            Some(Arc::new(omp_metadata::scene::HttpSceneSource::new())),
             probe,
             Arc::new(RealDisk),
         )
@@ -105,6 +107,20 @@ impl App {
         probe: Arc<dyn MediaProbe>,
         disk: Arc<dyn DiskSpace>,
     ) -> anyhow::Result<Arc<Self>> {
+        Self::build(config, db, metadata, series_metadata, None, probe, disk).await
+    }
+
+    /// Everything, including where scene numbering comes from (`None` keeps
+    /// the app off the network for it).
+    pub async fn build(
+        config: AppConfig,
+        db: Db,
+        metadata: Option<Arc<dyn MovieMetadataProvider>>,
+        series_metadata: Option<Arc<dyn SeriesMetadataProvider>>,
+        scene_source: Option<Arc<dyn omp_metadata::scene::SceneSource>>,
+        probe: Arc<dyn MediaProbe>,
+        disk: Arc<dyn DiskSpace>,
+    ) -> anyhow::Result<Arc<Self>> {
         seed_defaults(&db).await?;
         let app = Arc::new(Self {
             db,
@@ -114,6 +130,7 @@ impl App {
             monitor: DownloadMonitor::new(),
             metadata,
             series_metadata,
+            scene_source,
             probe,
             disk,
             plugins: Arc::new(crate::plugins::Plugins::load(&config.plugin_dirs)),

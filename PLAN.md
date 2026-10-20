@@ -287,7 +287,7 @@ Findings from the spikes:
 
 #### Work order (set 2026-10-20)
 1. [x] WebSocket live updates
-2. [ ] Scene numbering and mappings
+2. [x] Scene numbering and mappings (TheXEM numbering + Sonarr scene titles; XEM maps TVDB numbering, applied to TMDB episodes by number)
 3. [ ] TV import lists
 4. [ ] Manual import of unmatched downloads
 5. [ ] SkyHook metadata provider

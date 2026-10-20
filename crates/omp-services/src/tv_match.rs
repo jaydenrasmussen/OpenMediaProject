@@ -27,13 +27,33 @@ pub struct ReleaseIds {
 /// Every library series, indexed for lookups by title. Loaded once per batch.
 pub struct SeriesIndex {
     series: Vec<SeriesRecord>,
+    /// Alternate scene titles (whole-series ones), cleaned, by TVDB id.
+    scene_titles: HashMap<i64, Vec<String>>,
     episodes: tokio::sync::Mutex<HashMap<i64, Vec<EpisodeRecord>>>,
 }
 
 impl SeriesIndex {
     pub async fn load(db: &Db) -> Result<Self, ServiceError> {
+        let series = db.series().list().await?;
+        let mut scene_titles = HashMap::new();
+        for s in &series {
+            if let Some(tvdb) = s.info.tvdb_id {
+                let titles: Vec<String> = db
+                    .scene_titles()
+                    .for_tvdb_id(tvdb)
+                    .await?
+                    .into_iter()
+                    .filter(|t| t.season == -1)
+                    .map(|t| clean_series_title(&t.title))
+                    .collect();
+                if !titles.is_empty() {
+                    scene_titles.insert(tvdb, titles);
+                }
+            }
+        }
         Ok(Self {
-            series: db.series().list().await?,
+            series,
+            scene_titles,
             episodes: Default::default(),
         })
     }
@@ -42,7 +62,15 @@ impl SeriesIndex {
         &self.series
     }
 
-    fn titles(s: &SeriesRecord) -> Vec<String> {
+    fn titles(&self, s: &SeriesRecord) -> Vec<String> {
+        let mut t = Self::own_titles(s);
+        if let Some(extra) = s.info.tvdb_id.and_then(|id| self.scene_titles.get(&id)) {
+            t.extend(extra.iter().cloned());
+        }
+        t
+    }
+
+    fn own_titles(s: &SeriesRecord) -> Vec<String> {
         let mut t = vec![clean_series_title(&s.info.title)];
         if !s.info.original_title.is_empty() {
             t.push(clean_series_title(&s.info.original_title));
@@ -64,7 +92,7 @@ impl SeriesIndex {
             .series
             .iter()
             .filter(|s| year.is_none_or(|y| s.info.year == y))
-            .filter(|s| Self::titles(s).contains(&clean))
+            .filter(|s| self.titles(s).contains(&clean))
             .collect();
         matching
             .iter()
@@ -126,7 +154,7 @@ pub fn find_series<'a>(
 ) -> Option<(&'a SeriesRecord, SeriesMatchType)> {
     if let Some(t) = target {
         let clean = clean_series_title(&parsed.series_title);
-        if SeriesIndex::titles(t).contains(&clean) {
+        if index.titles(t).contains(&clean) {
             return Some((t, SeriesMatchType::Title));
         }
         if (ids.tmdb_id > 0 && ids.tmdb_id == t.info.tmdb_id)
@@ -239,6 +267,47 @@ pub fn pick_episodes(
         .collect()
 }
 
+/// As [`pick_episodes`], but the numbers in the release are scene numbers
+/// (as TheXEM maps them). Episodes without scene numbers never match.
+pub fn pick_scene_episodes(
+    parsed: &ParsedEpisodeInfo,
+    all: &[EpisodeRecord],
+    season: i32,
+) -> Vec<EpisodeRecord> {
+    if parsed.full_season {
+        return all
+            .iter()
+            .filter(|e| e.scene_season_number == Some(season))
+            .cloned()
+            .collect();
+    }
+    if parsed.is_daily() {
+        return Vec::new();
+    }
+    if parsed.is_absolute_numbering() {
+        return parsed
+            .absolute_episode_numbers
+            .iter()
+            .filter_map(|abs| {
+                all.iter()
+                    .find(|e| e.scene_absolute_episode_number == Some(*abs))
+                    .cloned()
+            })
+            .collect();
+    }
+    parsed
+        .episode_numbers
+        .iter()
+        .filter_map(|n| {
+            all.iter()
+                .find(|e| {
+                    e.scene_season_number == Some(season) && e.scene_episode_number == Some(*n)
+                })
+                .cloned()
+        })
+        .collect()
+}
+
 /// Matches a parsed release to the library. `None` when no series fits;
 /// a series with no matching episodes comes back with an empty list.
 pub async fn match_release(
@@ -259,7 +328,18 @@ pub async fn match_release(
                 vec![]
             } else {
                 let all = index.episodes_of(db, series.id).await?;
-                pick_episodes(parsed, &all, season)
+                // A series that follows scene numbering is asked by scene
+                // numbers first; plain numbering is the fallback.
+                let scene = if series.use_scene_numbering {
+                    pick_scene_episodes(parsed, &all, season)
+                } else {
+                    Vec::new()
+                };
+                if scene.is_empty() {
+                    pick_episodes(parsed, &all, season)
+                } else {
+                    scene
+                }
             }
         }
         None => vec![],

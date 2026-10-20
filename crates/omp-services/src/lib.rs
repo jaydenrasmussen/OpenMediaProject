@@ -14,6 +14,7 @@ mod process;
 mod recycle;
 mod rename;
 mod scan;
+mod scene;
 mod series;
 mod snapshot;
 mod sync;
@@ -45,6 +46,7 @@ pub use rename::{RenamePreview, rename_movie, rename_preview, rename_previews};
 pub use scan::{
     RescanResult, UnmappedFolder, rescan_movie, unmapped_folders, unmapped_series_folders,
 };
+pub use scene::{SceneRefresh, refresh_scene_data, refresh_scene_numbering, refresh_scene_titles};
 pub use series::{
     AddSeries, RefreshStats, add_series, apply_monitor_mode, monitored_by_mode, refresh_series,
 };
@@ -70,6 +72,7 @@ pub use tv_library::{
 };
 pub use tv_match::{
     ReleaseIds, SeriesIndex, SeriesMatchType, TvMatch, find_series, match_release, pick_episodes,
+    pick_scene_episodes,
 };
 pub use tv_sync::{
     SeriesSearchSummary, TvRssSyncResult, TvSearchResult, TvSyncContext, search_episode,

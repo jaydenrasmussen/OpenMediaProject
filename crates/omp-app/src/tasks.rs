@@ -423,6 +423,15 @@ pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
         ),
         every(
             &app,
+            "scene-mappings",
+            "Update scene numbering and titles",
+            3 * minute,
+            Duration::from_secs(24 * 3600),
+            false,
+            |app| async move { refresh_scene_once(&app).await.map(Some) },
+        ),
+        every(
+            &app,
             "recycle-bin",
             "Clean the recycle bin",
             10 * minute,
@@ -471,6 +480,21 @@ pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
         ),
     ]);
     jobs
+}
+
+/// Fetches scene titles and TheXEM numbering. Does nothing when the app has
+/// no scene source (tests).
+pub async fn refresh_scene_once(app: &App) -> Result<String, String> {
+    let Some(source) = app.scene_source.as_deref() else {
+        return Ok("no scene source".into());
+    };
+    let r = omp_services::refresh_scene_data(&app.db, source)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "{} titles, {} episodes of {} series renumbered",
+        r.titles, r.renumbered_episodes, r.renumbered_series
+    ))
 }
 
 /// Re-reads movie details from the metadata provider: release dates, status

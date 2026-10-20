@@ -138,7 +138,8 @@ async fn scheduled_tasks_are_listed_with_their_schedule() {
             "recycle-bin",
             "refresh-movies",
             "refresh-series",
-            "rss-sync"
+            "rss-sync",
+            "scene-mappings"
         ]
     );
     let rss = tasks

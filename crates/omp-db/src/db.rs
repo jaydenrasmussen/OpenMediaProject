@@ -204,6 +204,10 @@ impl Db {
         PendingTvReleases(&self.main)
     }
 
+    pub fn scene_titles(&self) -> crate::repo::SceneTitles<'_> {
+        crate::repo::SceneTitles(&self.main)
+    }
+
     pub fn series(&self) -> Series<'_> {
         Series(&self.main)
     }

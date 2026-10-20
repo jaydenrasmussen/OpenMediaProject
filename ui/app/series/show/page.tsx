@@ -322,6 +322,7 @@ function SeriesSettings({ series, profiles, onSaved }: { series: Series; profile
   const [type, setType] = useState(series.series_type);
   const [profile, setProfile] = useState(series.quality_profile_id);
   const [seasonFolder, setSeasonFolder] = useState(series.season_folder);
+  const [scene, setScene] = useState(series.use_scene_numbering);
   const [newItems, setNewItems] = useState(series.monitor_new_items);
   const [monitor, setMonitor] = useState("");
   const [tags, setTags] = useState(series.tags);
@@ -331,7 +332,7 @@ function SeriesSettings({ series, profiles, onSaved }: { series: Series; profile
   async function save() {
     setBusy(true);
     try {
-      await put(`/series/${series.id}`, { series_type: type, quality_profile_id: profile, season_folder: seasonFolder, monitor_new_items: newItems, tags });
+      await put(`/series/${series.id}`, { series_type: type, quality_profile_id: profile, season_folder: seasonFolder, use_scene_numbering: scene, monitor_new_items: newItems, tags });
       if (monitor) await post(`/series/${series.id}/monitor`, { monitor });
       notify("Saved.", "good");
       onSaved();
@@ -388,6 +389,9 @@ function SeriesSettings({ series, profiles, onSaved }: { series: Series; profile
       </div>
       <label className="check">
         <input type="checkbox" checked={seasonFolder} onChange={(e) => setSeasonFolder(e.target.checked)} /> Season folders
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={scene} onChange={(e) => setScene(e.target.checked)} /> Use scene numbering (releases number episodes differently from the metadata source)
       </label>
       <div>
         <span className="small muted">Tags</span>

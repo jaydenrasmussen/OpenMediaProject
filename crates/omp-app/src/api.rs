@@ -909,6 +909,7 @@ async fn command(
                     Some(id) => crate::tv_api::refresh(&app, Some(id)).await.map(|_| ()),
                     None => Err("RefreshSeries needs a series_id".into()),
                 },
+                "RefreshSceneMappings" => tasks::refresh_scene_once(&app).await.map(|_| ()),
                 "RescanSeries" => match series_id {
                     Some(id) => omp_services::rescan_series(&app.db, id, chrono::Utc::now())
                         .await
@@ -967,6 +968,7 @@ async fn command(
             | "RefreshSeries"
             | "RefreshAllSeries"
             | "RescanSeries"
+            | "RefreshSceneMappings"
             | "RenameSeries"
             | "EpisodeSearch"
             | "SeasonSearch"

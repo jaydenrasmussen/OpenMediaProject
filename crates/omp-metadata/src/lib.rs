@@ -2,6 +2,7 @@
 //! providers are tried in order, so a hosted proxy can sit in front of TMDB
 //! and TMDB can be the fallback (see PLAN.md, Q4/Q10).
 
+pub mod scene;
 pub mod tmdb;
 mod tmdb_tv;
 
