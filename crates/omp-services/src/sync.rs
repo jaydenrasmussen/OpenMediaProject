@@ -13,6 +13,7 @@ use omp_decision::{DecisionEngine, SearchContext};
 use omp_downloads::ClientRegistry;
 use omp_indexers::{
     Flavor, IndexerClient, IndexerError, IndexerIdentity, IndexerSettings, LastSeen, MovieSearch,
+    RecentFeed,
 };
 
 use crate::{
@@ -45,9 +46,64 @@ pub async fn test_indexer(provider: &Provider) -> Result<(), String> {
     client.test().await.map_err(|e| e.to_string())
 }
 
+/// Runs indexer plugins. The app implements this over its plugin host, so
+/// this crate does not need to know how plugins are executed.
+#[async_trait::async_trait]
+pub trait PluginIndexers: Send + Sync {
+    /// Whether an indexer plugin with this id is installed.
+    fn has(&self, plugin_id: &str) -> bool;
+
+    async fn recent(&self, provider: &Provider) -> Result<Vec<ReleaseInfo>, String>;
+
+    async fn search(
+        &self,
+        provider: &Provider,
+        query: &MovieSearch,
+    ) -> Result<Vec<ReleaseInfo>, String>;
+}
+
+enum Source {
+    Builtin(IndexerClient),
+    Plugin(Arc<dyn PluginIndexers>),
+}
+
 struct PoolIndexer {
     provider: Provider,
-    client: IndexerClient,
+    source: Source,
+}
+
+impl PoolIndexer {
+    async fn recent(&self, last_seen: Option<LastSeen>) -> Result<RecentFeed, IndexerError> {
+        match &self.source {
+            Source::Builtin(client) => client.fetch_recent(last_seen).await,
+            Source::Plugin(runner) => {
+                let mut releases = runner
+                    .recent(&self.provider)
+                    .await
+                    .map_err(IndexerError::Plugin)?;
+                releases.sort_by_key(|r| std::cmp::Reverse(r.publish_date));
+                let newest = releases.first().map(|r| LastSeen {
+                    publish_date: r.publish_date,
+                    download_url: r.download_url.clone(),
+                });
+                Ok(RecentFeed {
+                    releases,
+                    fully_updated: true,
+                    newest,
+                })
+            }
+        }
+    }
+
+    async fn search(&self, query: &MovieSearch) -> Result<Vec<ReleaseInfo>, IndexerError> {
+        match &self.source {
+            Source::Builtin(client) => client.search_movie(query).await,
+            Source::Plugin(runner) => runner
+                .search(&self.provider, query)
+                .await
+                .map_err(IndexerError::Plugin),
+        }
+    }
 }
 
 /// The configured, usable indexers.
@@ -61,15 +117,37 @@ impl IndexerPool {
     /// stopping the others. `rate_limit` is the gap between requests to one
     /// indexer (Radarr uses two seconds).
     pub async fn load(db: &Db, rate_limit: Duration) -> Result<Self, ServiceError> {
+        Self::load_with(db, rate_limit, None).await
+    }
+
+    /// As [`Self::load`], also including indexers provided by plugins.
+    pub async fn load_with(
+        db: &Db,
+        rate_limit: Duration,
+        plugins: Option<Arc<dyn PluginIndexers>>,
+    ) -> Result<Self, ServiceError> {
         let mut indexers = Vec::new();
         for provider in db.providers().list(ProviderKind::Indexer).await? {
             if !provider.enabled {
                 continue;
             }
+            if let Some(plugin_id) = provider.plugin_id.clone() {
+                match &plugins {
+                    Some(runner) if runner.has(&plugin_id) => indexers.push(PoolIndexer {
+                        provider,
+                        source: Source::Plugin(runner.clone()),
+                    }),
+                    _ => tracing::warn!(
+                        indexer = %provider.name,
+                        "skipped: plugin '{plugin_id}' isn't installed"
+                    ),
+                }
+                continue;
+            }
             match build_client(&provider) {
                 Ok(client) => indexers.push(PoolIndexer {
                     provider,
-                    client: client.with_rate_limit(rate_limit),
+                    source: Source::Builtin(client.with_rate_limit(rate_limit)),
                 }),
                 Err(e) => tracing::warn!(indexer = %provider.name, "skipped: {e}"),
             }
@@ -179,7 +257,7 @@ pub async fn rss_sync(
                     publish_date,
                     download_url,
                 });
-        match idx.client.fetch_recent(last_seen).await {
+        match idx.recent(last_seen).await {
             Ok(feed) => {
                 db.providers().record_success(id).await?;
                 if let Some(newest) = &feed.newest {
@@ -323,7 +401,7 @@ pub async fn search_movie(
         if !enabled || is_blocked(db, id, ctx.now).await? {
             continue;
         }
-        match idx.client.search_movie(&query).await {
+        match idx.search(&query).await {
             Ok(found) => {
                 db.providers().record_success(id).await?;
                 releases.extend(found);

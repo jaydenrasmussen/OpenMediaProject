@@ -26,6 +26,9 @@ pub enum IndexerError {
     /// Connection refused, DNS failure, timeout.
     #[error("network error: {0}")]
     Network(String),
+    /// An indexer plugin reported a problem (or crashed).
+    #[error("plugin error: {0}")]
+    Plugin(String),
 }
 
 /// How a failure should be recorded in the provider's back-off.

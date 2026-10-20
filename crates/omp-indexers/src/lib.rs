@@ -10,7 +10,7 @@ mod request;
 mod settings;
 
 pub use caps::{Capabilities, Category};
-pub use client::{IndexerClient, IndexerIdentity, LastSeen};
+pub use client::{IndexerClient, IndexerIdentity, LastSeen, RecentFeed};
 pub use error::IndexerError;
 pub use parse::{Source, clean_xml, parse_feed, parse_size};
 pub use request::{

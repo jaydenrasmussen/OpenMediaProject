@@ -2,10 +2,15 @@
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 
+use chrono::{TimeZone, Utc};
+use omp_core::release::{DownloadProtocol, ReleaseInfo, TorrentRelease};
+use omp_db::repo::Provider;
+use omp_indexers::MovieSearch;
 use omp_plugin_host::{
     Fetcher, HttpRequest, HttpResponse, Indexer, Kind, List, Manifest, Notification, Plugin,
-    PluginHost, discover,
+    PluginHost, Protocol, SearchQuery, discover,
 };
+use omp_services::PluginIndexers;
 
 /// Plugin HTTP goes through one client: timeouts, a size cap, and no
 /// redirects (a redirect could leave the hosts a plugin declared).
@@ -152,5 +157,82 @@ impl Plugins {
             return Some(p.settings_schema().await);
         }
         None
+    }
+}
+
+fn to_release(r: omp_plugin_host::Release, provider: &Provider) -> ReleaseInfo {
+    let torrent = (r.protocol == Protocol::Torrent).then(|| TorrentRelease {
+        magnet_url: r
+            .download_url
+            .starts_with("magnet:")
+            .then(|| r.download_url.clone()),
+        info_hash: r.info_hash.clone(),
+        seeders: r.seeders.map(|s| s as i32),
+        peers: r
+            .seeders
+            .zip(r.leechers)
+            .map(|(s, l)| (s + l) as i32)
+            .or(r.leechers.map(|l| l as i32)),
+    });
+    ReleaseInfo {
+        guid: r.guid,
+        title: r.title,
+        size: r.size,
+        download_url: r.download_url,
+        indexer_id: provider.id as i32,
+        indexer: provider.name.clone(),
+        indexer_priority: provider.priority,
+        protocol: match r.protocol {
+            Protocol::Usenet => DownloadProtocol::Usenet,
+            Protocol::Torrent => DownloadProtocol::Torrent,
+        },
+        publish_date: Utc
+            .timestamp_opt(r.publish_date, 0)
+            .single()
+            .unwrap_or_else(Utc::now),
+        container: None,
+        indexer_flags: Default::default(),
+        imdb_id: None,
+        tmdb_id: 0,
+        torrent,
+    }
+}
+
+#[async_trait::async_trait]
+impl PluginIndexers for Plugins {
+    fn has(&self, plugin_id: &str) -> bool {
+        self.indexers.contains_key(plugin_id)
+    }
+
+    async fn recent(&self, provider: &Provider) -> Result<Vec<ReleaseInfo>, String> {
+        let plugin = self
+            .indexer(provider.plugin_id.as_deref().unwrap_or_default())
+            .ok_or("the plugin isn't installed")?;
+        let found = plugin
+            .recent(&provider.settings.to_string())
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        Ok(found.into_iter().map(|r| to_release(r, provider)).collect())
+    }
+
+    async fn search(
+        &self,
+        provider: &Provider,
+        query: &MovieSearch,
+    ) -> Result<Vec<ReleaseInfo>, String> {
+        let plugin = self
+            .indexer(provider.plugin_id.as_deref().unwrap_or_default())
+            .ok_or("the plugin isn't installed")?;
+        let q = SearchQuery {
+            term: query.titles.first().cloned().unwrap_or_default(),
+            imdb_id: query.imdb_id.clone(),
+            tmdb_id: Some(query.tmdb_id),
+            year: u32::try_from(query.year).ok().filter(|y| *y > 0),
+        };
+        let found = plugin
+            .search(&q, &provider.settings.to_string())
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        Ok(found.into_iter().map(|r| to_release(r, provider)).collect())
     }
 }

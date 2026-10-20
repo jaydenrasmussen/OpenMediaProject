@@ -17,6 +17,8 @@ export interface Implementation {
   }>;
   /** Short description for the list, from the settings. */
   describe: (s: Record<string, unknown>) => string;
+  /** Set when a plugin provides this implementation. */
+  pluginId?: string;
 }
 
 interface Props {
@@ -40,7 +42,7 @@ export function ProviderManager({ path, noun, implementations, searchSwitches, h
     setDraft({
       name: "",
       implementation: impl.id,
-      plugin_id: null,
+      plugin_id: impl.pluginId ?? null,
       settings: structuredClone(impl.defaults),
       tags: [],
       enabled: true,
@@ -188,7 +190,7 @@ function Editor({
             disabled={!!draft.id}
             onChange={(e) => {
               const next = implementations.find((i) => i.id === e.target.value)!;
-              set({ implementation: next.id, settings: structuredClone(next.defaults) });
+              set({ implementation: next.id, plugin_id: next.pluginId ?? null, settings: structuredClone(next.defaults) });
             }}
           >
             {implementations.map((i) => (

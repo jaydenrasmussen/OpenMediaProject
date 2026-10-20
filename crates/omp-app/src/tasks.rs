@@ -53,7 +53,8 @@ pub async fn rss_sync_once(app: &App) -> Result<Option<RssSyncResult>, ServiceEr
     let Ok(_running) = app.rss_lock.try_lock() else {
         return Ok(None);
     };
-    let pool = IndexerPool::load(&app.db, Duration::from_secs(2)).await?;
+    let pool =
+        IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins.clone())).await?;
     let result = rss_sync(
         &app.db,
         &app.engine,
@@ -71,7 +72,8 @@ pub async fn search_movie_once(
     mode: SearchMode,
     user_invoked: bool,
 ) -> Result<SearchResult, ServiceError> {
-    let pool = IndexerPool::load(&app.db, Duration::from_secs(2)).await?;
+    let pool =
+        IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins.clone())).await?;
     search_movie(
         &app.db,
         &app.engine,

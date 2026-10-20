@@ -34,9 +34,11 @@ impl MediaProbe for NoProbe {
     }
 }
 
-/// Builds `plugins/webhook` and lays it out the way the app expects.
-fn install_webhook(into: &std::path::Path) {
-    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins/webhook");
+/// Builds `plugins/<name>` and lays it out the way the app expects.
+fn install_plugin(into: &std::path::Path, name: &str, artifact: &str) {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../plugins")
+        .join(name);
     let cargo = String::from_utf8(
         Command::new("rustup")
             .args(["which", "cargo"])
@@ -58,12 +60,12 @@ fn install_webhook(into: &std::path::Path) {
         .status()
         .unwrap();
     assert!(status.success());
-    let dest = into.join("webhook");
+    let dest = into.join(name);
     std::fs::create_dir_all(&dest).unwrap();
     std::fs::copy(source.join("plugin.toml"), dest.join("plugin.toml")).unwrap();
     std::fs::copy(
-        source.join("target/wasm32-wasip2/release/webhook.wasm"),
-        dest.join("webhook.wasm"),
+        source.join("target/wasm32-wasip2/release").join(artifact),
+        dest.join(artifact),
     )
     .unwrap();
 }
@@ -124,7 +126,8 @@ async fn rig(with_plugin: bool) -> Rig {
     let plugin_dir = dir.path().join("plugins");
     std::fs::create_dir_all(&plugin_dir).unwrap();
     if with_plugin {
-        install_webhook(&plugin_dir);
+        install_plugin(&plugin_dir, "webhook", "webhook.wasm");
+        install_plugin(&plugin_dir, "toy-indexer", "toy_indexer.wasm");
     }
     config.plugin_dirs = vec![plugin_dir];
     let app = App::new(
@@ -176,8 +179,16 @@ async fn plugins_are_listed_and_describe_their_settings() {
     let r = rig(true).await;
     let (s, list) = call(&r, Method::GET, "/api/v1/plugin", None).await;
     assert_eq!(s, StatusCode::OK);
-    assert_eq!(list["plugins"][0]["id"], "webhook");
-    assert_eq!(list["plugins"][0]["kind"], "notification");
+    let kinds: Vec<_> = list["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| (p["id"].as_str().unwrap(), p["kind"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        kinds,
+        [("toy-indexer", "indexer"), ("webhook", "notification")]
+    );
     assert_eq!(list["problems"], json!([]));
     let (s, schema) = call(&r, Method::GET, "/api/v1/plugin/webhook/schema", None).await;
     assert_eq!(s, StatusCode::OK);
@@ -346,4 +357,88 @@ fn omp_metadata_movie() -> omp_core::movie::MovieMetadata {
         status: MovieStatus::Released,
         ..Default::default()
     }
+}
+
+async fn add_matrix(r: &Rig) -> i64 {
+    let metadata_id = r
+        .app
+        .db
+        .movies()
+        .upsert_metadata(&omp_metadata_movie())
+        .await
+        .unwrap();
+    let profile = r.app.db.quality_profiles().list().await.unwrap()[0].id;
+    r.app
+        .db
+        .movies()
+        .add(&NewMovie {
+            metadata_id,
+            monitored: true,
+            minimum_availability: MovieStatus::Announced,
+            quality_profile_id: profile,
+            path: "/movies/The Matrix (1999)".into(),
+            root_folder_path: None,
+            tags: vec![],
+        })
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn indexer_plugins_are_validated_tested_and_searched() {
+    let r = rig(true).await;
+    let toy = |settings: Value| json!({ "name": "Toy", "implementation": "toy-indexer", "plugin_id": "toy-indexer", "settings": settings });
+
+    assert_eq!(
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/indexer",
+            Some(json!({ "name": "x", "implementation": "ghost", "plugin_id": "ghost", "settings": {} }))
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let (_, ok) = call(
+        &r,
+        Method::POST,
+        "/api/v1/indexer/test",
+        Some(toy(json!({}))),
+    )
+    .await;
+    assert_eq!(ok["ok"], true, "{ok}");
+    let (_, bad) = call(
+        &r,
+        Method::POST,
+        "/api/v1/indexer/test",
+        Some(toy(json!({ "broken": true }))),
+    )
+    .await;
+    assert_eq!(
+        (bad["ok"].clone(), bad["error"].clone()),
+        (json!(false), json!("toy plugin is broken"))
+    );
+
+    let (s, saved) = call(&r, Method::POST, "/api/v1/indexer", Some(toy(json!({})))).await;
+    assert_eq!(s, StatusCode::CREATED, "{saved}");
+
+    // Interactive search asks the plugin and lists what it found.
+    let movie_id = add_matrix(&r).await;
+    let (s, found) = call(
+        &r,
+        Method::GET,
+        &format!("/api/v1/release?movie_id={movie_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{found}");
+    assert!(
+        found["indexer_failures"].as_array().unwrap().is_empty(),
+        "{found}"
+    );
+    let releases = found["releases"].as_array().unwrap();
+    assert_eq!(releases.len(), 1, "{found}");
+    assert_eq!(releases[0]["title"], "The Matrix 1080p WEB-DL");
+    assert_eq!(releases[0]["indexer"], "Toy");
 }

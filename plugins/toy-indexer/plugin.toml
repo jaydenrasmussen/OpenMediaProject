@@ -1,0 +1,7 @@
+id = "toy-indexer"
+name = "Toy indexer"
+version = "0.1.0"
+kind = "indexer"
+wasm = "toy_indexer.wasm"
+description = "Echoes searches back as one release. For testing the plugin host."
+allowed_hosts = []

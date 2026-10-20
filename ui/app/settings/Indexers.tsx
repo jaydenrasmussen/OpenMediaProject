@@ -1,5 +1,6 @@
 "use client";
 
+import { usePluginImplementations } from "./PluginFields";
 import { ProviderManager, type Implementation } from "./ProviderEditor";
 
 function Fields({ settings, onChange }: { settings: Record<string, unknown>; onChange: (s: Record<string, unknown>) => void }) {
@@ -45,13 +46,14 @@ const IMPLEMENTATIONS: Implementation[] = [
 ];
 
 export function Indexers() {
+  const fromPlugins = usePluginImplementations("indexer");
   return (
     <ProviderManager
       path="indexer"
       noun="indexer"
-      implementations={IMPLEMENTATIONS}
+      implementations={[...IMPLEMENTATIONS, ...fromPlugins]}
       searchSwitches
-      help="Indexers are where releases are found. Any Newznab or Torznab compatible site works; use the Test button to check the URL and key."
+      help="Indexers are where releases are found. Any Newznab or Torznab compatible site works, and plugins can add others. Use the Test button to check the settings."
     />
   );
 }

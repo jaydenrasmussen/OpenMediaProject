@@ -1247,6 +1247,16 @@ fn validate_notification(app: &App, p: &Provider) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// An indexer that names a plugin must name an installed indexer plugin.
+fn validate_indexer_plugin(app: &App, p: &Provider) -> Result<(), ApiError> {
+    match p.plugin_id.as_deref() {
+        Some(id) if app.plugins.indexer(id).is_none() => Err(ApiError::bad_request(format!(
+            "no indexer plugin '{id}' is installed"
+        ))),
+        _ => Ok(()),
+    }
+}
+
 async fn save_provider(
     app: Arc<App>,
     kind: ProviderKind,
@@ -1257,6 +1267,9 @@ async fn save_provider(
     validate_provider(kind, &p)?;
     if kind == ProviderKind::Notification {
         validate_notification(&app, &p)?;
+    }
+    if kind == ProviderKind::Indexer {
+        validate_indexer_plugin(&app, &p)?;
     }
     let status = match id {
         Some(id) => {
@@ -1544,8 +1557,21 @@ async fn test_provider(app: Arc<App>, kind: ProviderKind, body: ProviderBody) ->
     if kind == ProviderKind::Notification {
         validate_notification(&app, &p)?;
     }
+    if kind == ProviderKind::Indexer {
+        validate_indexer_plugin(&app, &p)?;
+    }
     let outcome = match kind {
-        ProviderKind::Indexer => omp_services::test_indexer(&p).await,
+        ProviderKind::Indexer => match p
+            .plugin_id
+            .as_deref()
+            .and_then(|id| app.plugins.indexer(id))
+        {
+            Some(plugin) => plugin
+                .test(&p.settings.to_string())
+                .await
+                .map_err(|e| format!("{e:#}")),
+            None => omp_services::test_indexer(&p).await,
+        },
         ProviderKind::DownloadClient => crate::clients::test_client(&p, &app.config).await,
         ProviderKind::Notification => {
             crate::notify::send(&app, &p, &crate::notify::test_event()).await
