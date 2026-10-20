@@ -493,8 +493,10 @@ mod tests {
             r[0][0].page_url(0)
         );
         // Without TV search, plain search over the anime categories is the fallback.
-        let mut c = Capabilities::default();
-        c.tv_params = None;
+        let mut c = Capabilities {
+            tv_params: None,
+            ..Default::default()
+        };
         let r = generate_recent_tv_requests(&settings(), &c);
         assert!(r[0][0].page_url(0).contains("t=search&cat=3,4&"));
         c.search_params = None;
