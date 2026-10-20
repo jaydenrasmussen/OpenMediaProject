@@ -321,3 +321,97 @@ export interface Exclusion {
   title: string;
   year: number;
 }
+
+export interface SeriesSeason {
+  season_number: number;
+  monitored: boolean;
+  title: string | null;
+  episode_count: number;
+  total_episode_count: number;
+  monitored_episode_count: number;
+  episode_file_count: number;
+  aired_episode_count: number;
+  missing_episode_count: number;
+  size_on_disk: number;
+}
+
+export interface Series {
+  id: number;
+  tmdb_id: number;
+  tvdb_id: number | null;
+  imdb_id: string | null;
+  title: string;
+  original_title: string;
+  year: number;
+  overview: string | null;
+  status: "continuing" | "ended" | "upcoming" | "deleted";
+  network: string | null;
+  runtime: number;
+  genres: string[];
+  certification: string | null;
+  first_aired: string | null;
+  last_aired: string | null;
+  images: Cover[];
+  series_type: "standard" | "daily" | "anime";
+  monitored: boolean;
+  monitor_new_items: "all" | "none";
+  quality_profile_id: number;
+  season_folder: boolean;
+  use_scene_numbering: boolean;
+  path: string;
+  root_folder_path: string | null;
+  tags: number[];
+  added: string;
+  last_info_sync: string | null;
+  seasons: SeriesSeason[];
+  next_airing: string | null;
+  episode_count: number;
+  total_episode_count: number;
+  monitored_episode_count: number;
+  episode_file_count: number;
+  aired_episode_count: number;
+  missing_episode_count: number;
+  size_on_disk: number;
+}
+
+export interface EpisodeFile {
+  id: number;
+  relative_path: string;
+  size: number;
+  date_added: string;
+  quality: string;
+  release_group: string | null;
+  scene_name: string | null;
+}
+
+export interface Episode {
+  id: number;
+  series_id: number;
+  season_number: number;
+  episode_number: number;
+  absolute_episode_number: number | null;
+  title: string;
+  overview: string | null;
+  air_date: string | null;
+  air_date_utc: string | null;
+  runtime: number;
+  monitored: boolean;
+  has_file: boolean;
+  file: EpisodeFile | null;
+  last_search_time: string | null;
+  finale_type: string | null;
+}
+
+export interface SeriesLookupResult {
+  tmdb_id: number;
+  tvdb_id: number | null;
+  imdb_id: string | null;
+  title: string;
+  year: number;
+  overview: string | null;
+  status: string;
+  network: string | null;
+  images: Cover[];
+  suggested_type: "standard" | "daily" | "anime";
+  in_library: number | null;
+}

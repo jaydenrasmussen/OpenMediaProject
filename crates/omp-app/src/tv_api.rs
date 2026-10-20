@@ -94,6 +94,9 @@ fn status_name(s: omp_core::tv::SeriesStatus) -> &'static str {
 /// Episode and file counts for a series or one of its seasons.
 #[derive(Default, Clone, Copy)]
 struct Counts {
+    /// Every episode the provider lists.
+    total: usize,
+    /// Episodes that are monitored or already have a file: what "complete" is measured against.
     episodes: usize,
     monitored: usize,
     with_files: usize,
@@ -107,7 +110,8 @@ fn count(episodes: &[&EpisodeRecord], files: &[EpisodeFileRecord]) -> Counts {
     let mut c = Counts::default();
     let mut seen_files = std::collections::HashSet::new();
     for e in episodes {
-        c.episodes += 1;
+        c.total += 1;
+        c.episodes += usize::from(e.monitored || e.has_file());
         c.monitored += usize::from(e.monitored);
         c.with_files += usize::from(e.has_file());
         let aired = e.has_aired(now);
@@ -126,6 +130,7 @@ fn count(episodes: &[&EpisodeRecord], files: &[EpisodeFileRecord]) -> Counts {
 fn counts_json(c: Counts) -> Value {
     json!({
         "episode_count": c.episodes,
+        "total_episode_count": c.total,
         "monitored_episode_count": c.monitored,
         "episode_file_count": c.with_files,
         "aired_episode_count": c.aired,

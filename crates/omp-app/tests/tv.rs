@@ -296,7 +296,11 @@ async fn adding_validates_then_stores_the_series_with_its_episodes() {
     assert_eq!(s, StatusCode::CREATED, "{series}");
     assert_eq!(series["title"], "Breaking Bad");
     assert_eq!(series["path"], format!("{root}/Breaking Bad (2008)"));
-    assert_eq!(series["episode_count"], 4);
+    assert_eq!(series["total_episode_count"], 4);
+    assert_eq!(
+        series["episode_count"], 1,
+        "only what is monitored (or has a file) counts toward complete"
+    );
     assert_eq!(series["monitored_episode_count"], 1, "future only");
     assert_eq!(series["series_type"], "standard");
     let id = series["id"].as_i64().unwrap();
@@ -315,7 +319,7 @@ async fn adding_validates_then_stores_the_series_with_its_episodes() {
             (
                 s["season_number"].as_i64().unwrap(),
                 s["monitored"].as_bool().unwrap(),
-                s["episode_count"].as_i64().unwrap(),
+                s["total_episode_count"].as_i64().unwrap(),
             )
         })
         .collect();
@@ -497,7 +501,7 @@ async fn editing_a_series_and_refreshing_it() {
     assert_eq!(s, StatusCode::OK);
     let (_, after) = get(&r, &format!("/api/v1/series/{id}")).await;
     assert_eq!(after["title"], "Breaking Bad (Remastered)");
-    assert_eq!(after["episode_count"], 5);
+    assert_eq!(after["total_episode_count"], 5);
     assert_eq!(after["series_type"], "anime", "the choice survives");
 
     assert_eq!(

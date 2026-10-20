@@ -10,7 +10,9 @@ import { ToastProvider } from "./toast";
 
 const NAV = [
   { href: "/", label: "Movies" },
+  { href: "/series/", label: "Series" },
   { href: "/add/", label: "Add movie" },
+  { href: "/series/add/", label: "Add series" },
   { href: "/import/", label: "Import" },
   { href: "/calendar/", label: "Calendar" },
   { href: "/wanted/", label: "Wanted" },
@@ -54,8 +56,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
     return <AuthScreen setup={phase === "setup"} onDone={check} />;
   }
 
-  const active = (href: string) =>
-    href === "/" ? pathname === "/" || pathname.startsWith("/movie") : pathname.startsWith(href);
+  const active = (href: string) => {
+    if (href === "/") return pathname === "/" || pathname.startsWith("/movie");
+    if (href === "/series/") return pathname.startsWith("/series") && !pathname.startsWith("/series/add");
+    return pathname.startsWith(href);
+  };
 
   return (
     <ToastProvider>
