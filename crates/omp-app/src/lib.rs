@@ -15,6 +15,7 @@ mod notify;
 mod plugins;
 mod releases;
 mod tasks;
+mod tv_activity;
 mod tv_api;
 
 pub use api::router;

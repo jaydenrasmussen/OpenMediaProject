@@ -5,7 +5,7 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use omp_db::Db;
-use omp_decision::DecisionEngine;
+use omp_decision::{DecisionEngine, tv::TvDecisionEngine};
 use omp_downloads::ClientRegistry;
 use omp_metadata::{MovieMetadataProvider, SeriesMetadataProvider, tmdb::TmdbProvider};
 use omp_services::{DiskSpace, DownloadMonitor, Ffprobe, MediaProbe};
@@ -40,6 +40,7 @@ pub struct App {
     pub db: Db,
     pub config: AppConfig,
     pub engine: DecisionEngine,
+    pub tv_engine: TvDecisionEngine,
     pub monitor: DownloadMonitor,
     pub metadata: Option<Arc<dyn MovieMetadataProvider>>,
     pub series_metadata: Option<Arc<dyn SeriesMetadataProvider>>,
@@ -52,9 +53,12 @@ pub struct App {
     pub(crate) login_limiter: crate::auth::LoginLimiter,
     /// Interactive search results, kept so a chosen release can be grabbed.
     pub(crate) search_cache: std::sync::Mutex<crate::releases::SearchCache>,
+    pub(crate) tv_search_cache:
+        std::sync::Mutex<crate::releases::SearchCache<omp_services::TvEvaluation>>,
     tasks: std::sync::Mutex<std::collections::BTreeMap<&'static str, TaskStatus>>,
     shutdown: tokio::sync::Notify,
     pub(crate) rss_lock: tokio::sync::Mutex<()>,
+    pub(crate) tv_rss_lock: tokio::sync::Mutex<()>,
     pub(crate) process_lock: tokio::sync::Mutex<()>,
     registry: RwLock<Arc<ClientRegistry>>,
 }
@@ -104,6 +108,7 @@ impl App {
         let app = Arc::new(Self {
             db,
             engine: DecisionEngine::default(),
+            tv_engine: TvDecisionEngine::default(),
             monitor: DownloadMonitor::new(),
             metadata,
             series_metadata,
@@ -117,9 +122,11 @@ impl App {
                 .await
                 .map_err(|e| anyhow::anyhow!("{}", e.1))?,
             search_cache: std::sync::Mutex::default(),
+            tv_search_cache: std::sync::Mutex::default(),
             tasks: std::sync::Mutex::default(),
             shutdown: tokio::sync::Notify::new(),
             rss_lock: tokio::sync::Mutex::new(()),
+            tv_rss_lock: tokio::sync::Mutex::new(()),
             process_lock: tokio::sync::Mutex::new(()),
             registry: RwLock::new(Arc::new(ClientRegistry::default())),
         });

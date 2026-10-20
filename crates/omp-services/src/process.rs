@@ -11,6 +11,7 @@ use crate::{
     evaluate::ServiceError,
     import::{FileOutcome, ImportConfig, ImportRequest, Importer, MediaProbe},
     tracking::{DownloadMonitor, MonitorOptions, RefreshResult, TrackedState},
+    tv_import::{TvImportRequest, TvImporter},
 };
 
 pub struct ProcessOptions {
@@ -62,27 +63,48 @@ pub async fn process_downloads(
         probe,
         disk,
     };
+    let tv_importer = TvImporter {
+        db,
+        config,
+        probe,
+        disk,
+    };
     for tracked in monitor.snapshot() {
         if tracked.state != TrackedState::ImportPending {
             continue;
         }
         let id = tracked.item.download_id.clone();
-        let (Some(movie_id), Some(output)) =
-            (tracked.movie_id, tracked.item.output_path.as_deref())
-        else {
+        let Some(output) = tracked.item.output_path.as_deref() else {
             continue;
         };
-        monitor.set_state(&id, TrackedState::Importing);
-        let imported = importer
-            .import(&ImportRequest {
-                movie_id,
-                output_path: Path::new(output),
-                download_id: Some(&id),
-                download_title: &tracked.item.title,
-                can_move_files: tracked.item.can_move_files,
-                now: options.now,
-            })
-            .await?;
+        let imported = if let Some(series_id) = tracked.series_id {
+            monitor.set_state(&id, TrackedState::Importing);
+            tv_importer
+                .import(&TvImportRequest {
+                    series_id,
+                    output_path: Path::new(output),
+                    download_id: Some(&id),
+                    download_title: &tracked.item.title,
+                    episode_ids: &tracked.episode_ids,
+                    can_move_files: tracked.item.can_move_files,
+                    now: options.now,
+                })
+                .await?
+        } else if let Some(movie_id) = tracked.movie_id {
+            monitor.set_state(&id, TrackedState::Importing);
+            importer
+                .import(&ImportRequest {
+                    movie_id,
+                    output_path: Path::new(output),
+                    download_id: Some(&id),
+                    download_title: &tracked.item.title,
+                    can_move_files: tracked.item.can_move_files,
+                    now: options.now,
+                })
+                .await?
+        } else {
+            continue;
+        };
 
         if imported.imported() {
             monitor.set_state(&id, TrackedState::Imported);

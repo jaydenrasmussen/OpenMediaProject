@@ -2,12 +2,12 @@
 
 use std::{sync::Arc, time::Duration};
 
-use omp_decision::model::QueueEntry;
-use omp_parser::title::parse_movie_title;
+use omp_decision::{model::QueueEntry, tv::TvQueueEntry};
+use omp_parser::{title::parse_movie_title, tv::parse_title as parse_tv_title};
 use omp_services::{
     IndexerPool, ProcessOptions, ProcessResult, QueueMap, RssSyncResult, SearchMode, SearchResult,
-    ServiceError, SyncContext, TrackedState, load_import_config, process_downloads, rss_sync,
-    search_movie,
+    ServiceError, SyncContext, TrackedState, TvQueueMap, TvRssSyncResult, TvSearchResult,
+    TvSyncContext, load_import_config, process_downloads, rss_sync, search_movie, tv_rss_sync,
 };
 use tokio::task::JoinHandle;
 
@@ -34,6 +34,141 @@ fn queue_map(app: &App) -> QueueMap {
         });
     }
     map
+}
+
+/// As [`queue_map`], for the TV downloads on their way.
+fn tv_queue_map(app: &App) -> TvQueueMap {
+    let mut map = TvQueueMap::new();
+    for t in app.monitor.snapshot() {
+        if matches!(
+            t.state,
+            TrackedState::Imported | TrackedState::Failed | TrackedState::Ignored
+        ) {
+            continue;
+        }
+        let Some(series_id) = t.series_id else {
+            continue;
+        };
+        let quality = parse_tv_title(&t.item.title)
+            .map(|p| p.quality)
+            .unwrap_or_default();
+        map.entry(series_id).or_default().push(TvQueueEntry {
+            episode_ids: t.episode_ids.clone(),
+            quality,
+            custom_format_ids: Vec::new(),
+            failed_pending: t.state == TrackedState::FailedPending,
+        });
+    }
+    map
+}
+
+fn tv_sync_context(app: &App, user_invoked: bool) -> TvSyncContext {
+    TvSyncContext {
+        now: chrono::Utc::now(),
+        process_start: app.started,
+        category: Some(app.config.download_category.clone()),
+        disk: app.disk.clone(),
+        queue: tv_queue_map(app),
+        user_invoked,
+    }
+}
+
+/// As [`rss_sync_once`], for TV.
+pub async fn tv_rss_sync_once(app: &App) -> Result<Option<TvRssSyncResult>, ServiceError> {
+    let Ok(_running) = app.tv_rss_lock.try_lock() else {
+        return Ok(None);
+    };
+    let pool =
+        IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins.clone())).await?;
+    let (result, _) = tv_rss_sync(
+        &app.db,
+        &app.tv_engine,
+        &pool,
+        &app.registry(),
+        tv_sync_context(app, false),
+    )
+    .await?;
+    Ok(Some(result))
+}
+
+pub async fn search_episode_once(
+    app: &App,
+    episode_id: i64,
+    mode: SearchMode,
+    user_invoked: bool,
+) -> Result<TvSearchResult, ServiceError> {
+    let pool =
+        IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins.clone())).await?;
+    omp_services::search_episode(
+        &app.db,
+        &app.tv_engine,
+        &pool,
+        &app.registry(),
+        episode_id,
+        mode,
+        &tv_sync_context(app, user_invoked),
+    )
+    .await
+}
+
+pub async fn search_season_once(
+    app: &App,
+    series_id: i64,
+    season: i32,
+    mode: SearchMode,
+    user_invoked: bool,
+) -> Result<TvSearchResult, ServiceError> {
+    let pool =
+        IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins.clone())).await?;
+    omp_services::search_season(
+        &app.db,
+        &app.tv_engine,
+        &pool,
+        &app.registry(),
+        series_id,
+        season,
+        mode,
+        &tv_sync_context(app, user_invoked),
+    )
+    .await
+}
+
+/// Looks for the missing episodes of one series, or of all monitored ones.
+/// Returns how many searches ran and how many releases were grabbed.
+pub async fn search_missing_once(
+    app: &App,
+    only: Option<i64>,
+    user_invoked: bool,
+) -> Result<(usize, usize), ServiceError> {
+    let pool =
+        IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins.clone())).await?;
+    let ids: Vec<i64> = match only {
+        Some(id) => vec![id],
+        None => app
+            .db
+            .series()
+            .list()
+            .await?
+            .into_iter()
+            .filter(|s| s.monitored)
+            .map(|s| s.id)
+            .collect(),
+    };
+    let (mut searches, mut grabbed) = (0, 0);
+    for id in ids {
+        let r = omp_services::search_missing(
+            &app.db,
+            &app.tv_engine,
+            &pool,
+            &app.registry(),
+            id,
+            &tv_sync_context(app, user_invoked),
+        )
+        .await?;
+        searches += r.searches;
+        grabbed += r.grabbed;
+    }
+    Ok((searches, grabbed))
 }
 
 fn sync_context(app: &App, user_invoked: bool) -> SyncContext {
@@ -174,15 +309,17 @@ pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
             app.config.rss_interval,
             false,
             |app| async move {
-                match rss_sync_once(&app).await {
-                    Ok(Some(r)) => Ok(Some(format!(
+                let movies = rss_sync_once(&app).await.map_err(|e| e.to_string())?;
+                let tv = tv_rss_sync_once(&app).await.map_err(|e| e.to_string())?;
+                Ok(match (movies, tv) {
+                    (None, None) => None,
+                    (m, t) => Some(format!(
                         "{} releases fetched, {} grabbed",
-                        r.fetched,
-                        r.processed.grabbed.len()
-                    ))),
-                    Ok(None) => Ok(None),
-                    Err(e) => Err(e.to_string()),
-                }
+                        m.as_ref().map_or(0, |r| r.fetched) + t.as_ref().map_or(0, |r| r.fetched),
+                        m.as_ref().map_or(0, |r| r.processed.grabbed.len())
+                            + t.as_ref().map_or(0, |r| r.processed.grabbed.len())
+                    )),
+                })
             },
         ),
         every(

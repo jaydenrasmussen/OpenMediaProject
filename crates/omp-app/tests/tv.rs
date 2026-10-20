@@ -592,3 +592,75 @@ async fn removing_a_series_never_deletes_outside_the_root_folders() {
     );
     assert!(r.app.db.episodes().for_series(id).await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn wanted_calendar_history_and_blocklist_cover_episodes() {
+    let r = rig(true).await;
+    let root = add_root(&r).await;
+    let p = profile(&r).await;
+    let (s, series) = call(
+        &r,
+        Method::POST,
+        "/api/v1/series",
+        Some(json!({ "tmdb_id": 1396, "quality_profile_id": p, "root_folder_path": root, "monitor": "all" })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{series}");
+    let id = series["id"].as_i64().unwrap();
+
+    // Two aired, monitored episodes have no file (the special and the future one don't count).
+    let (_, missing) = get(&r, "/api/v1/wanted/episodes/missing").await;
+    assert!(missing["total"].as_i64().unwrap() >= 2, "{missing}");
+    assert_eq!(missing["items"][0]["series_title"], "Breaking Bad");
+    let (_, paged) = get(&r, "/api/v1/wanted/episodes/missing?limit=1").await;
+    assert_eq!(paged["items"].as_array().unwrap().len(), 1);
+    let (_, cutoff) = get(&r, "/api/v1/wanted/episodes/cutoff").await;
+    assert_eq!(cutoff["total"], 0);
+
+    // The future episode appears on the calendar.
+    let start = Utc::now().date_naive();
+    let end = start + Duration::days(60);
+    let (s, cal) = get(
+        &r,
+        &format!("/api/v1/calendar/episodes?start={start}&end={end}"),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(cal.as_array().unwrap().len(), 1, "{cal}");
+    assert_eq!(cal[0]["season_number"], 2);
+
+    assert_eq!(get(&r, "/api/v1/history/episode").await.1, json!([]));
+    assert_eq!(get(&r, "/api/v1/blocklist/series").await.1, json!([]));
+    assert_eq!(
+        call(&r, Method::DELETE, "/api/v1/blocklist/series/9", None)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+
+    // Searches need to know what to look for.
+    assert_eq!(
+        get(&r, "/api/v1/release/episode").await.0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        get(&r, "/api/v1/release/episode?episode_id=999").await.0,
+        StatusCode::NOT_FOUND
+    );
+    for (cmd, ok) in [
+        (json!({ "name": "EpisodeSearch" }), false),
+        (json!({ "name": "SeasonSearch", "series_id": id }), false),
+        (json!({ "name": "SeriesSearch" }), false),
+        (
+            json!({ "name": "SeriesSearch", "series_id": id, "wait": true }),
+            true,
+        ),
+        (
+            json!({ "name": "MissingEpisodesSearch", "wait": true }),
+            true,
+        ),
+    ] {
+        let (s, body) = call(&r, Method::POST, "/api/v1/command", Some(cmd.clone())).await;
+        assert_eq!(s.is_success(), ok, "{cmd}: {s} {body}");
+    }
+}

@@ -139,7 +139,7 @@ fn movie_json(m: &MovieRecord, file: Option<&MovieFileRecord>) -> Value {
     })
 }
 
-fn event_name(e: HistoryEvent) -> &'static str {
+pub(crate) fn event_name(e: HistoryEvent) -> &'static str {
     match e {
         HistoryEvent::Unknown => "unknown",
         HistoryEvent::Grabbed => "grabbed",
@@ -606,6 +606,8 @@ async fn queue(State(app): Shared) -> Json<Value> {
                 "download_id": t.item.download_id,
                 "title": t.item.title,
                 "movie_id": t.movie_id,
+                "series_id": t.series_id,
+                "episode_ids": t.episode_ids,
                 "state": format!("{:?}", t.state),
                 "status": format!("{:?}", t.item.status),
                 "client": t.client_name,
@@ -655,7 +657,40 @@ async fn remove_queue_item(
         .map_err(|e| ApiError::internal(e.to_string()))?;
     app.monitor.forget(&download_id);
 
-    if q.blocklist {
+    if q.blocklist
+        && let Some(series_id) = tracked.series_id
+    {
+        let grabs: Vec<_> = app
+            .db
+            .episode_history()
+            .by_download_id(&download_id)
+            .await?
+            .into_iter()
+            .filter(|h| h.event == HistoryEvent::Grabbed)
+            .collect();
+        let refs: Vec<_> = grabs.iter().collect();
+        omp_services::record_tv_failure(
+            &app.db,
+            &refs,
+            &download_id,
+            tracked.protocol,
+            "Removed from the queue and blocklisted".into(),
+            chrono::Utc::now(),
+        )
+        .await?;
+        if q.search {
+            let app = app.clone();
+            let first = grabs.first().map(|g| g.episode_id);
+            tokio::spawn(async move {
+                let Some(episode_id) = first else { return };
+                if let Err(e) =
+                    tasks::search_episode_once(&app, episode_id, SearchMode::Automatic, true).await
+                {
+                    tracing::warn!(series_id, "search after blocklisting failed: {e}");
+                }
+            });
+        }
+    } else if q.blocklist {
         let grab = app
             .db
             .history()
@@ -800,6 +835,8 @@ struct Command {
     name: String,
     movie_id: Option<i64>,
     series_id: Option<i64>,
+    episode_id: Option<i64>,
+    season_number: Option<i32>,
     /// Run to completion before answering (for scripts and tests).
     #[serde(default)]
     wait: bool,
@@ -814,6 +851,8 @@ async fn command(
         let name = cmd.name.clone();
         let movie_id = cmd.movie_id;
         let series_id = cmd.series_id;
+        let episode_id = cmd.episode_id;
+        let season_number = cmd.season_number;
         async move {
             match name.as_str() {
                 "RssSync" => tasks::rss_sync_once(&app)
@@ -870,6 +909,33 @@ async fn command(
                     Some(id) => crate::tv_api::refresh(&app, Some(id)).await.map(|_| ()),
                     None => Err("RefreshSeries needs a series_id".into()),
                 },
+                "EpisodeSearch" => match episode_id {
+                    Some(id) => tasks::search_episode_once(&app, id, SearchMode::Automatic, true)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("EpisodeSearch needs an episode_id".into()),
+                },
+                "SeasonSearch" => match (series_id, season_number) {
+                    (Some(id), Some(season)) => {
+                        tasks::search_season_once(&app, id, season, SearchMode::Automatic, true)
+                            .await
+                            .map(|_| ())
+                            .map_err(|e| e.to_string())
+                    }
+                    _ => Err("SeasonSearch needs a series_id and a season_number".into()),
+                },
+                "SeriesSearch" => match series_id {
+                    Some(id) => tasks::search_missing_once(&app, Some(id), true)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("SeriesSearch needs a series_id".into()),
+                },
+                "MissingEpisodesSearch" => tasks::search_missing_once(&app, None, true)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
                 "RefreshAllSeries" => crate::tv_api::refresh(&app, None).await.map(|_| ()),
                 "RefreshMovies" => tasks::refresh_movies_once(&app, None)
                     .await
@@ -889,6 +955,10 @@ async fn command(
             | "RefreshMovies"
             | "RefreshSeries"
             | "RefreshAllSeries"
+            | "EpisodeSearch"
+            | "SeasonSearch"
+            | "SeriesSearch"
+            | "MissingEpisodesSearch"
             | "ImportListSync"
             | "RenameMovie"
             | "RenameMovies"
@@ -898,8 +968,15 @@ async fn command(
             cmd.name
         )));
     }
-    if cmd.name == "RefreshSeries" && cmd.series_id.is_none() {
-        return Err(ApiError::bad_request("RefreshSeries needs a series_id"));
+    let missing = match cmd.name.as_str() {
+        "RefreshSeries" | "SeriesSearch" => cmd.series_id.is_none().then_some("a series_id"),
+        "EpisodeSearch" => cmd.episode_id.is_none().then_some("an episode_id"),
+        "SeasonSearch" => (cmd.series_id.is_none() || cmd.season_number.is_none())
+            .then_some("a series_id and a season_number"),
+        _ => None,
+    };
+    if let Some(what) = missing {
+        return Err(ApiError::bad_request(format!("{} needs {what}", cmd.name)));
     }
     if matches!(
         cmd.name.as_str(),
@@ -2188,7 +2265,9 @@ pub fn router(app: Arc<App>) -> Router {
     let api = provider_routes!(api, "/downloadclient", ProviderKind::DownloadClient);
     let api = provider_routes!(api, "/notification", ProviderKind::Notification);
     let api = provider_routes!(api, "/importlist", ProviderKind::ImportList);
-    let api = api.merge(crate::tv_api::routes());
+    let api = api
+        .merge(crate::tv_api::routes())
+        .merge(crate::tv_activity::routes());
     let api = api
         .route("/system/task", get(list_tasks))
         .route("/rename", get(rename_previews))
