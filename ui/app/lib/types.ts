@@ -134,6 +134,11 @@ export interface QualityProfile {
   name: string;
   cutoff: number;
   items: ProfileItem[];
+  min_format_score: number;
+  cutoff_format_score: number;
+  min_upgrade_format_score: number;
+  format_items: { format_id: number; score: number }[];
+  language: unknown;
   upgrade_allowed: boolean;
 }
 
