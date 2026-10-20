@@ -46,11 +46,22 @@ pub struct MovieSearch {
 }
 
 fn spec(settings: &IndexerSettings, search_type: &str, params: &str) -> Option<RequestSpec> {
-    if settings.categories.is_empty() {
+    spec_with(settings, &settings.categories, search_type, params)
+}
+
+/// A request spec over an explicit list of categories (TV and anime use
+/// theirs rather than the movie categories).
+pub(crate) fn spec_with(
+    settings: &IndexerSettings,
+    categories: &[i32],
+    search_type: &str,
+    params: &str,
+) -> Option<RequestSpec> {
+    if categories.is_empty() {
         return None;
     }
     let mut seen = Vec::new();
-    for c in &settings.categories {
+    for c in categories {
         if !seen.contains(c) {
             seen.push(*c);
         }
@@ -135,7 +146,7 @@ pub fn clean_scene_title(title: &str) -> String {
 }
 
 /// Percent-encodes a query title. '+' becomes a space first, like Radarr.
-fn newznabify(title: &str) -> String {
+pub(crate) fn newznabify(title: &str) -> String {
     let spaced = title.replace('+', " ");
     byte_serialize(spaced.as_bytes())
         .collect::<String>()

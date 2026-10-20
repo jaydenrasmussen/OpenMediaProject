@@ -18,6 +18,7 @@ use crate::{
         MAX_PAGES, MovieSearch, PAGE_SIZE, RequestSpec, generate_movie_requests,
         generate_recent_requests,
     },
+    request_tv::{TvSearch, generate_recent_tv_requests, generate_tv_requests},
     settings::{Flavor, IndexerSettings},
 };
 
@@ -273,6 +274,32 @@ impl IndexerClient {
         })
     }
 
+    /// The newest TV releases (RSS sync), tracked separately from the movie feed.
+    pub async fn fetch_recent_tv(
+        &self,
+        last_seen: Option<LastSeen>,
+    ) -> Result<RecentFeed, IndexerError> {
+        let caps = self.capabilities().await?;
+        let tiers = generate_recent_tv_requests(&self.settings, caps);
+        let (mut releases, fully_updated) = self.run_tiers(tiers, Some(&last_seen)).await?;
+        releases.sort_by_key(|r| std::cmp::Reverse(r.publish_date));
+        let newest = releases.first().map(|r| LastSeen {
+            publish_date: r.publish_date,
+            download_url: r.download_url.clone(),
+        });
+        Ok(RecentFeed {
+            releases,
+            fully_updated,
+            newest,
+        })
+    }
+
+    pub async fn search_tv(&self, search: &TvSearch) -> Result<Vec<ReleaseInfo>, IndexerError> {
+        let caps = self.capabilities().await?;
+        let tiers = generate_tv_requests(&self.settings, caps, search);
+        Ok(self.run_tiers(tiers, None).await?.0)
+    }
+
     pub async fn search_movie(
         &self,
         search: &MovieSearch,
@@ -287,6 +314,7 @@ impl IndexerClient {
         let caps = self.capabilities().await?;
         let first = generate_recent_requests(&self.settings, caps)
             .into_iter()
+            .chain(generate_recent_tv_requests(&self.settings, caps))
             .flatten()
             .next()
             .ok_or_else(|| {

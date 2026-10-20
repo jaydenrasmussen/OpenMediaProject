@@ -16,6 +16,12 @@ pub struct IndexerSettings {
     pub api_key: String,
     /// Newznab category ids; 2000 is Movies and 2010..2060 its sub-categories.
     pub categories: Vec<i32>,
+    /// Categories for TV searches; 5030 is TV/SD and 5040 TV/HD.
+    pub tv_categories: Vec<i32>,
+    /// Categories for anime searches (5070 is TV/Anime). Empty skips anime.
+    pub anime_categories: Vec<i32>,
+    /// Also search anime by season and episode, not only absolute number.
+    pub anime_standard_format_search: bool,
     /// Extra query parameters, each starting with `&`.
     pub additional_parameters: String,
     /// Leave the year out of text searches.
@@ -33,6 +39,9 @@ impl Default for IndexerSettings {
             api_path: "/api".into(),
             api_key: String::new(),
             categories: vec![2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060],
+            tv_categories: vec![5030, 5040],
+            anime_categories: vec![],
+            anime_standard_format_search: false,
             additional_parameters: String::new(),
             remove_year: false,
             minimum_seeders: 1,
@@ -44,7 +53,10 @@ impl Default for IndexerSettings {
 impl IndexerSettings {
     /// Checks what Radarr checks before saving.
     pub fn validate(&self) -> Result<(), String> {
-        if self.categories.is_empty() {
+        if self.categories.is_empty()
+            && self.tv_categories.is_empty()
+            && self.anime_categories.is_empty()
+        {
             return Err("'Categories' must be provided".into());
         }
         let url = url::Url::parse(&self.base_url).map_err(|e| format!("invalid base URL: {e}"))?;
@@ -112,6 +124,9 @@ mod tests {
     fn validation() {
         let mut s = valid();
         s.categories.clear();
+        assert!(s.validate().is_ok(), "TV categories are enough");
+        s.tv_categories.clear();
+        s.anime_categories.clear();
         assert!(s.validate().is_err());
         assert!(
             IndexerSettings::default().validate().is_err(),

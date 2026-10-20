@@ -18,10 +18,13 @@ pub struct Capabilities {
     pub search_params: Option<Vec<String>>,
     /// `None` when movie search is not available.
     pub movie_params: Option<Vec<String>>,
+    /// `None` when TV search is not available.
+    pub tv_params: Option<Vec<String>>,
     /// True when movie search takes several ids at once (`tmdbid` + `imdbid`).
     pub supports_aggregate_id_search: bool,
     pub text_search_engine: String,
     pub movie_text_search_engine: String,
+    pub tv_text_search_engine: String,
     pub categories: Vec<Category>,
 }
 
@@ -37,10 +40,13 @@ impl Default for Capabilities {
                     .map(String::from)
                     .to_vec(),
             ),
+            // "rid" for older Newznab installs.
+            tv_params: Some(["q", "rid", "season", "ep"].map(String::from).to_vec()),
             supports_aggregate_id_search: false,
             // "sphinx" for older Newznab installs.
             text_search_engine: "sphinx".into(),
             movie_text_search_engine: "sphinx".into(),
+            tv_text_search_engine: "sphinx".into(),
             categories: Vec::new(),
         }
     }
@@ -57,6 +63,48 @@ impl Capabilities {
         self.search_params
             .as_ref()
             .is_some_and(|p| p.iter().any(|x| x == "q"))
+    }
+
+    fn tv_supports(&self, param: &str) -> bool {
+        self.tv_params
+            .as_ref()
+            .is_some_and(|p| p.iter().any(|x| x == param))
+    }
+
+    pub fn tv_supports_q(&self) -> bool {
+        self.tv_supports("q")
+    }
+
+    pub fn tv_supports_title(&self) -> bool {
+        self.tv_supports("title")
+    }
+
+    pub fn tv_supports_tvdb(&self) -> bool {
+        self.tv_supports("tvdbid")
+    }
+
+    pub fn tv_supports_imdb(&self) -> bool {
+        self.tv_supports("imdbid")
+    }
+
+    pub fn tv_supports_tvrage(&self) -> bool {
+        self.tv_supports("rid")
+    }
+
+    pub fn tv_supports_tvmaze(&self) -> bool {
+        self.tv_supports("tvmazeid")
+    }
+
+    pub fn tv_supports_tmdb(&self) -> bool {
+        self.tv_supports("tmdbid")
+    }
+
+    pub fn tv_supports_season(&self) -> bool {
+        self.tv_supports("season")
+    }
+
+    pub fn tv_supports_episode(&self) -> bool {
+        self.tv_supports("season") && self.tv_supports("ep")
     }
 
     pub fn supports_imdb_search(&self) -> bool {
@@ -115,6 +163,22 @@ impl Capabilities {
                     }
                     if let Some(engine) = movie.attribute("searchEngine") {
                         caps.movie_text_search_engine = engine.to_owned();
+                    }
+                }
+            }
+        }
+
+        if let Some(searching) = child(root, "searching") {
+            match child(searching, "tv-search").filter(|s| s.attribute("available") == Some("yes"))
+            {
+                None => caps.tv_params = None,
+                Some(tv) => {
+                    if let Some(params) = tv.attribute("supportedParams") {
+                        caps.tv_params = Some(params.split(',').map(str::to_owned).collect());
+                        caps.supports_aggregate_id_search = true;
+                    }
+                    if let Some(engine) = tv.attribute("searchEngine") {
+                        caps.tv_text_search_engine = engine.to_owned();
                     }
                 }
             }
