@@ -285,6 +285,16 @@ Findings from the spikes:
 | SkyHook / Radarr metadata-server providers | Not started | Primary providers per Q4/Q10; TMDB is the fallback that now exists. |
 | Naming-token engine | Not started | |
 
+#### Work order (set 2026-10-20)
+1. [ ] WebSocket live updates
+2. [ ] Scene numbering and mappings
+3. [ ] TV import lists
+4. [ ] Manual import of unmatched downloads
+5. [ ] SkyHook metadata provider
+6. [ ] OpenAPI spec
+7. [ ] Remote path mappings
+8. [ ] Plugin install by URL
+
 ### Phase 1 — Movies vertical slice (Radarr core) (6–8 weeks)
 Do movies first: simpler model than TV. This proves the whole pipeline.
 - DB schema, TMDB client, add/search movie, root folders.
