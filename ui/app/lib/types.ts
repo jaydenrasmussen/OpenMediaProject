@@ -176,3 +176,71 @@ export interface BackupInfo {
   size: number;
   created: string;
 }
+
+export interface Tag {
+  id: number;
+  label: string;
+}
+
+export interface DelayProfile {
+  id: number;
+  enable_usenet: boolean;
+  enable_torrent: boolean;
+  preferred_protocol: "usenet" | "torrent";
+  usenet_delay: number;
+  torrent_delay: number;
+  order: number;
+  bypass_if_highest_quality: boolean;
+  bypass_if_above_custom_format_score: boolean;
+  minimum_custom_format_score: number;
+  tags: number[];
+}
+
+export interface ReleaseProfile {
+  id: number;
+  name: string;
+  enabled: boolean;
+  required: string[];
+  ignored: string[];
+  indexer_id: number;
+  tags: number[];
+}
+
+export type Condition =
+  | { implementation: "release_title" | "edition" | "release_group"; value: string }
+  | { implementation: "language"; value: number; except_language: boolean }
+  | { implementation: "indexer_flag" | "source" | "resolution" | "quality_modifier"; value: number }
+  | { implementation: "size"; min: number; max: number }
+  | { implementation: "year"; min: number; max: number };
+
+export type Specification = { name: string; negate: boolean; required: boolean } & Condition;
+
+export interface CustomFormat {
+  id: number;
+  name: string;
+  include_when_renaming: boolean;
+  specifications: Specification[];
+}
+
+export interface QualityDefinition {
+  quality_id: number;
+  title: string;
+  weight: number;
+  min_size: number | null;
+  max_size: number | null;
+  preferred_size: number | null;
+}
+
+export interface DecisionConfig {
+  propers_and_repacks: "prefer_and_upgrade" | "do_not_upgrade" | "do_not_prefer";
+  minimum_age: number;
+  retention: number;
+  maximum_size: number;
+  enable_completed_download_handling: boolean;
+  skip_free_space_check_when_importing: boolean;
+  minimum_free_space_when_importing: number;
+  allow_hardcoded_subs: boolean;
+  whitelisted_hardcoded_subs: string;
+  availability_delay: number;
+  prefer_indexer_flags: boolean;
+}

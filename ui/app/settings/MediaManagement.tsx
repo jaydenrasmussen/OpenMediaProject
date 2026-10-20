@@ -5,12 +5,14 @@ import { LoadState } from "../components/Page";
 import { useToast } from "../components/toast";
 import { del, get, post, put } from "../lib/api";
 import { errorMessage, useLoad } from "../lib/hooks";
+import { Decision } from "./Decision";
 import type { ImportConfig, RootFolder } from "../lib/types";
 
 export function MediaManagement() {
   return (
     <div className="stack">
       <RootFolders />
+      <Decision />
       <Naming />
     </div>
   );

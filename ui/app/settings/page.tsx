@@ -1,15 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { CustomFormats } from "./CustomFormats";
 import { DownloadClients } from "./DownloadClients";
 import { General } from "./General";
 import { Indexers } from "./Indexers";
 import { MediaManagement } from "./MediaManagement";
 import { Profiles } from "./Profiles";
+import { QualitySizes } from "./QualitySizes";
+import { Rules } from "./Rules";
 
 const TABS = [
   { id: "media", label: "Media management", view: MediaManagement },
   { id: "profiles", label: "Quality profiles", view: Profiles },
+  { id: "formats", label: "Custom formats", view: CustomFormats },
+  { id: "sizes", label: "Quality sizes", view: QualitySizes },
+  { id: "rules", label: "Delays & tags", view: Rules },
   { id: "indexers", label: "Indexers", view: Indexers },
   { id: "clients", label: "Download clients", view: DownloadClients },
   { id: "general", label: "General", view: General },
