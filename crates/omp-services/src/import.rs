@@ -109,6 +109,8 @@ pub enum ImportRejection {
     NotEnoughFreeSpace,
     /// A better file for the same movie was chosen.
     AlreadyImportedThisRun,
+    /// Any other reason, already worded.
+    Other(String),
 }
 
 impl std::fmt::Display for ImportRejection {
@@ -137,7 +139,8 @@ impl std::fmt::Display for ImportRejection {
                 "Not a Custom Format upgrade for existing movie file(s). New score {new} does not improve on existing {current}"
             ),
             Self::NotEnoughFreeSpace => write!(f, "Not enough free space"),
-            Self::AlreadyImportedThisRun => write!(f, "Movie has already been imported"),
+            Self::AlreadyImportedThisRun => write!(f, "Already imported in this run"),
+            Self::Other(message) => write!(f, "{message}"),
         }
     }
 }
@@ -198,13 +201,13 @@ struct Candidate {
     probe: Option<ProbeInfo>,
 }
 
-fn extension_of(path: &Path) -> String {
+pub(crate) fn extension_of(path: &Path) -> String {
     path.extension()
         .map(|e| format!(".{}", e.to_string_lossy()))
         .unwrap_or_default()
 }
 
-async fn find_media_files(root: &Path) -> std::io::Result<Vec<PathBuf>> {
+pub(crate) async fn find_media_files(root: &Path) -> std::io::Result<Vec<PathBuf>> {
     let meta = tokio::fs::metadata(root).await?;
     if meta.is_file() {
         return Ok(if is_media_extension(&extension_of(root)) {
@@ -232,7 +235,7 @@ async fn find_media_files(root: &Path) -> std::io::Result<Vec<PathBuf>> {
 }
 
 /// Smallest runtime that counts as a real movie rather than a sample.
-fn minimum_runtime_seconds(runtime_minutes: u32) -> f64 {
+pub(crate) fn minimum_runtime_seconds(runtime_minutes: u32) -> f64 {
     match runtime_minutes {
         0..=3 => 15.0,
         4..=10 => 90.0,
@@ -270,7 +273,7 @@ fn is_multi_part(path: &Path, siblings: &[PathBuf]) -> bool {
     })
 }
 
-fn in_working_folder(path: &Path, working_folders: &str) -> bool {
+pub(crate) fn in_working_folder(path: &Path, working_folders: &str) -> bool {
     let folders: Vec<&str> = working_folders
         .split('|')
         .filter(|f| !f.is_empty())
@@ -734,7 +737,12 @@ impl Importer<'_> {
 }
 
 /// Moves, copies or hardlinks `from` to `to`.
-async fn transfer(from: &Path, to: &Path, copy_only: bool, hardlink: bool) -> std::io::Result<()> {
+pub(crate) async fn transfer(
+    from: &Path,
+    to: &Path,
+    copy_only: bool,
+    hardlink: bool,
+) -> std::io::Result<()> {
     if copy_only {
         if hardlink && tokio::fs::hard_link(from, to).await.is_ok() {
             return Ok(());

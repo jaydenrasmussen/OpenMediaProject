@@ -20,6 +20,7 @@ mod sync;
 mod tracking;
 mod tv_evaluate;
 mod tv_grab;
+mod tv_import;
 mod tv_match;
 mod tv_sync;
 
@@ -58,6 +59,9 @@ pub use tv_evaluate::{
     evaluate_tv_releases, input_for_episode_file, input_for_episode_release,
 };
 pub use tv_grab::{grab_selected_tv, process_tv_decisions};
+pub use tv_import::{
+    TvImportRequest, TvImporter, match_files_to_episodes, naming_episode, naming_series,
+};
 pub use tv_match::{
     ReleaseIds, SeriesIndex, SeriesMatchType, TvMatch, find_series, match_release, pick_episodes,
 };
