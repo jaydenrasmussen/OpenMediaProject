@@ -161,11 +161,9 @@ pub fn naming_media(raw: &Value, scene_name: Option<&str>) -> Option<NamingMedia
         .iter()
         .filter(|s| str_of(s, "codec_type") == "audio")
         .max_by_key(|s| {
-            i64::from(
-                s.pointer("/disposition/default")
-                    .and_then(Value::as_i64)
-                    .unwrap_or(0),
-            )
+            s.pointer("/disposition/default")
+                .and_then(Value::as_i64)
+                .unwrap_or(0)
         });
     if video.is_none() && audio.is_none() {
         return None;
