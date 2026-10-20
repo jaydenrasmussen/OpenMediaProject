@@ -13,6 +13,7 @@ omp-decision = { path = "../omp-decision" }
 omp-downloads = { path = "../omp-downloads" }
 omp-indexers = { path = "../omp-indexers" }
 omp-library = { path = "../omp-library" }
+omp-metadata = { path = "../omp-metadata" }
 omp-naming = { path = "../omp-naming" }
 omp-parser = { path = "../omp-parser" }
 omp-quality = { path = "../omp-quality" }

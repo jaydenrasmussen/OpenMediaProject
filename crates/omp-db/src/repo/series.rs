@@ -751,6 +751,18 @@ impl EpisodeFiles<'_> {
         Ok(())
     }
 
+    /// Deletes file rows no episode points at any more.
+    pub async fn delete_unused(&self, series_id: i64) -> Result<u64> {
+        Ok(sqlx::query(
+            "DELETE FROM episode_files WHERE series_id = ?
+             AND id NOT IN (SELECT episode_file_id FROM episodes WHERE episode_file_id IS NOT NULL)",
+        )
+        .bind(series_id)
+        .execute(self.0)
+        .await?
+        .rows_affected())
+    }
+
     /// Removes the file row; the episodes that pointed at it keep existing
     /// and lose their file (the foreign key sets it to null).
     pub async fn delete(&self, id: i64) -> Result<()> {

@@ -30,6 +30,10 @@ pub enum ServiceError {
     Settings(#[from] serde_json::Error),
     #[error("file system error: {0}")]
     Io(String),
+    #[error(transparent)]
+    Metadata(#[from] omp_metadata::MetadataError),
+    #[error("{0}")]
+    Invalid(String),
 }
 
 /// What to evaluate and in what context.
