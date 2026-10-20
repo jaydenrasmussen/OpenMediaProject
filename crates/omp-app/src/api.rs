@@ -715,6 +715,17 @@ async fn command(
                         .map_err(|e| e.to_string()),
                     None => Err("RescanMovie needs a movie_id".into()),
                 },
+                "RenameMovie" => match movie_id {
+                    Some(id) => tasks::rename_movies_once(&app, Some(id))
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("RenameMovie needs a movie_id".into()),
+                },
+                "RenameMovies" => tasks::rename_movies_once(&app, None)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
                 "RefreshMovie" => match movie_id {
                     Some(id) => tasks::refresh_movies_once(&app, Some(id))
                         .await
@@ -749,6 +760,8 @@ async fn command(
             | "RefreshMovie"
             | "RefreshMovies"
             | "ImportListSync"
+            | "RenameMovie"
+            | "RenameMovies"
     ) {
         return Err(ApiError::bad_request(format!(
             "unknown command '{}'",
@@ -757,7 +770,7 @@ async fn command(
     }
     if matches!(
         cmd.name.as_str(),
-        "MoviesSearch" | "RescanMovie" | "RefreshMovie"
+        "MoviesSearch" | "RescanMovie" | "RefreshMovie" | "RenameMovie"
     ) && cmd.movie_id.is_none()
     {
         return Err(ApiError::bad_request(format!(
@@ -1618,6 +1631,30 @@ async fn put_decision_config(
     to_json(&c)
 }
 
+#[derive(Deserialize)]
+struct RenameQuery {
+    movie_id: Option<i64>,
+}
+
+fn preview_json(p: &omp_services::RenamePreview) -> Value {
+    json!({ "movie_id": p.movie_id, "title": p.title, "existing": p.existing, "new": p.new })
+}
+
+/// Files whose names differ from the current naming format.
+async fn rename_previews(State(app): Shared, Query(q): Query<RenameQuery>) -> ApiResult {
+    let naming = load_import_config(&app.db).await?.naming;
+    let previews = match q.movie_id {
+        Some(id) => omp_services::rename_preview(&app.db, &naming, id)
+            .await?
+            .into_iter()
+            .collect(),
+        None => omp_services::rename_previews(&app.db, &naming).await?,
+    };
+    Ok(Json(Value::Array(
+        previews.iter().map(preview_json).collect(),
+    )))
+}
+
 async fn list_tasks(State(app): Shared) -> Json<Value> {
     let tasks: Vec<Value> = app
         .task_statuses()
@@ -1904,6 +1941,7 @@ pub fn router(app: Arc<App>) -> Router {
     let api = provider_routes!(api, "/importlist", ProviderKind::ImportList);
     let api = api
         .route("/system/task", get(list_tasks))
+        .route("/rename", get(rename_previews))
         .route("/log", get(list_logs).delete(clear_logs));
     let api = api.route("/exclusion", get(list_exclusions)).route(
         "/exclusion/{tmdb_id}",

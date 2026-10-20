@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LoadState } from "../components/Page";
 import { useToast } from "../components/toast";
@@ -151,6 +152,9 @@ function Naming() {
       <label className="check">
         <input type="checkbox" checked={cfg.naming.replace_illegal_characters} onChange={(e) => setNaming({ replace_illegal_characters: e.target.checked })} /> Replace illegal characters (otherwise they are removed)
       </label>
+      <p className="small">
+        <Link href="/rename/">Preview and rename files already in the library</Link>
+      </p>
       <p className="muted small">
         Tokens: <code>{"{Movie Title}"}</code> <code>{"{Release Year}"}</code> <code>{"{Quality Full}"}</code> <code>{"{Release Group}"}</code>{" "}
         <code>{"{Edition Tags}"}</code> <code>{"{ImdbId}"}</code> <code>{"{TmdbId}"}</code> <code>{"{MediaInfo VideoCodec}"}</code>… Radarr’s formats work as they are.

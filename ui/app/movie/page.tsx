@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { LoadState } from "../components/Page";
@@ -115,6 +116,11 @@ function MovieDetail() {
                 <button onClick={() => runCommand("RescanMovie", "Folder scanned.")} title="Look at the movie folder for a file">
                   Rescan
                 </button>
+                {m.has_file && (
+                  <Link href={`/rename/?id=${m.id}`} className="button">
+                    Rename
+                  </Link>
+                )}
                 <button onClick={() => runCommand("RefreshMovie", "Details refreshed.")} title="Re-read dates and details from TMDB">
                   Refresh
                 </button>

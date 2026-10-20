@@ -1362,3 +1362,92 @@ async fn blocklist_and_queue_removal_handle_missing_entries() {
         StatusCode::NOT_FOUND
     );
 }
+
+#[tokio::test]
+async fn existing_files_can_be_previewed_and_renamed_to_the_naming_format() {
+    let r = rig().await;
+    let root = add_root(&r).await;
+    let folder = std::path::Path::new(&root).join("The Matrix (1999)");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("The.Matrix.1999.1080p.BluRay.x264-GRP.mkv"),
+        vec![1u8; 2048],
+    )
+    .unwrap();
+    let (_, profiles) = get(&r, "/api/v1/qualityprofile").await;
+    let (_, out) = call(
+        &r,
+        Method::POST,
+        "/api/v1/movie/import",
+        Some(json!({
+            "items": [{ "path": folder.to_string_lossy(), "tmdb_id": 603 }],
+            "quality_profile_id": profiles[0]["id"],
+        })),
+    )
+    .await;
+    let id = out["results"][0]["movie_id"].as_i64().unwrap();
+
+    // Radarr ships with renaming off, so nothing is proposed until it is on.
+    assert_eq!(get(&r, "/api/v1/rename").await.1, json!([]));
+    let (_, mut cfg) = get(&r, "/api/v1/config/import").await;
+    cfg["naming"]["rename_movies"] = json!(true);
+    call(&r, Method::PUT, "/api/v1/config/import", Some(cfg)).await;
+
+    let (s, previews) = get(&r, "/api/v1/rename").await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(previews.as_array().unwrap().len(), 1, "{previews}");
+    assert_eq!(
+        previews[0]["existing"],
+        "The.Matrix.1999.1080p.BluRay.x264-GRP.mkv"
+    );
+    assert_eq!(previews[0]["new"], "The Matrix (1999) Bluray-1080p.mkv");
+    assert_eq!(
+        get(&r, &format!("/api/v1/rename?movie_id={id}")).await.1,
+        previews
+    );
+
+    let (s, _) = call(
+        &r,
+        Method::POST,
+        "/api/v1/command",
+        Some(json!({ "name": "RenameMovies", "wait": true })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(folder.join("The Matrix (1999) Bluray-1080p.mkv").is_file());
+    assert!(
+        !folder
+            .join("The.Matrix.1999.1080p.BluRay.x264-GRP.mkv")
+            .exists()
+    );
+    let (_, movie) = get(&r, &format!("/api/v1/movie/{id}")).await;
+    assert_eq!(
+        movie["file"]["relative_path"],
+        "The Matrix (1999) Bluray-1080p.mkv"
+    );
+    assert_eq!(
+        get(&r, "/api/v1/rename").await.1,
+        json!([]),
+        "nothing left to rename"
+    );
+    let (_, history) = get(&r, &format!("/api/v1/history?movie_id={id}")).await;
+    assert!(
+        history
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["event"] == "movieFileRenamed"),
+        "{history}"
+    );
+
+    // With renaming switched off, nothing is proposed.
+    std::fs::rename(
+        folder.join("The Matrix (1999) Bluray-1080p.mkv"),
+        folder.join("odd name.mkv"),
+    )
+    .unwrap();
+    let (_, mut cfg) = get(&r, "/api/v1/config/import").await;
+    cfg["naming"]["rename_movies"] = json!(false);
+    call(&r, Method::PUT, "/api/v1/config/import", Some(cfg)).await;
+    assert_eq!(get(&r, "/api/v1/rename").await.1, json!([]));
+}

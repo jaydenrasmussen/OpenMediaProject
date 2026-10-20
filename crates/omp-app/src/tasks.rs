@@ -280,6 +280,31 @@ pub async fn refresh_movies_once(app: &App, only: Option<i64>) -> Result<usize, 
     Ok(updated)
 }
 
+/// Renames files to match the naming format: one movie, or the whole
+/// library. A file that cannot be renamed is logged and skipped. Returns how
+/// many were renamed.
+pub async fn rename_movies_once(app: &App, only: Option<i64>) -> Result<usize, ServiceError> {
+    let naming = load_import_config(&app.db).await?.naming;
+    let ids: Vec<i64> = match only {
+        Some(id) => vec![id],
+        None => omp_services::rename_previews(&app.db, &naming)
+            .await?
+            .into_iter()
+            .map(|p| p.movie_id)
+            .collect(),
+    };
+    let mut renamed = 0;
+    for id in ids {
+        match omp_services::rename_movie(&app.db, &naming, id, chrono::Utc::now()).await {
+            Ok(Some(_)) => renamed += 1,
+            Ok(None) => {}
+            Err(e) if only.is_some() => return Err(e),
+            Err(e) => tracing::warn!(movie_id = id, "rename failed: {e}"),
+        }
+    }
+    Ok(renamed)
+}
+
 /// Looks at a movie's folder and records or forgets its file.
 pub async fn rescan_movie_once(
     app: &App,
