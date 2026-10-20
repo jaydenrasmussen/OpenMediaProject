@@ -1978,8 +1978,23 @@ async fn calendar_feed(
         .into_iter()
         .filter(|m| q.unmonitored || m.movie.monitored)
         .collect();
-    let body = crate::ical::feed(
+    let mut series = Vec::new();
+    for s in app.db.series().list().await? {
+        if q.unmonitored || s.monitored {
+            let episodes: Vec<_> = app
+                .db
+                .episodes()
+                .for_series(s.id)
+                .await?
+                .into_iter()
+                .filter(|e| q.unmonitored || e.monitored)
+                .collect();
+            series.push((s, episodes));
+        }
+    }
+    let body = crate::ical::feed_with_episodes(
         &movies,
+        &series,
         today - chrono::Duration::days(q.past_days.clamp(0, 365)),
         today + chrono::Duration::days(q.future_days.clamp(0, 730)),
         now,

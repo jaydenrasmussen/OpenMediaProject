@@ -1,7 +1,7 @@
 //! The calendar as an iCalendar feed, for calendar apps that subscribe to a URL.
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
-use omp_db::repo::MovieRecord;
+use omp_db::repo::{EpisodeRecord, MovieRecord, SeriesRecord};
 
 fn escape(text: &str) -> String {
     text.replace('\\', "\\\\")
@@ -31,8 +31,15 @@ fn date(d: NaiveDate) -> String {
     format!("{:04}{:02}{:02}", d.year(), d.month(), d.day())
 }
 
-/// Release events from `from` to `to` (inclusive) for the given movies.
-pub fn feed(movies: &[MovieRecord], from: NaiveDate, to: NaiveDate, now: DateTime<Utc>) -> String {
+/// Release events from `from` to `to` (inclusive) for the given movies, plus
+/// the episodes that air in the range. Each series comes with its episodes.
+pub fn feed_with_episodes(
+    movies: &[MovieRecord],
+    series: &[(SeriesRecord, Vec<EpisodeRecord>)],
+    from: NaiveDate,
+    to: NaiveDate,
+    now: DateTime<Utc>,
+) -> String {
     let mut lines = vec![
         "BEGIN:VCALENDAR".to_owned(),
         "VERSION:2.0".to_owned(),
@@ -69,6 +76,32 @@ pub fn feed(movies: &[MovieRecord], from: NaiveDate, to: NaiveDate, now: DateTim
                 escape(&format!("{} ({}) - {label}", m.movie.title, m.movie.year))
             ));
             if let Some(overview) = m.metadata.overview.as_deref().filter(|o| !o.is_empty()) {
+                lines.push(format!("DESCRIPTION:{}", escape(overview)));
+            }
+            lines.push("END:VEVENT".into());
+        }
+    }
+    for (s, episodes) in series {
+        for e in episodes {
+            let Some(day) = e.air_date.filter(|d| *d >= from && *d <= to) else {
+                continue;
+            };
+            lines.push("BEGIN:VEVENT".into());
+            lines.push(format!("UID:omp-episode-{}@openmediaproject", e.id));
+            lines.push(format!("DTSTAMP:{stamp}"));
+            lines.push(format!("DTSTART;VALUE=DATE:{}", date(day)));
+            lines.push(format!(
+                "DTEND;VALUE=DATE:{}",
+                date(day + Duration::days(1))
+            ));
+            lines.push(format!(
+                "SUMMARY:{}",
+                escape(&format!(
+                    "{} - {}x{:02} - {}",
+                    s.info.title, e.season_number, e.episode_number, e.title
+                ))
+            ));
+            if let Some(overview) = e.overview.as_deref().filter(|o| !o.is_empty()) {
                 lines.push(format!("DESCRIPTION:{}", escape(overview)));
             }
             lines.push("END:VEVENT".into());
