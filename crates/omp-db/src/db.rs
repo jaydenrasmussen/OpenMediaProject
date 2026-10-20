@@ -8,9 +8,10 @@ use sqlx::{
 use crate::{
     Result,
     repo::{
-        Blocklist, Config, CustomFormats, DelayProfiles, History, ImportExclusions, Logs,
-        MovieFiles, Movies, PendingReleases, Providers, QualityDefinitionsRepo, QualityProfiles,
-        ReleaseProfiles, RootFolders, Sessions, Tags, Users,
+        Blocklist, Config, CustomFormats, DelayProfiles, EpisodeFiles, Episodes, History,
+        ImportExclusions, Logs, MovieFiles, Movies, PendingReleases, Providers,
+        QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles, RootFolders, Series, Sessions,
+        Tags, Users,
     },
 };
 
@@ -189,6 +190,18 @@ impl Db {
 
     pub fn sessions(&self) -> Sessions<'_> {
         Sessions(&self.main)
+    }
+
+    pub fn series(&self) -> Series<'_> {
+        Series(&self.main)
+    }
+
+    pub fn episodes(&self) -> Episodes<'_> {
+        Episodes(&self.main)
+    }
+
+    pub fn episode_files(&self) -> EpisodeFiles<'_> {
+        EpisodeFiles(&self.main)
     }
 
     pub fn logs(&self) -> Logs<'_> {

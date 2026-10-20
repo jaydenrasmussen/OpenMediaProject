@@ -7,6 +7,7 @@ mod logs;
 mod movies;
 mod profiles;
 mod providers;
+mod series;
 mod simple;
 
 pub use activity::{
@@ -20,4 +21,8 @@ pub use profiles::{
     CustomFormats, DelayProfiles, QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles,
 };
 pub use providers::{Provider, ProviderKind, Providers};
+pub use series::{
+    EpisodeFileRecord, EpisodeFiles, EpisodeRecord, Episodes, NewSeries, SeasonRecord, Series,
+    SeriesRecord, SeriesUpdate,
+};
 pub use simple::{ImportExclusion, ImportExclusions, RootFolder, RootFolders, Tag, Tags};

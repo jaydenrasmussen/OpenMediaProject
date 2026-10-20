@@ -160,6 +160,97 @@ CREATE TABLE movie_files (
     indexer_flags      INTEGER NOT NULL DEFAULT 0
 );
 
+-- ---- TV ---------------------------------------------------------------------------
+-- A series keeps its provider metadata in the same row (it is refreshed in place).
+
+CREATE TABLE series (
+    id                 INTEGER PRIMARY KEY,
+    tmdb_id            INTEGER NOT NULL UNIQUE,
+    tvdb_id            INTEGER,
+    imdb_id            TEXT,
+    title              TEXT NOT NULL,
+    clean_title        TEXT NOT NULL,
+    sort_title         TEXT NOT NULL,
+    original_title     TEXT NOT NULL DEFAULT '',
+    original_language  TEXT NOT NULL DEFAULT '',
+    overview           TEXT,
+    year               INTEGER NOT NULL DEFAULT 0,
+    status             INTEGER NOT NULL DEFAULT 0,
+    network            TEXT,
+    runtime            INTEGER NOT NULL DEFAULT 0,
+    genres             TEXT NOT NULL DEFAULT '[]',
+    certification      TEXT,
+    first_aired        TEXT,
+    last_aired         TEXT,
+    images             TEXT NOT NULL DEFAULT '[]',
+    alternative_titles TEXT NOT NULL DEFAULT '[]',
+    rating_votes       INTEGER,
+    rating_value       REAL,
+    series_type        INTEGER NOT NULL DEFAULT 0,
+    monitored          INTEGER NOT NULL DEFAULT 1,
+    monitor_new_items  INTEGER NOT NULL DEFAULT 0,   -- 0 all, 1 none
+    quality_profile_id INTEGER NOT NULL REFERENCES quality_profiles(id),
+    season_folder      INTEGER NOT NULL DEFAULT 1,
+    use_scene_numbering INTEGER NOT NULL DEFAULT 0,
+    path               TEXT NOT NULL,
+    root_folder_path   TEXT,
+    tags               TEXT NOT NULL DEFAULT '[]',
+    added              TEXT NOT NULL,
+    last_info_sync     TEXT
+);
+CREATE INDEX series_clean_title ON series(clean_title);
+CREATE INDEX series_tvdb ON series(tvdb_id);
+
+CREATE TABLE seasons (
+    series_id     INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+    season_number INTEGER NOT NULL,
+    monitored     INTEGER NOT NULL DEFAULT 1,
+    title         TEXT,
+    images        TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (series_id, season_number)
+);
+
+CREATE TABLE episode_files (
+    id                 INTEGER PRIMARY KEY,
+    series_id          INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+    season_number      INTEGER NOT NULL,
+    relative_path      TEXT NOT NULL,
+    size               INTEGER NOT NULL,
+    date_added         TEXT NOT NULL,
+    scene_name         TEXT,
+    release_group      TEXT,
+    quality            TEXT NOT NULL,
+    languages          TEXT NOT NULL DEFAULT '[]',
+    media_info         TEXT,
+    original_file_path TEXT,
+    indexer_flags      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX episode_files_series ON episode_files(series_id);
+
+CREATE TABLE episodes (
+    id                     INTEGER PRIMARY KEY,
+    series_id              INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+    tmdb_id                INTEGER NOT NULL DEFAULT 0,
+    season_number          INTEGER NOT NULL,
+    episode_number         INTEGER NOT NULL,
+    absolute_episode_number INTEGER,
+    scene_season_number    INTEGER,
+    scene_episode_number   INTEGER,
+    scene_absolute_episode_number INTEGER,
+    title                  TEXT NOT NULL,
+    overview               TEXT,
+    air_date               TEXT,                    -- yyyy-mm-dd
+    air_date_utc           TEXT,
+    runtime                INTEGER NOT NULL DEFAULT 0,
+    monitored              INTEGER NOT NULL DEFAULT 1,
+    episode_file_id        INTEGER REFERENCES episode_files(id) ON DELETE SET NULL,
+    last_search_time       TEXT,
+    finale_type            TEXT,
+    UNIQUE (series_id, season_number, episode_number)
+);
+CREATE INDEX episodes_file ON episodes(episode_file_id);
+CREATE INDEX episodes_air_date ON episodes(air_date);
+
 -- ---- history ------------------------------------------------------------------
 
 CREATE TABLE history (
