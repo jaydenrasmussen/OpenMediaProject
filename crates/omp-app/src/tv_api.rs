@@ -367,26 +367,26 @@ fn parse_new_items(s: &str) -> Result<NewItemMonitor, ApiError> {
 }
 
 #[derive(Deserialize)]
-struct AddSeriesBody {
-    tmdb_id: i64,
-    quality_profile_id: i32,
-    root_folder_path: String,
-    series_type: Option<String>,
+pub(crate) struct AddSeriesBody {
+    pub(crate) tmdb_id: i64,
+    pub(crate) quality_profile_id: i32,
+    pub(crate) root_folder_path: String,
+    pub(crate) series_type: Option<String>,
     #[serde(default = "default_monitor")]
-    monitor: String,
+    pub(crate) monitor: String,
     #[serde(default = "yes")]
-    monitored: bool,
+    pub(crate) monitored: bool,
     #[serde(default = "yes")]
-    season_folder: bool,
+    pub(crate) season_folder: bool,
     #[serde(default = "default_new_items")]
-    monitor_new_items: String,
+    pub(crate) monitor_new_items: String,
     #[serde(default)]
-    use_scene_numbering: bool,
+    pub(crate) use_scene_numbering: bool,
     #[serde(default)]
-    tags: Vec<i32>,
+    pub(crate) tags: Vec<i32>,
     /// Look for missing episodes as soon as the series is added.
     #[serde(default)]
-    search_now: bool,
+    pub(crate) search_now: bool,
 }
 
 fn yes() -> bool {
@@ -405,6 +405,14 @@ async fn add_series_handler(
     State(app): Shared,
     Json(req): Json<AddSeriesBody>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    let id = add_to_library(&app, req).await?;
+    let s = app.db.series().get(id).await?;
+    let episodes = app.db.episodes().for_series(id).await?;
+    Ok((StatusCode::CREATED, Json(series_json(&s, &episodes, &[]))))
+}
+
+/// Validates and adds a series, then looks at its folder. Returns its id.
+pub(crate) async fn add_to_library(app: &Arc<App>, req: AddSeriesBody) -> Result<i64, ApiError> {
     let Some(provider) = app.series_metadata.clone() else {
         return Err(ApiError::unavailable(
             "no metadata provider is configured (set TMDB_READ_TOKEN)",
@@ -502,9 +510,7 @@ async fn add_series_handler(
             }
         });
     }
-    let s = app.db.series().get(id).await?;
-    let episodes = app.db.episodes().for_series(id).await?;
-    Ok((StatusCode::CREATED, Json(series_json(&s, &episodes, &[]))))
+    Ok(id)
 }
 
 /// Lets `add_series` reuse the lookup the handler already made instead of

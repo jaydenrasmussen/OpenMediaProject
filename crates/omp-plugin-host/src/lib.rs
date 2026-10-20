@@ -55,7 +55,7 @@ use notification_bindings::{
 };
 
 pub use ix::{Protocol, Release, SearchQuery};
-pub use ls::Item as ListItem;
+pub use ls::{Item as ListItem, ItemKind as ListItemKind};
 pub use nt::{Event, MovieInfo};
 
 /// One HTTP request a plugin asked for.

@@ -3,6 +3,6 @@ name = "Custom list"
 version = "0.1.0"
 kind = "list"
 wasm = "custom_list.wasm"
-description = "Reads movies from a JSON URL: an array of objects with tmdbId, title and optionally year and imdbId."
+description = "Reads movies and series from a JSON URL: an array of objects with tmdbId (or tvdbId for series), title, optionally year, imdbId and type (\"series\" for shows)."
 # The URL is the user's choice, so the plugin may reach any host.
 allowed_hosts = ["*"]

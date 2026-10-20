@@ -9,7 +9,7 @@ wit_bindgen::generate!({
     world: "list-plugin",
 });
 
-use exports::omp::plugin::import_list::{Guest, Item};
+use exports::omp::plugin::import_list::{Guest, Item, ItemKind};
 use omp::plugin::host;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -61,10 +61,23 @@ impl Guest for CustomList {
         Ok(entries
             .iter()
             .filter_map(|e| {
-                let tmdb_id = number(e, &["tmdbId", "tmdb_id", "id"])?;
+                let series = text(e, &["type", "kind", "mediaType", "media_type"])
+                    .is_some_and(|t| matches!(t.to_lowercase().as_str(), "series" | "show" | "tv"));
+                let tvdb_id = number(e, &["tvdbId", "tvdb_id"]);
+                let tmdb_id = match number(e, &["tmdbId", "tmdb_id", "id"]) {
+                    Some(id) => id,
+                    // A series may be named by its TVDB id alone.
+                    None if series && tvdb_id.is_some() => 0,
+                    None => return None,
+                };
+                let label = if series { "TVDB" } else { "TMDB" };
                 Some(Item {
+                    kind: if series { ItemKind::Series } else { ItemKind::Movie },
                     tmdb_id,
-                    title: text(e, &["title", "name"]).unwrap_or_else(|| format!("TMDB {tmdb_id}")),
+                    tvdb_id,
+                    title: text(e, &["title", "name"]).unwrap_or_else(|| {
+                        format!("{label} {}", if tmdb_id > 0 { tmdb_id } else { tvdb_id.unwrap_or(0) })
+                    }),
                     year: number(e, &["year"]).and_then(|y| u32::try_from(y).ok()),
                     imdb_id: text(e, &["imdbId", "imdb_id"]),
                 })

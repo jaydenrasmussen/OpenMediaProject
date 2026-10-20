@@ -18,6 +18,10 @@ interface Draft {
   monitored: boolean;
   search_on_add: boolean;
   minimum_availability: string;
+  /** Empty means the list's series are skipped. */
+  series_quality_profile_id: number | null;
+  series_root_folder_path: string;
+  series_monitor: string;
   settings: Record<string, unknown>;
 }
 
@@ -46,6 +50,9 @@ export function Lists() {
       monitored: s.monitored ?? true,
       search_on_add: s.search_on_add ?? false,
       minimum_availability: s.minimum_availability ?? "announced",
+      series_quality_profile_id: s.series_quality_profile_id ?? null,
+      series_root_folder_path: s.series_root_folder_path ?? "",
+      series_monitor: s.series_monitor ?? "all",
       settings: s.settings ?? {},
     });
   }
@@ -124,6 +131,9 @@ export function Lists() {
                   monitored: true,
                   search_on_add: false,
                   minimum_availability: "announced",
+                  series_quality_profile_id: null,
+                  series_root_folder_path: "",
+                  series_monitor: "all",
                   settings: {},
                 })
               }
@@ -186,6 +196,9 @@ function Editor({
       monitored: draft.monitored,
       search_on_add: draft.search_on_add,
       minimum_availability: draft.minimum_availability,
+      ...(draft.series_quality_profile_id != null && draft.series_root_folder_path
+        ? { series_quality_profile_id: draft.series_quality_profile_id, series_root_folder_path: draft.series_root_folder_path, series_monitor: draft.series_monitor }
+        : {}),
       settings: draft.settings,
     },
   });
@@ -260,6 +273,43 @@ function Editor({
             <option value="announced">Announced</option>
             <option value="inCinemas">In cinemas</option>
             <option value="released">Released</option>
+          </select>
+        </label>
+      </div>
+      <h3>New series</h3>
+      <p className="muted small">Only needed when the list names series. Leave the profile empty to skip them.</p>
+      <div className="form-grid">
+        <label className="field">
+          <span>Quality profile</span>
+          <select value={draft.series_quality_profile_id ?? ""} onChange={(e) => set({ series_quality_profile_id: e.target.value ? Number(e.target.value) : null })}>
+            <option value="">Skip series</option>
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Root folder</span>
+          <select value={draft.series_root_folder_path} onChange={(e) => set({ series_root_folder_path: e.target.value })}>
+            <option value="">Choose…</option>
+            {roots.map((r) => (
+              <option key={r.id} value={r.path}>
+                {r.path}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Monitor</span>
+          <select value={draft.series_monitor} onChange={(e) => set({ series_monitor: e.target.value })}>
+            <option value="all">All episodes</option>
+            <option value="future">Future episodes</option>
+            <option value="missing">Missing episodes</option>
+            <option value="first_season">First season</option>
+            <option value="pilot">Pilot only</option>
+            <option value="none">None</option>
           </select>
         </label>
       </div>

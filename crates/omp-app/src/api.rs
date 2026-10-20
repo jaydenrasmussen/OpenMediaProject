@@ -1642,6 +1642,27 @@ async fn validate_import_list(app: &App, p: &Provider) -> Result<(), ApiError> {
             "unknown minimum_availability '{m}'"
         )));
     }
+    // Where series go is optional, but if given it has to exist.
+    if let Some(root) = s.series_root_folder_path.as_deref()
+        && !app
+            .db
+            .root_folders()
+            .list()
+            .await?
+            .iter()
+            .any(|r| r.path == root)
+    {
+        return Err(ApiError::bad_request(
+            "series_root_folder_path is not a configured root folder",
+        ));
+    }
+    if let Some(profile) = s.series_quality_profile_id {
+        app.db
+            .quality_profiles()
+            .get(profile)
+            .await
+            .map_err(|_| ApiError::bad_request("unknown series_quality_profile_id"))?;
+    }
     Ok(())
 }
 

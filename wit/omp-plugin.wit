@@ -1,4 +1,4 @@
-package omp:plugin@0.2.0;
+package omp:plugin@0.3.0;
 
 /// Services the host gives to every plugin. Plugins have no ambient network
 /// or filesystem access; everything goes through here and is checked against
@@ -89,8 +89,13 @@ interface notification {
 }
 
 interface import-list {
+    enum item-kind { movie, series }
+
     record item {
+        kind: item-kind,
+        /// 0 when the list only knows the TVDB id (series).
         tmdb-id: s64,
+        tvdb-id: option<s64>,
         title: string,
         year: option<u32>,
         imdb-id: option<string>,

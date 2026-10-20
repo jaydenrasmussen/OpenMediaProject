@@ -11,6 +11,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use omp_app::{App, AppConfig, router};
+use omp_core::tv::{SeriesInfo, SeriesStatus};
 use omp_core::{
     history::HistoryEvent,
     movie::{MovieMetadata, MovieStatus},
@@ -20,7 +21,7 @@ use omp_db::{
     Db,
     repo::{HistoryRecord, NewMovie},
 };
-use omp_metadata::{MetadataError, MovieMetadataProvider};
+use omp_metadata::{MetadataError, MovieMetadataProvider, SeriesMetadataProvider};
 use omp_services::{MediaProbe, NoDiskCheck, ProbeInfo};
 use serde_json::{Value, json};
 use tokio::{
@@ -636,4 +637,166 @@ async fn import_lists_add_movies_once_and_respect_exclusions() {
     assert_eq!(sync().await.0, StatusCode::OK);
     let (_, back) = call(&r, Method::GET, "/api/v1/movie", None).await;
     assert_eq!(back.as_array().unwrap().len(), 2);
+}
+
+struct FakeSeries;
+
+#[async_trait]
+impl SeriesMetadataProvider for FakeSeries {
+    async fn series(&self, tmdb_id: i64) -> Result<SeriesInfo, MetadataError> {
+        if tmdb_id == 1396 {
+            Ok(SeriesInfo {
+                tmdb_id: 1396,
+                tvdb_id: Some(81189),
+                title: "Breaking Bad".into(),
+                year: 2008,
+                status: SeriesStatus::Ended,
+                ..Default::default()
+            })
+        } else {
+            Err(MetadataError::NotFound)
+        }
+    }
+    async fn search_series(
+        &self,
+        _: &str,
+        _: Option<i32>,
+    ) -> Result<Vec<SeriesInfo>, MetadataError> {
+        Ok(vec![])
+    }
+    async fn series_by_imdb_id(&self, _: &str) -> Result<SeriesInfo, MetadataError> {
+        Err(MetadataError::NotFound)
+    }
+    async fn series_by_tvdb_id(&self, tvdb: i64) -> Result<SeriesInfo, MetadataError> {
+        if tvdb == 81189 {
+            self.series(1396).await
+        } else {
+            Err(MetadataError::NotFound)
+        }
+    }
+}
+
+#[tokio::test]
+async fn import_lists_add_series_named_by_tvdb_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = AppConfig::new(dir.path().join("data"));
+    let plugin_dir = dir.path().join("plugins");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    install_plugin(&plugin_dir, "custom-list", "custom_list.wasm");
+    config.plugin_dirs = vec![plugin_dir];
+    let app = App::with_series_metadata(
+        config,
+        Db::in_memory().await.unwrap(),
+        Some(Arc::new(FakeTmdb)),
+        Some(Arc::new(FakeSeries)),
+        Arc::new(NoProbe),
+        Arc::new(NoDiskCheck),
+    )
+    .await
+    .unwrap();
+    let key = app.api_key().await.unwrap();
+    let r = Rig {
+        router: router(app.clone()),
+        app,
+        key,
+        _dir: dir,
+    };
+
+    let url = serve_json(
+        r#"[{"type": "series", "tvdbId": 81189, "title": "Breaking Bad"},
+            {"tmdbId": 603, "title": "The Matrix"}]"#,
+    )
+    .await;
+    let movies = r._dir.path().join("movies");
+    let shows = r._dir.path().join("tv");
+    for p in [&movies, &shows] {
+        std::fs::create_dir_all(p).unwrap();
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/rootfolder",
+            Some(json!({ "path": p })),
+        )
+        .await;
+    }
+    let profile = r.app.db.quality_profiles().list().await.unwrap()[0].id;
+    let body = |series_root: Option<&str>| {
+        let mut settings = json!({
+            "quality_profile_id": profile, "root_folder_path": movies,
+            "settings": { "url": url },
+        });
+        if let Some(root) = series_root {
+            settings["series_root_folder_path"] = json!(root);
+            settings["series_quality_profile_id"] = json!(profile);
+        }
+        json!({ "name": "Mixed", "implementation": "custom-list", "plugin_id": "custom-list", "settings": settings })
+    };
+    assert_eq!(
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/importlist",
+            Some(body(Some("/nowhere")))
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let (s, _) = call(&r, Method::POST, "/api/v1/importlist", Some(body(None))).await;
+    assert_eq!(s, StatusCode::CREATED);
+
+    // Without a series destination the series are reported, the movie still arrives.
+    let sync = || {
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/command",
+            Some(json!({ "name": "ImportListSync", "wait": true })),
+        )
+    };
+    let (status, _) = sync().await;
+    assert_eq!(
+        status,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "the series problem is reported"
+    );
+    assert_eq!(
+        call(&r, Method::GET, "/api/v1/movie", None)
+            .await
+            .1
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        call(&r, Method::GET, "/api/v1/series", None).await.1,
+        json!([])
+    );
+
+    // With one, the series is added by its TVDB id, once.
+    let (_, lists) = call(&r, Method::GET, "/api/v1/importlist", None).await;
+    let id = lists[0]["id"].as_i64().unwrap();
+    let (s, _) = call(
+        &r,
+        Method::PUT,
+        &format!("/api/v1/importlist/{id}"),
+        Some(body(Some(&shows.to_string_lossy()))),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(sync().await.0, StatusCode::OK);
+    let (_, series) = call(&r, Method::GET, "/api/v1/series", None).await;
+    assert_eq!(series.as_array().unwrap().len(), 1);
+    assert_eq!(series[0]["title"], "Breaking Bad");
+    assert_eq!(sync().await.0, StatusCode::OK);
+    assert_eq!(
+        call(&r, Method::GET, "/api/v1/series", None)
+            .await
+            .1
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
