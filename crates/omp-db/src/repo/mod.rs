@@ -3,6 +3,7 @@
 mod activity;
 mod auth;
 mod config;
+mod logs;
 mod movies;
 mod profiles;
 mod providers;
@@ -13,6 +14,7 @@ pub use activity::{
 };
 pub use auth::{Sessions, User, Users};
 pub use config::Config;
+pub use logs::{LogEntry, Logs};
 pub use movies::{MovieFileRecord, MovieFiles, MovieRecord, MovieUpdate, Movies, NewMovie};
 pub use profiles::{
     CustomFormats, DelayProfiles, QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles,

@@ -1,6 +1,7 @@
 use std::env;
 
 use omp_app::{App, AppConfig, router, spawn_scheduler};
+use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -10,10 +11,13 @@ async fn main() -> anyhow::Result<()> {
 
     // A .env file is a development convenience; the container has none.
     let _ = dotenvy::dotenv();
-    tracing_subscriber::fmt()
-        .with_env_filter(
+    // Console output follows RUST_LOG; the event log in the UI keeps its own filter.
+    let (log_layer, log_queue) = omp_app::log_channel();
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
+        ))
+        .with(log_layer)
         .init();
 
     let config = AppConfig::from_env()?;
@@ -24,6 +28,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let app = App::open(config).await?;
+    let log_writer = log_queue.spawn_writer(app.db.clone());
     let background = spawn_scheduler(app.clone());
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -36,6 +41,7 @@ async fn main() -> anyhow::Result<()> {
     for task in background {
         task.abort();
     }
+    log_writer.abort();
     app.shutdown().await;
     Ok(())
 }

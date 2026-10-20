@@ -1123,7 +1123,13 @@ async fn list_root_folders(State(app): Shared) -> ApiResult {
     let rows = app.db.root_folders().list().await?;
     Ok(Json(Value::Array(
         rows.iter()
-            .map(|r| json!({ "id": r.id, "path": r.path }))
+            .map(|r| {
+                json!({
+                    "id": r.id,
+                    "path": r.path,
+                    "free_space": app.disk.free_bytes(&r.path),
+                })
+            })
             .collect(),
     )))
 }
@@ -1612,6 +1618,67 @@ async fn put_decision_config(
     to_json(&c)
 }
 
+async fn list_tasks(State(app): Shared) -> Json<Value> {
+    let tasks: Vec<Value> = app
+        .task_statuses()
+        .into_iter()
+        .map(|t| {
+            let next = t
+                .last_run
+                .map(|l| l + chrono::Duration::seconds(t.interval_secs as i64));
+            json!({
+                "name": t.name,
+                "label": t.label,
+                "interval_secs": t.interval_secs,
+                "last_run": t.last_run,
+                "next_run": next,
+                "last_duration_ms": t.last_duration_ms,
+                "last_error": t.last_error,
+            })
+        })
+        .collect();
+    Json(Value::Array(tasks))
+}
+
+#[derive(Deserialize)]
+struct LogQuery {
+    #[serde(default = "default_log_level")]
+    level: String,
+    search: Option<String>,
+    #[serde(default = "default_page_size")]
+    limit: i64,
+    #[serde(default)]
+    offset: i64,
+}
+
+fn default_log_level() -> String {
+    "info".into()
+}
+
+async fn list_logs(State(app): Shared, Query(q): Query<LogQuery>) -> ApiResult {
+    if !["error", "warn", "info", "debug"].contains(&q.level.as_str()) {
+        return Err(ApiError::bad_request(
+            "level must be error, warn, info or debug",
+        ));
+    }
+    let search = q.search.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let rows = app
+        .db
+        .logs()
+        .recent(&q.level, search, q.limit.clamp(1, 500), q.offset.max(0))
+        .await?;
+    Ok(Json(Value::Array(
+        rows.iter()
+            .map(|l| json!({ "time": l.time, "level": l.level, "logger": l.logger, "message": l.message }))
+            .collect(),
+    )))
+}
+
+async fn clear_logs(State(app): Shared) -> ApiResult<StatusCode> {
+    app.db.logs().clear().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn list_plugins(State(app): Shared) -> Json<Value> {
     let plugins: Vec<Value> = app
         .plugins
@@ -1835,6 +1902,9 @@ pub fn router(app: Arc<App>) -> Router {
     let api = provider_routes!(api, "/downloadclient", ProviderKind::DownloadClient);
     let api = provider_routes!(api, "/notification", ProviderKind::Notification);
     let api = provider_routes!(api, "/importlist", ProviderKind::ImportList);
+    let api = api
+        .route("/system/task", get(list_tasks))
+        .route("/log", get(list_logs).delete(clear_logs));
     let api = api.route("/exclusion", get(list_exclusions)).route(
         "/exclusion/{tmdb_id}",
         axum::routing::delete(delete_exclusion),

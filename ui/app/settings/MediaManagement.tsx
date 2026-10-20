@@ -6,6 +6,7 @@ import { useToast } from "../components/toast";
 import { del, get, post, put } from "../lib/api";
 import { errorMessage, useLoad } from "../lib/hooks";
 import { Decision } from "./Decision";
+import { formatSize } from "../lib/format";
 import type { ImportConfig, RootFolder } from "../lib/types";
 
 export function MediaManagement() {
@@ -50,7 +51,10 @@ function RootFolders() {
       <LoadState loading={folders.loading} error={folders.error} hasData={!!folders.data} />
       {folders.data?.map((f) => (
         <div key={f.id} className="spread">
-          <code>{f.path}</code>
+          <span>
+            <code>{f.path}</code>
+            {f.free_space != null && <span className="muted small"> · {formatSize(f.free_space)} free</span>}
+          </span>
           <button className="danger" onClick={() => remove(f)}>
             Remove
           </button>

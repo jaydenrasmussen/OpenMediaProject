@@ -125,6 +125,24 @@ export interface Provider {
 export interface RootFolder {
   id: number;
   path: string;
+  free_space: number | null;
+}
+
+export interface TaskStatus {
+  name: string;
+  label: string;
+  interval_secs: number;
+  last_run: string | null;
+  next_run: string | null;
+  last_duration_ms: number | null;
+  last_error: string | null;
+}
+
+export interface LogLine {
+  time: string;
+  level: "error" | "warn" | "info" | "debug";
+  logger: string;
+  message: string;
 }
 
 export interface ProfileItem {

@@ -25,6 +25,17 @@ impl DiskSpace for RealDisk {
     }
 }
 
+/// What a background job last did, for the Tasks page.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TaskStatus {
+    pub name: &'static str,
+    pub label: &'static str,
+    pub interval_secs: u64,
+    pub last_run: Option<DateTime<Utc>>,
+    pub last_duration_ms: Option<u64>,
+    pub last_error: Option<String>,
+}
+
 pub struct App {
     pub db: Db,
     pub config: AppConfig,
@@ -40,6 +51,7 @@ pub struct App {
     pub(crate) login_limiter: crate::auth::LoginLimiter,
     /// Interactive search results, kept so a chosen release can be grabbed.
     pub(crate) search_cache: std::sync::Mutex<crate::releases::SearchCache>,
+    tasks: std::sync::Mutex<std::collections::BTreeMap<&'static str, TaskStatus>>,
     pub(crate) rss_lock: tokio::sync::Mutex<()>,
     pub(crate) process_lock: tokio::sync::Mutex<()>,
     registry: RwLock<Arc<ClientRegistry>>,
@@ -82,12 +94,51 @@ impl App {
                 .await
                 .map_err(|e| anyhow::anyhow!("{}", e.1))?,
             search_cache: std::sync::Mutex::default(),
+            tasks: std::sync::Mutex::default(),
             rss_lock: tokio::sync::Mutex::new(()),
             process_lock: tokio::sync::Mutex::new(()),
             registry: RwLock::new(Arc::new(ClientRegistry::default())),
         });
         app.reload_clients().await?;
         Ok(app)
+    }
+
+    /// Makes a job appear on the Tasks page before it first runs.
+    pub(crate) fn register_task(
+        &self,
+        name: &'static str,
+        label: &'static str,
+        every: std::time::Duration,
+    ) {
+        self.tasks
+            .lock()
+            .unwrap()
+            .entry(name)
+            .or_insert(TaskStatus {
+                name,
+                label,
+                interval_secs: every.as_secs(),
+                last_run: None,
+                last_duration_ms: None,
+                last_error: None,
+            });
+    }
+
+    pub(crate) fn finish_task(
+        &self,
+        name: &'static str,
+        started: DateTime<Utc>,
+        error: Option<String>,
+    ) {
+        if let Some(t) = self.tasks.lock().unwrap().get_mut(name) {
+            t.last_run = Some(started);
+            t.last_duration_ms = Some((Utc::now() - started).num_milliseconds().max(0) as u64);
+            t.last_error = error;
+        }
+    }
+
+    pub fn task_statuses(&self) -> Vec<TaskStatus> {
+        self.tasks.lock().unwrap().values().cloned().collect()
     }
 
     /// The key programs use in the `X-Api-Key` header.

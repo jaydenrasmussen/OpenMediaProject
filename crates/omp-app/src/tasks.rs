@@ -110,108 +110,147 @@ pub async fn process_downloads_once(app: &App) -> Result<Option<ProcessResult>, 
     Ok(Some(result))
 }
 
+/// Runs `job` every `every` (after `delay`), recording each run for the
+/// Tasks page. `job` returns `Ok(Some(note))` to log what it did.
+fn every<F, Fut>(
+    app: &Arc<App>,
+    name: &'static str,
+    label: &'static str,
+    delay: Duration,
+    every: Duration,
+    skip_first: bool,
+    job: F,
+) -> JoinHandle<()>
+where
+    F: Fn(Arc<App>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<Option<String>, String>> + Send,
+{
+    app.register_task(name, label, every);
+    let app = app.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(delay).await;
+        let mut tick = tokio::time::interval(every);
+        if skip_first {
+            tick.tick().await;
+        }
+        loop {
+            tick.tick().await;
+            let started = chrono::Utc::now();
+            let result = job(app.clone()).await;
+            match &result {
+                Ok(Some(note)) => tracing::info!("{label}: {note}"),
+                Ok(None) => {}
+                Err(e) => tracing::warn!("{label} failed: {e}"),
+            }
+            app.finish_task(name, started, result.err());
+        }
+    })
+}
+
 /// Starts the periodic jobs. Abort the handles to stop them.
 pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
-    let rss = {
-        let app = app.clone();
-        tokio::spawn(async move {
-            // Give the download clients a moment before the first sync.
-            tokio::time::sleep(Duration::from_secs(30)).await;
-            let mut tick = tokio::time::interval(app.config.rss_interval);
-            loop {
-                tick.tick().await;
+    let minute = Duration::from_secs(60);
+    vec![
+        every(
+            &app,
+            "rss-sync",
+            "RSS sync",
+            Duration::from_secs(30),
+            app.config.rss_interval,
+            false,
+            |app| async move {
                 match rss_sync_once(&app).await {
-                    Ok(Some(r)) => tracing::info!(
-                        fetched = r.fetched,
-                        grabbed = r.processed.grabbed.len(),
-                        "RSS sync done"
-                    ),
-                    Ok(None) => tracing::debug!("RSS sync already running"),
-                    Err(e) => tracing::warn!("RSS sync failed: {e}"),
+                    Ok(Some(r)) => Ok(Some(format!(
+                        "{} releases fetched, {} grabbed",
+                        r.fetched,
+                        r.processed.grabbed.len()
+                    ))),
+                    Ok(None) => Ok(None),
+                    Err(e) => Err(e.to_string()),
                 }
-            }
-        })
-    };
-    let process = {
-        let app = app.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(app.config.process_interval);
-            loop {
-                tick.tick().await;
+            },
+        ),
+        every(
+            &app,
+            "process-downloads",
+            "Check downloads",
+            Duration::ZERO,
+            app.config.process_interval,
+            false,
+            |app| async move {
                 match process_downloads_once(&app).await {
                     Ok(Some(r)) if !r.imported.is_empty() || !r.refresh.newly_failed.is_empty() => {
-                        tracing::info!(
-                            imported = r.imported.len(),
-                            failed = r.refresh.newly_failed.len(),
-                            "downloads processed"
-                        );
+                        Ok(Some(format!(
+                            "{} imported, {} failed",
+                            r.imported.len(),
+                            r.refresh.newly_failed.len()
+                        )))
                     }
-                    Ok(_) => {}
-                    Err(e) => tracing::warn!("download processing failed: {e}"),
+                    Ok(_) => Ok(None),
+                    Err(e) => Err(e.to_string()),
                 }
-            }
-        })
-    };
-    let backup = {
-        let app = app.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(app.config.backup_interval);
-            tick.tick().await; // the first tick is immediate; a backup at every start would be noise
-            loop {
-                tick.tick().await;
-                match crate::backups::create(&app).await {
-                    Ok(b) => tracing::info!(name = %b.name, size = b.size, "database backed up"),
-                    Err(e) => tracing::warn!("backup failed: {e}"),
-                }
-            }
-        })
-    };
-    let refresh = {
-        let app = app.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(5 * 60)).await;
-            let mut tick = tokio::time::interval(app.config.refresh_interval);
-            loop {
-                tick.tick().await;
-                match refresh_movies_once(&app, None).await {
-                    Ok(n) => tracing::info!(updated = n, "movie metadata refreshed"),
-                    Err(e) => tracing::warn!("movie refresh failed: {e}"),
-                }
-            }
-        })
-    };
-    let notify = {
-        let app = app.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(Duration::from_secs(15));
-            loop {
-                tick.tick().await;
-                if let Err(e) = crate::notify::dispatch_once(&app).await {
-                    tracing::warn!("notifications failed: {e}");
-                }
-            }
-        })
-    };
-    let lists = {
-        let app = app.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(2 * 60)).await;
-            let mut tick = tokio::time::interval(app.config.list_interval);
-            loop {
-                tick.tick().await;
+            },
+        ),
+        every(
+            &app,
+            "backup",
+            "Backup",
+            Duration::ZERO,
+            app.config.backup_interval,
+            true,
+            |app| async move {
+                crate::backups::create(&app)
+                    .await
+                    .map(|b| Some(format!("{} ({} bytes)", b.name, b.size)))
+                    .map_err(|e| e.to_string())
+            },
+        ),
+        every(
+            &app,
+            "refresh-movies",
+            "Refresh movie details",
+            5 * minute,
+            app.config.refresh_interval,
+            false,
+            |app| async move {
+                refresh_movies_once(&app, None)
+                    .await
+                    .map(|n| Some(format!("{n} movies refreshed")))
+                    .map_err(|e| e.to_string())
+            },
+        ),
+        every(
+            &app,
+            "notifications",
+            "Send notifications",
+            Duration::ZERO,
+            Duration::from_secs(15),
+            false,
+            |app| async move {
+                crate::notify::dispatch_once(&app)
+                    .await
+                    .map(|n| (n > 0).then(|| format!("{n} sent")))
+                    .map_err(|e| e.to_string())
+            },
+        ),
+        every(
+            &app,
+            "import-lists",
+            "Sync import lists",
+            2 * minute,
+            app.config.list_interval,
+            false,
+            |app| async move {
                 match crate::lists::sync_once(&app).await {
-                    Ok(r) if r.added > 0 || !r.problems.is_empty() => tracing::info!(
-                        added = r.added,
-                        problems = r.problems.len(),
-                        "import lists synced"
-                    ),
-                    Ok(_) => {}
-                    Err(e) => tracing::warn!("import list sync failed: {e}"),
+                    Ok(r) if r.problems.is_empty() => {
+                        Ok((r.added > 0).then(|| format!("{} added", r.added)))
+                    }
+                    Ok(r) => Err(r.problems.join("; ")),
+                    Err(e) => Err(e.to_string()),
                 }
-            }
-        })
-    };
-    vec![rss, process, backup, refresh, notify, lists]
+            },
+        ),
+    ]
 }
 
 /// Re-reads movie details from the metadata provider: release dates, status
