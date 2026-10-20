@@ -1234,3 +1234,101 @@ async fn an_existing_library_can_be_found_and_imported() {
         StatusCode::SERVICE_UNAVAILABLE
     );
 }
+
+#[tokio::test]
+async fn wanted_lists_show_missing_movies_and_files_below_the_cutoff() {
+    let r = rig().await;
+    let root = add_root(&r).await;
+    let (_, profiles) = get(&r, "/api/v1/qualityprofile").await;
+    let profile_id = |name: &str| {
+        profiles
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["name"] == name)
+            .unwrap()["id"]
+            .clone()
+    };
+
+    // A movie without a file is missing, until it stops being monitored.
+    let (_, m) = call(
+        &r,
+        Method::POST,
+        "/api/v1/movie",
+        Some(json!({ "tmdb_id": 603, "quality_profile_id": profile_id("HD-1080p"), "root_folder_path": root })),
+    )
+    .await;
+    let id = m["id"].as_i64().unwrap();
+    let (s, missing) = get(&r, "/api/v1/wanted/missing").await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(missing.as_array().unwrap().len(), 1);
+    assert_eq!(get(&r, "/api/v1/wanted/cutoff").await.1, json!([]));
+    let mut unmonitored = m.clone();
+    unmonitored["monitored"] = json!(false);
+    call(
+        &r,
+        Method::PUT,
+        &format!("/api/v1/movie/{id}"),
+        Some(unmonitored),
+    )
+    .await;
+    assert_eq!(get(&r, "/api/v1/wanted/missing").await.1, json!([]));
+    call(&r, Method::DELETE, &format!("/api/v1/movie/{id}"), None).await;
+
+    // A 1080p Bluray file meets the HD-1080p cutoff but not Ultra-HD's.
+    for (profile, wanted) in [("HD-1080p", 0), ("Ultra-HD", 1)] {
+        let folder = std::path::Path::new(&root).join(format!("The Matrix (1999) {profile}"));
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("The.Matrix.1999.1080p.BluRay.x264-GRP.mkv"),
+            vec![1u8; 2048],
+        )
+        .unwrap();
+        let (_, out) = call(
+            &r,
+            Method::POST,
+            "/api/v1/movie/import",
+            Some(json!({
+                "items": [{ "path": folder.to_string_lossy(), "tmdb_id": 603 }],
+                "quality_profile_id": profile_id(profile),
+            })),
+        )
+        .await;
+        assert_eq!(out["results"][0]["ok"], true, "{out}");
+        let (_, cutoff) = get(&r, "/api/v1/wanted/cutoff").await;
+        assert_eq!(
+            cutoff.as_array().unwrap().len(),
+            wanted,
+            "{profile}: {cutoff}"
+        );
+        assert_eq!(get(&r, "/api/v1/wanted/missing").await.1, json!([]));
+        let movie_id = out["results"][0]["movie_id"].as_i64().unwrap();
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/movie/{movie_id}"),
+            None,
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn blocklist_and_queue_removal_handle_missing_entries() {
+    let r = rig().await;
+    assert_eq!(get(&r, "/api/v1/blocklist").await.1, json!([]));
+    assert_eq!(
+        call(&r, Method::DELETE, "/api/v1/blocklist/5", None)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(&r, Method::DELETE, "/api/v1/blocklist", None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(&r, Method::DELETE, "/api/v1/queue/nope", None).await.0,
+        StatusCode::NOT_FOUND
+    );
+}

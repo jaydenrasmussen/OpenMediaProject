@@ -35,4 +35,6 @@ pub use sync::{
     IndexerFailure, IndexerPool, RssSyncResult, SearchMode, SearchResult, SyncContext, rss_sync,
     search_movie, test_indexer,
 };
-pub use tracking::{DownloadMonitor, MonitorOptions, RefreshResult, TrackedDownload, TrackedState};
+pub use tracking::{
+    DownloadMonitor, MonitorOptions, RefreshResult, TrackedDownload, TrackedState, record_failure,
+};

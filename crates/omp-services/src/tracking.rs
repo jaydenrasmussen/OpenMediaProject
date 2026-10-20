@@ -109,6 +109,11 @@ impl DownloadMonitor {
         all
     }
 
+    /// Stops tracking a download (it was removed on purpose).
+    pub fn forget(&self, download_id: &str) {
+        self.tracked.lock().unwrap().remove(download_id);
+    }
+
     /// Marks a download as needing a person, with the reasons.
     pub fn block(&self, download_id: &str, reasons: Vec<String>) {
         if let Some(t) = self.tracked.lock().unwrap().get_mut(download_id) {
@@ -234,17 +239,39 @@ async fn mark_failed(
         .message
         .clone()
         .unwrap_or_else(|| "Download failed".into());
+    record_failure(
+        db,
+        grab,
+        &t.item.download_id,
+        t.protocol,
+        message,
+        options.now,
+    )
+    .await?;
+    t.state = TrackedState::Failed;
+    Ok(true)
+}
 
+/// Writes the "download failed" history event for a grab and blocklists the
+/// release so it is not picked again.
+pub async fn record_failure(
+    db: &Db,
+    grab: &HistoryRecord,
+    download_id: &str,
+    protocol: DownloadProtocol,
+    message: String,
+    now: DateTime<Utc>,
+) -> Result<(), ServiceError> {
     db.history()
         .insert(&HistoryRecord {
             id: 0,
             movie_id: grab.movie_id,
             event: HistoryEvent::DownloadFailed,
-            date: options.now,
+            date: now,
             source_title: grab.source_title.clone(),
             quality: grab.quality,
             languages: grab.languages.clone(),
-            download_id: Some(t.item.download_id.clone()),
+            download_id: Some(download_id.to_owned()),
             data: [
                 ("message".to_owned(), message.clone()),
                 (
@@ -269,7 +296,7 @@ async fn mark_failed(
                 .and_then(|d| DateTime::parse_from_rfc3339(d).ok())
                 .map(|d| d.with_timezone(&Utc)),
             size: data.get("size").and_then(|s| s.parse().ok()),
-            protocol: t.protocol,
+            protocol,
             indexer: data.get("indexer").cloned(),
             indexer_flags: IndexerFlags(
                 data.get("indexer_flags")
@@ -278,11 +305,10 @@ async fn mark_failed(
             ),
             torrent_info_hash: data.get("torrent_info_hash").cloned(),
             message: Some(message),
-            date: options.now,
+            date: now,
         })
         .await?;
-    t.state = TrackedState::Failed;
-    Ok(true)
+    Ok(())
 }
 
 /// A finished download that is still waiting moves to ImportPending when it

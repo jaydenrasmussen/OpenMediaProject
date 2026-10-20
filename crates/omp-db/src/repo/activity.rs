@@ -174,6 +174,18 @@ impl Blocklist<'_> {
         .last_insert_rowid())
     }
 
+    /// Newest first.
+    pub async fn recent(&self, limit: i64, offset: i64) -> Result<Vec<BlocklistEntry>> {
+        sqlx::query("SELECT * FROM blocklist ORDER BY date DESC, id DESC LIMIT ? OFFSET ?")
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(self.0)
+            .await?
+            .iter()
+            .map(blocklist_from_row)
+            .collect()
+    }
+
     pub async fn for_movie(&self, movie_id: i64) -> Result<Vec<BlocklistEntry>> {
         sqlx::query("SELECT * FROM blocklist WHERE movie_id = ? ORDER BY date DESC")
             .bind(movie_id)

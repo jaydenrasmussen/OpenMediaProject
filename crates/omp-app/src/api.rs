@@ -459,6 +459,152 @@ async fn queue(State(app): Shared) -> Json<Value> {
     Json(Value::Array(items))
 }
 
+#[derive(Deserialize, Default)]
+struct RemoveQueue {
+    /// Also delete what the client downloaded.
+    #[serde(default)]
+    delete_data: bool,
+    /// Treat the release as failed so it is not picked again.
+    #[serde(default)]
+    blocklist: bool,
+    /// After blocklisting, look for another release.
+    #[serde(default)]
+    search: bool,
+}
+
+async fn remove_queue_item(
+    State(app): Shared,
+    Path(download_id): Path<String>,
+    Query(q): Query<RemoveQueue>,
+) -> ApiResult<StatusCode> {
+    let tracked = app
+        .monitor
+        .get(&download_id)
+        .ok_or_else(|| ApiError::not_found("that download isn't in the queue"))?;
+    let client = app
+        .registry()
+        .get(tracked.client_id)
+        .ok_or_else(|| ApiError::not_found("its download client is gone"))?;
+    client
+        .client
+        .remove(&download_id, q.delete_data)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    app.monitor.forget(&download_id);
+
+    if q.blocklist {
+        let grab = app
+            .db
+            .history()
+            .by_download_id(&download_id)
+            .await?
+            .into_iter()
+            .rev()
+            .find(|h| h.event == HistoryEvent::Grabbed);
+        if let Some(grab) = grab {
+            omp_services::record_failure(
+                &app.db,
+                &grab,
+                &download_id,
+                tracked.protocol,
+                "Removed from the queue and blocklisted".into(),
+                chrono::Utc::now(),
+            )
+            .await?;
+            if q.search {
+                let app = app.clone();
+                let movie_id = grab.movie_id;
+                tokio::spawn(async move {
+                    if let Err(e) =
+                        tasks::search_movie_once(&app, movie_id, SearchMode::Automatic, true).await
+                    {
+                        tracing::warn!("search after blocklisting failed: {e}");
+                    }
+                });
+            }
+        }
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_blocklist(State(app): Shared, Query(p): Query<Paging>) -> ApiResult {
+    let rows = app
+        .db
+        .blocklist()
+        .recent(p.limit.clamp(1, 500), p.offset.max(0))
+        .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for b in &rows {
+        let title = app
+            .db
+            .movies()
+            .get(b.movie_id)
+            .await
+            .map(|m| m.movie.title)
+            .unwrap_or_default();
+        out.push(json!({
+            "id": b.id,
+            "movie_id": b.movie_id,
+            "movie_title": title,
+            "source_title": b.source_title,
+            "quality": b.quality.quality.name,
+            "protocol": format!("{:?}", b.protocol),
+            "indexer": b.indexer,
+            "size": b.size,
+            "message": b.message,
+            "date": b.date,
+        }));
+    }
+    Ok(Json(Value::Array(out)))
+}
+
+async fn delete_blocklist_entry(State(app): Shared, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    app.db.blocklist().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn clear_blocklist(State(app): Shared) -> ApiResult<StatusCode> {
+    app.db.blocklist().clear().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Monitored movies without a file.
+async fn wanted_missing(State(app): Shared) -> ApiResult {
+    let mut out = Vec::new();
+    for m in app.db.movies().list().await? {
+        if !m.movie.monitored {
+            continue;
+        }
+        if app.db.movie_files().for_movie(m.movie.id).await?.is_none() {
+            out.push(movie_json(&m, None));
+        }
+    }
+    Ok(Json(Value::Array(out)))
+}
+
+/// Monitored movies whose file is below the profile's cutoff.
+async fn wanted_cutoff(State(app): Shared) -> ApiResult {
+    let profiles = app.db.quality_profiles().list().await?;
+    let formats = app.db.custom_formats().load_compiled().await?;
+    let mut out = Vec::new();
+    for m in app.db.movies().list().await? {
+        if !m.movie.monitored {
+            continue;
+        }
+        let Some(file) = app.db.movie_files().for_movie(m.movie.id).await? else {
+            continue;
+        };
+        let Some(profile) = profiles.iter().find(|p| p.id == m.movie.quality_profile_id) else {
+            continue;
+        };
+        let ids = omp_services::matching_ids(&formats, &omp_services::input_for_file(&file, &m));
+        if omp_quality::upgrade::cutoff_not_met(profile, &file.quality, &ids, None) {
+            out.push(movie_json(&m, Some(&file)));
+        }
+    }
+    Ok(Json(Value::Array(out)))
+}
+
 #[derive(Deserialize)]
 struct Paging {
     #[serde(default = "default_page_size")]
@@ -1420,6 +1566,17 @@ pub fn router(app: Arc<App>) -> Router {
             get(get_movie).put(update_movie).delete(delete_movie),
         )
         .route("/queue", get(queue))
+        .route(
+            "/queue/{download_id}",
+            axum::routing::delete(remove_queue_item),
+        )
+        .route("/blocklist", get(list_blocklist).delete(clear_blocklist))
+        .route(
+            "/blocklist/{id}",
+            axum::routing::delete(delete_blocklist_entry),
+        )
+        .route("/wanted/missing", get(wanted_missing))
+        .route("/wanted/cutoff", get(wanted_cutoff))
         .route("/history", get(history))
         .route("/command", post(command))
         .route("/rootfolder", get(list_root_folders).post(add_root_folder))
