@@ -42,7 +42,9 @@ pub use media::naming_media;
 pub use process::{ProcessOptions, ProcessResult, process_downloads};
 pub use recycle::{clean_bin as clean_recycle_bin, dispose as dispose_file};
 pub use rename::{RenamePreview, rename_movie, rename_preview, rename_previews};
-pub use scan::{RescanResult, UnmappedFolder, rescan_movie, unmapped_folders};
+pub use scan::{
+    RescanResult, UnmappedFolder, rescan_movie, unmapped_folders, unmapped_series_folders,
+};
 pub use series::{
     AddSeries, RefreshStats, add_series, apply_monitor_mode, monitored_by_mode, refresh_series,
 };

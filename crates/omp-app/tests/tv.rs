@@ -664,3 +664,66 @@ async fn wanted_calendar_history_and_blocklist_cover_episodes() {
         assert_eq!(s.is_success(), ok, "{cmd}: {s} {body}");
     }
 }
+
+#[tokio::test]
+async fn existing_series_folders_can_be_adopted_with_their_files() {
+    let r = rig(true).await;
+    let root = add_root(&r).await;
+    let p = profile(&r).await;
+    let folder = std::path::Path::new(&root).join("Breaking Bad (2008)");
+    std::fs::create_dir_all(folder.join("Season 1")).unwrap();
+    std::fs::write(
+        folder.join("Season 1/Breaking.Bad.S01E01.720p.BluRay.x264-GRP.mkv"),
+        b"x",
+    )
+    .unwrap();
+    std::fs::create_dir_all(std::path::Path::new(&root).join("Empty Show")).unwrap();
+
+    let (_, roots) = get(&r, "/api/v1/rootfolder").await;
+    let root_id = roots[0]["id"].as_i64().unwrap();
+    let (s, folders) = get(&r, &format!("/api/v1/rootfolder/{root_id}/unmapped-series")).await;
+    assert_eq!(s, StatusCode::OK, "{folders}");
+    let names: Vec<_> = folders
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Breaking Bad (2008)", "Empty Show"]);
+    assert_eq!(folders[0]["has_media"], true);
+
+    let body = json!({
+        "items": [
+            { "path": folder.to_string_lossy(), "tmdb_id": 1396 },
+            { "path": "/elsewhere/Show", "tmdb_id": 1396 },
+        ],
+        "quality_profile_id": p,
+    });
+    let (s, res) = call(
+        &r,
+        Method::POST,
+        "/api/v1/series/import",
+        Some(body.clone()),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{res}");
+    assert_eq!(res["results"][0]["ok"], true, "{res}");
+    assert_eq!(res["results"][1]["ok"], false);
+    let id = res["results"][0]["series_id"].as_i64().unwrap();
+
+    let (_, eps) = get(&r, &format!("/api/v1/episode?series_id={id}")).await;
+    let with_file: Vec<_> = eps
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| !e["file"].is_null())
+        .collect();
+    assert_eq!(with_file.len(), 1, "{eps}");
+    assert_eq!(with_file[0]["episode_number"], 1);
+
+    // It is in the library now, so the folder is no longer offered or importable.
+    let (_, folders) = get(&r, &format!("/api/v1/rootfolder/{root_id}/unmapped-series")).await;
+    assert_eq!(folders.as_array().unwrap().len(), 1);
+    let (_, again) = call(&r, Method::POST, "/api/v1/series/import", Some(body)).await;
+    assert_eq!(again["results"][0]["ok"], false);
+}

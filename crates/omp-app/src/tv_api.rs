@@ -38,6 +38,8 @@ pub(crate) fn routes() -> Router<Arc<App>> {
             axum::routing::delete(delete_episode_file),
         )
         .route("/series/{id}/monitor", post(apply_monitor))
+        .route("/series/import", post(import_series))
+        .route("/rootfolder/{id}/unmapped-series", get(unmapped_series))
 }
 
 // ---- JSON shapes -----------------------------------------------------------
@@ -767,4 +769,122 @@ pub(crate) async fn refresh(app: &App, only: Option<i64>) -> Result<usize, Strin
         }
     }
     Ok(refreshed)
+}
+
+async fn unmapped_series(State(app): Shared, Path(id): Path<i64>) -> ApiResult {
+    let root = app
+        .db
+        .root_folders()
+        .list()
+        .await?
+        .into_iter()
+        .find(|r| r.id == id)
+        .ok_or_else(|| ApiError::not_found("no such root folder"))?;
+    let folders =
+        omp_services::unmapped_series_folders(&app.db, std::path::Path::new(&root.path)).await?;
+    Ok(Json(Value::Array(
+        folders
+            .iter()
+            .map(|f| {
+                json!({
+                    "name": f.name,
+                    "path": f.path,
+                    "title": f.title,
+                    "year": f.year,
+                    "has_media": f.has_media,
+                })
+            })
+            .collect(),
+    )))
+}
+
+#[derive(Deserialize)]
+struct ImportItem {
+    /// An existing folder directly inside a root folder.
+    path: String,
+    tmdb_id: i64,
+}
+
+#[derive(Deserialize)]
+struct ImportBatch {
+    items: Vec<ImportItem>,
+    quality_profile_id: i32,
+    #[serde(default = "yes")]
+    monitored: bool,
+    #[serde(default = "yes")]
+    season_folder: bool,
+    #[serde(default = "default_monitor")]
+    monitor: String,
+}
+
+/// Adds series whose folders already exist, keeping the folders where they
+/// are, and picks up the episode files inside them. Each item succeeds or
+/// fails on its own.
+async fn import_series(State(app): Shared, Json(req): Json<ImportBatch>) -> ApiResult {
+    let Some(provider) = app.series_metadata.clone() else {
+        return Err(ApiError::unavailable(
+            "no metadata provider is configured (set TMDB_READ_TOKEN)",
+        ));
+    };
+    if req.items.len() > 500 {
+        return Err(ApiError::bad_request("import at most 500 series at a time"));
+    }
+    let monitor = parse_monitor(&req.monitor)?;
+    app.db
+        .quality_profiles()
+        .get(req.quality_profile_id)
+        .await
+        .map_err(|_| ApiError::bad_request("unknown quality_profile_id"))?;
+    let roots = app.db.root_folders().list().await?;
+    let existing = app.db.series().list().await?;
+
+    let mut results = Vec::new();
+    for item in &req.items {
+        let outcome: Result<i64, String> = async {
+            let path = std::path::Path::new(&item.path);
+            let root = roots
+                .iter()
+                .find(|r| path.parent() == Some(std::path::Path::new(&r.path)))
+                .ok_or("the folder is not directly inside a root folder")?;
+            if !path.is_dir() {
+                return Err("the folder does not exist".to_owned());
+            }
+            if existing.iter().any(|s| s.info.tmdb_id == item.tmdb_id) {
+                return Err("this series is already in the library".into());
+            }
+            if existing.iter().any(|s| s.path == item.path) {
+                return Err("another series already uses this folder".into());
+            }
+            let id = add_series(
+                &app.db,
+                &*provider,
+                &AddSeries {
+                    tmdb_id: item.tmdb_id,
+                    quality_profile_id: req.quality_profile_id,
+                    path: item.path.clone(),
+                    root_folder_path: Some(root.path.clone()),
+                    series_type: None,
+                    monitor,
+                    monitored: req.monitored,
+                    season_folder: req.season_folder,
+                    monitor_new_items: NewItemMonitor::All,
+                    use_scene_numbering: false,
+                    tags: Vec::new(),
+                },
+                Utc::now(),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            omp_services::rescan_series(&app.db, id, Utc::now())
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(id)
+        }
+        .await;
+        results.push(match outcome {
+            Ok(id) => json!({ "path": item.path, "ok": true, "series_id": id }),
+            Err(error) => json!({ "path": item.path, "ok": false, "error": error }),
+        });
+    }
+    Ok(Json(json!({ "results": results })))
 }

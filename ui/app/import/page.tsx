@@ -20,17 +20,19 @@ interface Row extends Unmapped {
   match: LookupResult | null;
   state: "waiting" | "looking" | "done";
   include: boolean;
-  result?: { ok: boolean; error?: string; movie_id?: number };
+  result?: { ok: boolean; error?: string; movie_id?: number; series_id?: number };
 }
 
 interface ImportResponse {
-  results: { path: string; ok: boolean; error?: string; movie_id?: number }[];
+  results: { path: string; ok: boolean; error?: string; movie_id?: number; series_id?: number }[];
 }
 
 export default function ImportLibrary() {
   const notify = useToast();
   const roots = useLoad(() => get<RootFolder[]>("/rootfolder"));
   const profiles = useLoad(() => get<QualityProfile[]>("/qualityprofile"));
+  const [kind, setKind] = useState<"movies" | "series">("movies");
+  const tv = kind === "series";
   const [rootId, setRootId] = useState<number | null>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -48,7 +50,7 @@ export default function ImportLibrary() {
     setScanning(true);
     setRows(null);
     try {
-      const found = await get<Unmapped[]>(`/rootfolder/${selectedRoot}/unmapped`);
+      const found = await get<Unmapped[]>(`/rootfolder/${selectedRoot}/${tv ? "unmapped-series" : "unmapped"}`);
       if (mine !== generation.current) return;
       const initial: Row[] = found.map((f) => ({ ...f, match: null, state: "waiting", include: false }));
       setRows(initial);
@@ -70,7 +72,7 @@ export default function ImportLibrary() {
         update(i, { state: "looking" });
         try {
           const term = row.year ? `${row.title} ${row.year}` : row.title;
-          const found = await get<LookupResult[]>(`/movie/lookup?term=${encodeURIComponent(term)}`);
+          const found = await get<LookupResult[]>(`${tv ? "/series" : "/movie"}/lookup?term=${encodeURIComponent(term)}`);
           const best = found[0] ?? null;
           update(i, { match: best, state: "done", include: !!best && !best.in_library && row.has_media });
         } catch {
@@ -90,7 +92,7 @@ export default function ImportLibrary() {
     if (!t) return;
     update(index, { state: "looking" });
     try {
-      const found = await get<LookupResult[]>(`/movie/lookup?term=${encodeURIComponent(t)}`);
+      const found = await get<LookupResult[]>(`${tv ? "/series" : "/movie"}/lookup?term=${encodeURIComponent(t)}`);
       update(index, { match: found[0] ?? null, state: "done", include: !!found[0] && !found[0].in_library });
     } catch (e) {
       notify(errorMessage(e), "bad");
@@ -104,7 +106,7 @@ export default function ImportLibrary() {
     if (chosen.length === 0) return;
     setImporting(true);
     try {
-      const res = await post<ImportResponse>("/movie/import", {
+      const res = await post<ImportResponse>(tv ? "/series/import" : "/movie/import", {
         items: chosen.map((r) => ({ path: r.path, tmdb_id: r.match!.tmdb_id })),
         quality_profile_id: profileValue,
         monitored,
@@ -124,14 +126,30 @@ export default function ImportLibrary() {
   useEffect(() => {
     if (selectedRoot != null && rows === null && !scanning) void scan();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRoot]);
+  }, [selectedRoot, kind]);
 
   const count = rows?.filter((r) => r.include && r.match && !r.result?.ok).length ?? 0;
   return (
     <>
-      <h1>Import existing movies</h1>
+      <h1>Import existing {tv ? "series" : "movies"}</h1>
+      <div className="tabs" role="tablist" aria-label="Kind">
+        {(["movies", "series"] as const).map((k) => (
+          <button
+            key={k}
+            role="tab"
+            className={kind === k ? "active" : ""}
+            onClick={() => {
+              generation.current += 1;
+              setKind(k);
+              setRows(null);
+            }}
+          >
+            {k === "movies" ? "Movies" : "Series"}
+          </button>
+        ))}
+      </div>
       <p className="muted">
-        Finds movie folders in a root folder that are not in the library, matches them on TMDB, and adds them where they are. Files inside are picked up automatically.
+        Finds {tv ? "series" : "movie"} folders in a root folder that are not in the library, matches them on TMDB, and adds them where they are. Files inside are picked up automatically.
       </p>
       <LoadState loading={roots.loading} error={roots.error} hasData={!!roots.data} />
       {roots.data?.length === 0 && (
@@ -207,7 +225,7 @@ export default function ImportLibrary() {
                     </td>
                     <td>
                       {r.result?.ok ? (
-                        <Link href={`/movie/?id=${r.result.movie_id}`}>Added</Link>
+                        <Link href={tv ? `/series/show/?id=${r.result.series_id}` : `/movie/?id=${r.result.movie_id}`}>Added</Link>
                       ) : r.state !== "done" ? (
                         <span className="muted">Looking…</span>
                       ) : r.match ? (
@@ -241,7 +259,7 @@ export default function ImportLibrary() {
           <div className="row end" style={{ marginTop: "1rem" }}>
             <span className="muted small">{count} selected</span>
             <button className="primary" onClick={run} disabled={importing || count === 0 || profileValue === ""}>
-              {importing ? "Importing…" : `Import ${count} movie${count === 1 ? "" : "s"}`}
+              {importing ? "Importing…" : `Import ${count} ${tv ? "series" : count === 1 ? "movie" : "movies"}`}
             </button>
           </div>
         </>

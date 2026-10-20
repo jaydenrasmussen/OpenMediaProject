@@ -222,7 +222,28 @@ pub async fn unmapped_folders(db: &Db, root: &Path) -> Result<Vec<UnmappedFolder
         .into_iter()
         .map(|m| PathBuf::from(m.movie.path))
         .collect();
+    unmapped_in(root, &known).await
+}
 
+/// As [`unmapped_folders`], for TV: folders no series uses.
+pub async fn unmapped_series_folders(
+    db: &Db,
+    root: &Path,
+) -> Result<Vec<UnmappedFolder>, ServiceError> {
+    let known: std::collections::HashSet<PathBuf> = db
+        .series()
+        .list()
+        .await?
+        .into_iter()
+        .map(|s| PathBuf::from(s.path))
+        .collect();
+    unmapped_in(root, &known).await
+}
+
+async fn unmapped_in(
+    root: &Path,
+    known: &std::collections::HashSet<PathBuf>,
+) -> Result<Vec<UnmappedFolder>, ServiceError> {
     let mut out = Vec::new();
     let mut entries = tokio::fs::read_dir(root)
         .await
