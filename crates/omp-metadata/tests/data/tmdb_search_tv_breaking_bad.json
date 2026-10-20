@@ -1,0 +1,74 @@
+{
+ "page": 1,
+ "results": [
+  {
+   "adult": false,
+   "backdrop_path": "/tsRy63Mu5cu8etL1X7ZLyf7UP1M.jpg",
+   "genre_ids": [
+    18,
+    80
+   ],
+   "id": 1396,
+   "origin_country": [
+    "US"
+   ],
+   "original_language": "en",
+   "original_name": "Breaking Bad",
+   "overview": "Walter White, a New Mexico chemistry teacher, is diagnosed with Stage III cancer and given a prognosis of only two years left to live. He becomes filled with a sense of fearlessness and an unrelenting desire to secure his family's financial future at any cost as he enters the dangerous world of drugs and crime.",
+   "popularity": 246.9512,
+   "poster_path": "/anFx9aTOOYqgS3v7x3R84Kz67ly.jpg",
+   "first_air_date": "2008-01-20",
+   "softcore": false,
+   "name": "Breaking Bad",
+   "vote_average": 8.955,
+   "vote_count": 18874
+  },
+  {
+   "adult": false,
+   "backdrop_path": null,
+   "genre_ids": [
+    18,
+    9648
+   ],
+   "id": 232533,
+   "origin_country": [
+    "CN"
+   ],
+   "original_language": "zh",
+   "original_name": "绝命卦师",
+   "overview": "During the Ming Dynasty, the emperor sets out for Xinjiang to advocate peace. Shortly after his absence, mysterious occurrences plague the palace and Daoist Tian Mu Tong is called to cast out demons. Together with eunuch Xiao Mo Gu and Jin Yi Wei leader Yun Xiang Rong, Mu Tong uncovers deep dark secrets and conspiracies hidden within conspiracies.",
+   "popularity": 2.3234,
+   "poster_path": "/n8dKkbPkdEPFCFmjNvrUl1gUAYr.jpg",
+   "first_air_date": "2016-04-11",
+   "softcore": false,
+   "name": "Breaking Bad Fortune Teller",
+   "vote_average": 7.5,
+   "vote_count": 1
+  },
+  {
+   "adult": false,
+   "backdrop_path": null,
+   "genre_ids": [
+    35,
+    80,
+    18
+   ],
+   "id": 337563,
+   "origin_country": [
+    "IT"
+   ],
+   "original_language": "it",
+   "original_name": "Breaking Bad: Original Minisodes",
+   "overview": "",
+   "popularity": 2.5356,
+   "poster_path": "/dMXwKX2u98yuAXrslSRmteztMoE.jpg",
+   "first_air_date": "2009-02-17",
+   "softcore": false,
+   "name": "Breaking Bad: Original Minisodes",
+   "vote_average": 0.0,
+   "vote_count": 0
+  }
+ ],
+ "total_pages": 1,
+ "total_results": 5
+}

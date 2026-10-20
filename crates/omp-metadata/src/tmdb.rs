@@ -54,12 +54,16 @@ impl TmdbProvider {
         self
     }
 
+    pub(crate) fn certification_region(&self) -> String {
+        self.certification_region.clone()
+    }
+
     pub fn with_certification_region(mut self, region: impl Into<String>) -> Self {
         self.certification_region = region.into();
         self
     }
 
-    async fn get<T: for<'de> Deserialize<'de>>(
+    pub(crate) async fn get<T: for<'de> Deserialize<'de>>(
         &self,
         path: &str,
         query: &[(&str, String)],

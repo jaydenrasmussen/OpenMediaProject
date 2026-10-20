@@ -8,3 +8,4 @@ pub mod library;
 pub mod movie;
 pub mod quality;
 pub mod release;
+pub mod tv;

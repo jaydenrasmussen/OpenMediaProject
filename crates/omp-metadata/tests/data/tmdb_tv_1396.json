@@ -1,0 +1,326 @@
+{
+ "adult": false,
+ "backdrop_path": "/tsRy63Mu5cu8etL1X7ZLyf7UP1M.jpg",
+ "episode_run_time": [],
+ "first_air_date": "2008-01-20",
+ "genres": [
+  {
+   "id": 18,
+   "name": "Drama"
+  },
+  {
+   "id": 80,
+   "name": "Crime"
+  }
+ ],
+ "homepage": "https://www.sonypictures.com/tv/breakingbad",
+ "id": 1396,
+ "in_production": false,
+ "languages": [
+  "en",
+  "de",
+  "es"
+ ],
+ "last_air_date": "2013-09-29",
+ "name": "Breaking Bad",
+ "networks": [
+  {
+   "id": 174,
+   "logo_path": "/pmvRmATOCaDykE6JrVoeYxlFHw3.png",
+   "name": "AMC",
+   "origin_country": "US"
+  }
+ ],
+ "number_of_episodes": 62,
+ "number_of_seasons": 5,
+ "origin_country": [
+  "US"
+ ],
+ "original_language": "en",
+ "original_name": "Breaking Bad",
+ "overview": "Walter White, a New Mexico chemistry teacher, is diagnosed with Stage III cancer and given a prognosis of only two years left to live. He becomes filled with a sense of fearlessness and an unrelenting desire to secure his family's financial future at any cost as he enters the dangerous world of drugs and crime.",
+ "popularity": 246.9512,
+ "poster_path": "/anFx9aTOOYqgS3v7x3R84Kz67ly.jpg",
+ "seasons": [
+  {
+   "air_date": "2009-02-17",
+   "episode_count": 9,
+   "id": 3577,
+   "name": "Specials",
+   "overview": "",
+   "poster_path": "/4RaIvSQgHHHPfaI1jFqaMR8UJWM.jpg",
+   "season_number": 0,
+   "vote_average": 0.0
+  },
+  {
+   "air_date": "2008-01-20",
+   "episode_count": 7,
+   "id": 3572,
+   "name": "Season 1",
+   "overview": "High school chemistry teacher Walter White's life is suddenly transformed by a dire medical diagnosis. Street-savvy former student Jesse Pinkman \"teaches\" Walter a new trade.",
+   "poster_path": "/1BP4xYv9ZG4ZVHkL7ocOziBbSYH.jpg",
+   "season_number": 1,
+   "vote_average": 8.4
+  },
+  {
+   "air_date": "2009-03-08",
+   "episode_count": 13,
+   "id": 3573,
+   "name": "Season 2",
+   "overview": "Walt must deal with the chain reaction of his choice, as he and Jesse face new and severe consequences. When danger and suspicion around Walt escalate, he is pushed to new levels of desperation. Just how much higher will the stakes rise? How far is Walt willing to go to ensure his family's security? Will his grand plan spiral out of control?",
+   "poster_path": "/e3oGYpoTUhOFK0BJfloru5ZmGV.jpg",
+   "season_number": 2,
+   "vote_average": 8.5
+  },
+  {
+   "air_date": "2010-03-21",
+   "episode_count": 13,
+   "id": 3575,
+   "name": "Season 3",
+   "overview": "Walt continues to battle dueling identities: a desperate husband and father trying to provide for his family, and a newly appointed key player in the Albuquerque drug trade. As the danger around him escalates, Walt is now entrenched in the complex worlds of an angst-ridden family on the verge of dissolution, and the ruthless and unrelenting drug cartel.",
+   "poster_path": "/ffP8Q8ew048YofHRnFVM18B2fPG.jpg",
+   "season_number": 3,
+   "vote_average": 8.4
+  },
+  {
+   "air_date": "2011-07-17",
+   "episode_count": 13,
+   "id": 3576,
+   "name": "Season 4",
+   "overview": "Walt and Jesse must cope with the fallout of their previous actions, both personally and professionally. Tension mounts as Walt faces a true standoff with his employer, Gus, with neither side willing or able to back down. Walt must also adjust to a new relationship with Skyler, whom while still reconciling her relationship with Walt, is committed to properly laundering Walt’s money and ensuring her sister Marie and an ailing Hank are financially stable.",
+   "poster_path": "/5ewrnKp4TboU4hTLT5cWO350mHj.jpg",
+   "season_number": 4,
+   "vote_average": 8.6
+  },
+  {
+   "air_date": "2012-07-15",
+   "episode_count": 16,
+   "id": 3578,
+   "name": "Season 5",
+   "overview": "Walt is faced with the prospect of moving on in a world without his enemy. As the pressure of a criminal life starts to build, Skyler struggles to keep Walt’s terrible secrets. Facing resistance from sometime adversary and former Fring lieutenant Mike, Walt tries to keep his world from falling apart even as his DEA Agent brother in law, Hank, finds numerous leads that could blaze a path straight to Walt. ",
+   "poster_path": "/r3z70vunihrAkjILQKWHX0G2xzO.jpg",
+   "season_number": 5,
+   "vote_average": 8.9
+  }
+ ],
+ "softcore": false,
+ "status": "Ended",
+ "tagline": "Change the equation.",
+ "type": "Scripted",
+ "vote_average": 8.956,
+ "vote_count": 18873,
+ "external_ids": {
+  "imdb_id": "tt0903747",
+  "freebase_mid": "/m/03d34x8",
+  "freebase_id": "/en/breaking_bad",
+  "tvdb_id": 81189,
+  "tvrage_id": 18164,
+  "wikidata_id": "Q1079",
+  "facebook_id": "BreakingBad",
+  "instagram_id": "breakingbad",
+  "twitter_id": "BreakingBad"
+ },
+ "alternative_titles": {
+  "results": [
+   {
+    "iso_3166_1": "AZ",
+    "title": "Bədbəxt",
+    "type": ""
+   },
+   {
+    "iso_3166_1": "BR",
+    "title": "Breaking Bad: A Química do Mal",
+    "type": "altered title for broadcast on tv channel Record"
+   },
+   {
+    "iso_3166_1": "BY",
+    "title": "Ва ўсе цяжкія",
+    "type": ""
+   },
+   {
+    "iso_3166_1": "GE",
+    "title": "გაბოროტებული",
+    "type": ""
+   },
+   {
+    "iso_3166_1": "GR",
+    "title": "Σπάζοντας τα ηθικά σου όρια",
+    "type": ""
+   },
+   {
+    "iso_3166_1": "IR",
+    "title": "افسار گسیخته",
+    "type": ""
+   },
+   {
+    "iso_3166_1": "IR",
+    "title": "قانون شکن",
+    "type": ""
+   },
+   {
+    "iso_3166_1": "IR",
+    "title": "افسار گسیختن",
+    "type": ""
+   }
+  ]
+ },
+ "content_ratings": {
+  "results": [
+   {
+    "descriptors": [],
+    "iso_3166_1": "DE",
+    "rating": "16"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "GB",
+    "rating": "18"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "US",
+    "rating": "TV-MA"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "FR",
+    "rating": "16"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "RU",
+    "rating": "18+"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "KR",
+    "rating": "19"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "BR",
+    "rating": "16"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "NL",
+    "rating": "16"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "PT",
+    "rating": "18"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "HU",
+    "rating": "16"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "LT",
+    "rating": "N-14"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "ES",
+    "rating": "16"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "SG",
+    "rating": "M18"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "IN",
+    "rating": "A"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "MX",
+    "rating": "C"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "TR",
+    "rating": "18+"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "MX",
+    "rating": "B-15"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "AU",
+    "rating": "MA 15+"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "ES",
+    "rating": "18"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "DK",
+    "rating": "15"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "PT",
+    "rating": "12AP"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "BR",
+    "rating": "18"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "SE",
+    "rating": "Från 15 år"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "CA",
+    "rating": "14+"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "AT",
+    "rating": "16"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "IE",
+    "rating": "18"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "CH",
+    "rating": "16"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "CZ",
+    "rating": "18+"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "RO",
+    "rating": "AP"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "FI",
+    "rating": "K16"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "NO",
+    "rating": "15"
+   }
+  ]
+ }
+}
