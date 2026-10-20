@@ -68,6 +68,8 @@ enum Node {
         negative: bool,
         node: Box<Node>,
     },
+    /// `(?>...)`: matches like the group would on its own and never gives back.
+    Atomic(Box<Node>),
     Backref(usize),
     BackrefName(String),
 }
@@ -267,6 +269,11 @@ impl Parser {
             if self.eat('=') {
                 return self.look(false, false);
             }
+            if self.eat('>') {
+                let inner = self.alternation()?;
+                self.close()?;
+                return Ok(Node::Atomic(Box::new(inner)));
+            }
             if self.eat('!') {
                 return self.look(false, true);
             }
@@ -360,8 +367,27 @@ impl Parser {
                 self.pos -= 1;
                 Node::Backref(self.number().unwrap_or(0) as usize)
             }
-            other => Node::Char(simple_escape(other)),
+            other => Node::Char(self.escaped_char(other)?),
         })
+    }
+
+    /// The character an escape such as `\n`, `\.`, `\u4E00` or `\x41` stands
+    /// for. `c` is the character after the backslash.
+    fn escaped_char(&mut self, c: char) -> Result<char, String> {
+        let digits = match c {
+            'u' => 4,
+            'x' => 2,
+            other => return Ok(simple_escape(other)),
+        };
+        let hex: String = self.chars[self.pos..].iter().take(digits).collect();
+        if hex.len() != digits {
+            return Err("incomplete \\u or \\x escape".into());
+        }
+        self.pos += digits;
+        u32::from_str_radix(&hex, 16)
+            .ok()
+            .and_then(char::from_u32)
+            .ok_or_else(|| "bad \\u or \\x escape".to_owned())
     }
 
     fn class(&mut self) -> Result<Class, String> {
@@ -412,7 +438,7 @@ impl Parser {
                         continue;
                     }
                     'b' => '\u{8}',
-                    other => simple_escape(other),
+                    other => self.escaped_char(other)?,
                 }
             } else {
                 c
@@ -423,8 +449,9 @@ impl Parser {
                 let mut hi = self.peek().ok_or("unterminated range")?;
                 self.pos += 1;
                 if hi == '\\' {
-                    hi = simple_escape(self.peek().ok_or("dangling backslash")?);
+                    let e = self.peek().ok_or("dangling backslash")?;
                     self.pos += 1;
+                    hi = self.escaped_char(e)?;
                 }
                 if hi < lo {
                     return Err("character range is backwards".into());
@@ -672,6 +699,16 @@ impl Matcher<'_> {
                     false
                 }
             }
+            Node::Atomic(inner) => {
+                let mut end = None;
+                if !self.m(inner, i, st, &mut |j, _| {
+                    end = Some(j);
+                    true
+                }) {
+                    return false;
+                }
+                end.is_some_and(|j| k(j, st))
+            }
             Node::Backref(idx) => {
                 self.backref(st.caps.get(*idx).and_then(|c| c.last().copied()), i, st, k)
             }
@@ -710,6 +747,11 @@ pub struct Match<'t> {
 }
 
 impl<'t> Match<'t> {
+    /// The whole text the match was made on.
+    pub fn source(&self) -> &'t str {
+        self.text
+    }
+
     pub fn as_str(&self) -> &'t str {
         &self.text[self.start..self.end]
     }
@@ -745,6 +787,63 @@ impl<'t> Match<'t> {
     /// Where the last capture of the group ends, if it matched.
     pub fn group_end(&self, name: &str) -> Option<usize> {
         self.capture_ranges(name).pop().map(|r| r.end)
+    }
+
+    fn group_by_number(&self, n: usize) -> Option<&'t str> {
+        self.caps
+            .get(n)
+            .and_then(|c| c.last())
+            .map(|(s, e)| &self.text[*s..*e])
+    }
+
+    /// Fills in `$1`, `${name}` and `$$` in a replacement template.
+    pub fn expand(&self, template: &str) -> String {
+        let chars: Vec<char> = template.chars().collect();
+        let mut out = String::new();
+        let mut i = 0;
+        while i < chars.len() {
+            if chars[i] != '$' || i + 1 >= chars.len() {
+                out.push(chars[i]);
+                i += 1;
+                continue;
+            }
+            match chars[i + 1] {
+                '$' => {
+                    out.push('$');
+                    i += 2;
+                }
+                '{' => {
+                    let close = chars[i + 2..].iter().position(|c| *c == '}');
+                    match close {
+                        Some(len) => {
+                            let name: String = chars[i + 2..i + 2 + len].iter().collect();
+                            let value = match name.parse::<usize>() {
+                                Ok(n) => self.group_by_number(n),
+                                Err(_) => self.group(&name),
+                            };
+                            out.push_str(value.unwrap_or_default());
+                            i += len + 3;
+                        }
+                        None => {
+                            out.push('$');
+                            i += 1;
+                        }
+                    }
+                }
+                d if d.is_ascii_digit() => {
+                    out.push_str(
+                        self.group_by_number(d as usize - '0' as usize)
+                            .unwrap_or_default(),
+                    );
+                    i += 2;
+                }
+                _ => {
+                    out.push('$');
+                    i += 1;
+                }
+            }
+        }
+        out
     }
 
     /// Whether the group took part in the match (.NET `Group.Success`).
@@ -850,6 +949,20 @@ impl Regex {
                 break;
             }
         }
+        out
+    }
+
+    /// Replaces every match with a template: `$1`, `${name}` and `$$` are
+    /// expanded (the last capture of a named group, empty if it did not match).
+    pub fn replace_all_template(&self, text: &str, template: &str) -> String {
+        let mut out = String::new();
+        let mut last = 0;
+        for m in self.find_all(text) {
+            out.push_str(&text[last..m.start]);
+            out.push_str(&m.expand(template));
+            last = m.end;
+        }
+        out.push_str(&text[last..]);
         out
     }
 
@@ -996,6 +1109,35 @@ mod tests {
     fn replace_all_works_on_byte_offsets() {
         assert_eq!(re(r"\s+").replace_all("a  b\tc", " "), "a b c");
         assert_eq!(re("é").replace_all("café é", "e"), "cafe e");
+    }
+
+    #[test]
+    fn atomic_groups_do_not_give_back() {
+        assert!(re(r"^(?>a+)b").is_match("aaab"));
+        assert!(!re(r"^(?>a+)ab").is_match("aaab"));
+        assert!(re(r"^(?:a+)ab").is_match("aaab"));
+    }
+
+    #[test]
+    fn unicode_and_hex_escapes() {
+        assert!(re(r"^[\u4E00-\u9FCC]+$").is_match("日本語"));
+        assert!(!re(r"^[\u4E00-\u9FCC]+$").is_match("abc"));
+        assert!(re(r"\x41\u0042").is_match("AB"));
+        assert!(Regex::new(r"\u12").is_err());
+    }
+
+    #[test]
+    fn templates_expand_named_and_numbered_groups() {
+        let r = re(r"^\.E(\d{2,4})\.\d{6}\.(.*-(F1RST|NEXT))$");
+        assert_eq!(
+            r.replace_all_template(".E0102.230101.Show-NEXT", ".S01E$1.$2"),
+            ".S01E0102.Show-NEXT"
+        );
+        let r = re(r"(?<a>x)(?<b>y)");
+        assert_eq!(
+            r.replace_all_template("xy", "${b}${a}$$${missing}!"),
+            "yx$!"
+        );
     }
 
     #[test]

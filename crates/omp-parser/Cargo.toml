@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 omp-core = { path = "../omp-core" }
 fancy-regex = "0.14"
 regress = "0.12.0"
