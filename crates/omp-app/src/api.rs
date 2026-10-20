@@ -25,7 +25,7 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use crate::{app::App, tasks};
 
-type Shared = State<Arc<App>>;
+pub(crate) type Shared = State<Arc<App>>;
 pub(crate) type ApiResult<T = Json<Value>> = Result<T, ApiError>;
 
 #[derive(Debug)]
@@ -38,10 +38,10 @@ impl ApiError {
     pub(crate) fn bad_request(m: impl Into<String>) -> Self {
         Self(StatusCode::BAD_REQUEST, m.into())
     }
-    fn not_found(m: impl Into<String>) -> Self {
+    pub(crate) fn not_found(m: impl Into<String>) -> Self {
         Self(StatusCode::NOT_FOUND, m.into())
     }
-    fn unavailable(m: impl Into<String>) -> Self {
+    pub(crate) fn unavailable(m: impl Into<String>) -> Self {
         Self(StatusCode::SERVICE_UNAVAILABLE, m.into())
     }
 }
@@ -482,7 +482,7 @@ struct DeleteMovie {
 /// True when `path` is a folder inside one of the root folders (and is not a
 /// root folder itself), so deleting it cannot take a whole library or the
 /// system with it.
-async fn is_inside_a_root(app: &App, path: &str) -> Result<bool, ApiError> {
+pub(crate) async fn is_inside_a_root(app: &App, path: &str) -> Result<bool, ApiError> {
     let path = std::path::Path::new(path);
     Ok(app
         .db
@@ -799,6 +799,7 @@ async fn history(State(app): Shared, Query(p): Query<Paging>) -> ApiResult {
 struct Command {
     name: String,
     movie_id: Option<i64>,
+    series_id: Option<i64>,
     /// Run to completion before answering (for scripts and tests).
     #[serde(default)]
     wait: bool,
@@ -812,6 +813,7 @@ async fn command(
         let app = app.clone();
         let name = cmd.name.clone();
         let movie_id = cmd.movie_id;
+        let series_id = cmd.series_id;
         async move {
             match name.as_str() {
                 "RssSync" => tasks::rss_sync_once(&app)
@@ -864,6 +866,11 @@ async fn command(
                             Err(r.problems.join("; "))
                         }
                     }),
+                "RefreshSeries" => match series_id {
+                    Some(id) => crate::tv_api::refresh(&app, Some(id)).await.map(|_| ()),
+                    None => Err("RefreshSeries needs a series_id".into()),
+                },
+                "RefreshAllSeries" => crate::tv_api::refresh(&app, None).await.map(|_| ()),
                 "RefreshMovies" => tasks::refresh_movies_once(&app, None)
                     .await
                     .map(|_| ())
@@ -880,6 +887,8 @@ async fn command(
             | "RescanMovie"
             | "RefreshMovie"
             | "RefreshMovies"
+            | "RefreshSeries"
+            | "RefreshAllSeries"
             | "ImportListSync"
             | "RenameMovie"
             | "RenameMovies"
@@ -888,6 +897,9 @@ async fn command(
             "unknown command '{}'",
             cmd.name
         )));
+    }
+    if cmd.name == "RefreshSeries" && cmd.series_id.is_none() {
+        return Err(ApiError::bad_request("RefreshSeries needs a series_id"));
     }
     if matches!(
         cmd.name.as_str(),
@@ -982,7 +994,7 @@ async fn movie_lookup(State(app): Shared, Query(q): Query<Lookup>) -> ApiResult 
     Ok(Json(Value::Array(out)))
 }
 
-fn metadata_error(e: omp_metadata::MetadataError) -> ApiError {
+pub(crate) fn metadata_error(e: omp_metadata::MetadataError) -> ApiError {
     match e {
         omp_metadata::MetadataError::NotFound => ApiError::not_found("no such movie"),
         other => ApiError(StatusCode::BAD_GATEWAY, other.to_string()),
@@ -990,7 +1002,7 @@ fn metadata_error(e: omp_metadata::MetadataError) -> ApiError {
 }
 
 /// "The Matrix 1999" or "The Matrix (1999)" -> ("The Matrix", Some(1999)).
-fn split_year(term: &str) -> (&str, Option<i32>) {
+pub(crate) fn split_year(term: &str) -> (&str, Option<i32>) {
     let trimmed = term.trim_end_matches(')').trim_end();
     if let Some((head, tail)) = trimmed.rsplit_once(|c: char| c.is_whitespace() || c == '(')
         && tail.len() == 4
@@ -1603,7 +1615,7 @@ async fn delete_provider(app: Arc<App>, kind: ProviderKind, id: i64) -> ApiResul
 
 // ---- profiles and other settings ---------------------------------------------------------
 
-fn to_json<T: serde::Serialize>(v: &T) -> ApiResult {
+pub(crate) fn to_json<T: serde::Serialize>(v: &T) -> ApiResult {
     serde_json::to_value(v)
         .map(Json)
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -2176,6 +2188,7 @@ pub fn router(app: Arc<App>) -> Router {
     let api = provider_routes!(api, "/downloadclient", ProviderKind::DownloadClient);
     let api = provider_routes!(api, "/notification", ProviderKind::Notification);
     let api = provider_routes!(api, "/importlist", ProviderKind::ImportList);
+    let api = api.merge(crate::tv_api::routes());
     let api = api
         .route("/system/task", get(list_tasks))
         .route("/rename", get(rename_previews))

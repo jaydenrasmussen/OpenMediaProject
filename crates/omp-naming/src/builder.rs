@@ -540,3 +540,16 @@ pub fn build_movie_folder(movie: &NamingMovie, config: &NamingConfig) -> String 
     }
     components.join("/")
 }
+
+/// The folder a series gets under its root folder: "Title (Year)". The year
+/// is left off when unknown or when the title already ends with it.
+pub fn series_folder(title: &str, year: i32, config: &NamingConfig) -> String {
+    let cleaned = crate::text::clean_file_name(title, config);
+    let ends_with_year = cleaned.trim_end().ends_with(&format!("({year})"));
+    let name = if year > 0 && !ends_with_year {
+        format!("{cleaned} ({year})")
+    } else {
+        cleaned
+    };
+    crate::text::clean_folder_name(&name)
+}

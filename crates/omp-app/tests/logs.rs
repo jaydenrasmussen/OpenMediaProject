@@ -137,6 +137,7 @@ async fn scheduled_tasks_are_listed_with_their_schedule() {
             "process-downloads",
             "recycle-bin",
             "refresh-movies",
+            "refresh-series",
             "rss-sync"
         ]
     );

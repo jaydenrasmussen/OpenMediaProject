@@ -9,6 +9,6 @@ mod text;
 
 pub use builder::{
     ColonReplacement, DEFAULT_RELEASE_GROUP, NamingConfig, NamingFile, NamingMedia, NamingMovie,
-    build_file_name, build_movie_folder,
+    build_file_name, build_movie_folder, series_folder,
 };
 pub use text::{clean_file_name, clean_folder_name, clean_title, clean_title_the, title_the};

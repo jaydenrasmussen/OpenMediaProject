@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use omp_db::Db;
 use omp_decision::DecisionEngine;
 use omp_downloads::ClientRegistry;
-use omp_metadata::{MovieMetadataProvider, tmdb::TmdbProvider};
+use omp_metadata::{MovieMetadataProvider, SeriesMetadataProvider, tmdb::TmdbProvider};
 use omp_services::{DiskSpace, DownloadMonitor, Ffprobe, MediaProbe};
 
 use crate::{clients, config::AppConfig};
@@ -42,6 +42,7 @@ pub struct App {
     pub engine: DecisionEngine,
     pub monitor: DownloadMonitor,
     pub metadata: Option<Arc<dyn MovieMetadataProvider>>,
+    pub series_metadata: Option<Arc<dyn SeriesMetadataProvider>>,
     pub probe: Arc<dyn MediaProbe>,
     pub disk: Arc<dyn DiskSpace>,
     pub plugins: Arc<crate::plugins::Plugins>,
@@ -62,12 +63,20 @@ impl App {
     /// The real thing: databases on disk, TMDB, ffprobe, the OS's disk space.
     pub async fn open(config: AppConfig) -> anyhow::Result<Arc<Self>> {
         let db = Db::open(&config.data_dir).await?;
-        let metadata = config
+        let tmdb = config
             .tmdb_token
             .clone()
-            .map(|t| Arc::new(TmdbProvider::new(t)) as Arc<dyn MovieMetadataProvider>);
+            .map(|t| Arc::new(TmdbProvider::new(t)));
         let probe = Arc::new(Ffprobe::new(config.ffprobe.clone()));
-        Self::new(config, db, metadata, probe, Arc::new(RealDisk)).await
+        Self::with_series_metadata(
+            config,
+            db,
+            tmdb.clone().map(|t| t as Arc<dyn MovieMetadataProvider>),
+            tmdb.map(|t| t as Arc<dyn SeriesMetadataProvider>),
+            probe,
+            Arc::new(RealDisk),
+        )
+        .await
     }
 
     /// Assembles an app from parts (tests pass fakes), seeds first-run
@@ -79,12 +88,25 @@ impl App {
         probe: Arc<dyn MediaProbe>,
         disk: Arc<dyn DiskSpace>,
     ) -> anyhow::Result<Arc<Self>> {
+        Self::with_series_metadata(config, db, metadata, None, probe, disk).await
+    }
+
+    /// As [`Self::new`], with a provider for TV series as well.
+    pub async fn with_series_metadata(
+        config: AppConfig,
+        db: Db,
+        metadata: Option<Arc<dyn MovieMetadataProvider>>,
+        series_metadata: Option<Arc<dyn SeriesMetadataProvider>>,
+        probe: Arc<dyn MediaProbe>,
+        disk: Arc<dyn DiskSpace>,
+    ) -> anyhow::Result<Arc<Self>> {
         seed_defaults(&db).await?;
         let app = Arc::new(Self {
             db,
             engine: DecisionEngine::default(),
             monitor: DownloadMonitor::new(),
             metadata,
+            series_metadata,
             probe,
             disk,
             plugins: Arc::new(crate::plugins::Plugins::load(&config.plugin_dirs)),

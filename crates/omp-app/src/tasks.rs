@@ -236,6 +236,19 @@ pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
         ),
         every(
             &app,
+            "refresh-series",
+            "Refresh series details",
+            6 * minute,
+            app.config.refresh_interval,
+            false,
+            |app| async move {
+                crate::tv_api::refresh(&app, None)
+                    .await
+                    .map(|n| Some(format!("{n} series refreshed")))
+            },
+        ),
+        every(
+            &app,
             "recycle-bin",
             "Clean the recycle bin",
             10 * minute,
