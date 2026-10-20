@@ -265,3 +265,32 @@ export interface BlocklistItem {
   message: string | null;
   date: string;
 }
+
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  kind: "indexer" | "notification" | "list";
+  description: string;
+  allowed_hosts: string[];
+}
+
+export interface PluginList {
+  plugins: PluginInfo[];
+  problems: string[];
+}
+
+/** The part of JSON Schema plugins use for their settings forms. */
+export interface SchemaProperty {
+  type?: "string" | "integer" | "number" | "boolean";
+  title?: string;
+  description?: string;
+  format?: string;
+  enum?: (string | number)[];
+  default?: unknown;
+}
+
+export interface Schema {
+  required?: string[];
+  properties?: Record<string, SchemaProperty>;
+}

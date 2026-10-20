@@ -6,6 +6,7 @@ import { DownloadClients } from "./DownloadClients";
 import { General } from "./General";
 import { Indexers } from "./Indexers";
 import { MediaManagement } from "./MediaManagement";
+import { Notifications } from "./Notifications";
 import { Profiles } from "./Profiles";
 import { QualitySizes } from "./QualitySizes";
 import { Rules } from "./Rules";
@@ -18,6 +19,7 @@ const TABS = [
   { id: "rules", label: "Delays & tags", view: Rules },
   { id: "indexers", label: "Indexers", view: Indexers },
   { id: "clients", label: "Download clients", view: DownloadClients },
+  { id: "notifications", label: "Notifications", view: Notifications },
   { id: "general", label: "General", view: General },
 ] as const;
 

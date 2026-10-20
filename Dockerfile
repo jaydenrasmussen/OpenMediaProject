@@ -18,6 +18,16 @@ COPY wit wit
 RUN rustup target add wasm32-wasip2 || true
 RUN cargo build --release -p omp-server
 
+# ---- First-party plugins (WASM components; the same files run on any architecture) ----
+FROM rust:1-bookworm AS plugins
+WORKDIR /src
+RUN rustup target add wasm32-wasip2
+COPY wit wit
+COPY plugins/webhook plugins/webhook
+RUN cd plugins/webhook && cargo build --release --locked --target wasm32-wasip2 \
+    && mkdir -p /out/webhook \
+    && cp target/wasm32-wasip2/release/webhook.wasm plugin.toml /out/webhook/
+
 # ---- Bundled tools: official 7-Zip (has the RAR codec; distro builds may not), par2, static ffprobe ----
 FROM debian:bookworm-slim AS tools
 ARG TARGETARCH
@@ -60,8 +70,9 @@ COPY --from=tools /tools/ffprobe /usr/local/bin/ffprobe
 COPY --from=tools /tools/License.txt /usr/share/doc/7zip/License.txt
 COPY --from=server /src/target/release/omp-server /usr/local/bin/omp-server
 COPY --from=ui /ui/out /app/ui
+COPY --from=plugins /out /opt/omp/plugins
 
-ENV OMP_ADDR=0.0.0.0:8080 OMP_UI_DIR=/app/ui OMP_DATA_DIR=/config OMP_DOWNLOADS_DIR=/downloads
+ENV OMP_ADDR=0.0.0.0:8080 OMP_UI_DIR=/app/ui OMP_DATA_DIR=/config OMP_DOWNLOADS_DIR=/downloads OMP_BUNDLED_PLUGINS_DIR=/opt/omp/plugins
 EXPOSE 8080
 VOLUME ["/config", "/downloads", "/media"]
 USER omp
