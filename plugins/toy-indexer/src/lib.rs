@@ -9,10 +9,26 @@ wit_bindgen::generate!({
     world: "indexer-plugin",
 });
 
-use exports::omp::plugin::indexer::{Guest, Release, SearchQuery};
+use exports::omp::plugin::indexer::{Guest, Protocol, Release, SearchQuery};
 use omp::plugin::host;
 
 struct Toy;
+
+fn release(title: String) -> Release {
+    Release {
+        guid: "toy-1".into(),
+        title,
+        size: 1_500_000_000,
+        download_url: "https://example.invalid/toy-1.nzb".into(),
+        publish_date: 1_700_000_000,
+        protocol: Protocol::Usenet,
+        seeders: None,
+        leechers: None,
+        info_hash: None,
+        info_url: None,
+        categories: vec![2040],
+    }
+}
 
 impl Guest for Toy {
     fn settings_schema() -> String {
@@ -43,13 +59,19 @@ impl Guest for Toy {
             }
         }
 
-        Ok(vec![Release {
-            guid: "toy-1".into(),
-            title,
-            size: 1_500_000_000,
-            download_url: "https://example.invalid/toy-1.nzb".into(),
-            publish_date: 1_700_000_000,
-        }])
+        Ok(vec![release(title)])
+    }
+
+    fn recent(_settings_json: String) -> Result<Vec<Release>, String> {
+        Ok(vec![release("Recent.Movie.2024.1080p.WEB-DL".into())])
+    }
+
+    fn test(settings_json: String) -> Result<(), String> {
+        if settings_json.contains("\"broken\":true") {
+            Err("toy plugin is broken".into())
+        } else {
+            Ok(())
+        }
     }
 }
 

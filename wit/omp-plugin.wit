@@ -1,4 +1,4 @@
-package omp:plugin@0.1.0;
+package omp:plugin@0.2.0;
 
 /// Services the host gives to every plugin. Plugins have no ambient network
 /// or filesystem access; everything goes through here and is checked against
@@ -7,33 +7,111 @@ interface host {
     enum log-level { debug, info, warn, error }
     log: func(level: log-level, message: string);
 
-    /// GET a URL. Fails if the host is not in the plugin's allowed list.
+    record http-request {
+        /// GET, POST, PUT, PATCH, DELETE or HEAD.
+        method: string,
+        url: string,
+        headers: list<tuple<string, string>>,
+        body: option<string>,
+    }
+
+    record http-response {
+        status: u16,
+        body: string,
+    }
+
+    /// Fails if the URL's host is not in the plugin's allowed list. An HTTP
+    /// error status is a successful call; only transport problems are errors.
+    http: func(request: http-request) -> result<http-response, string>;
+
+    /// GET a URL and return its body. Fails on transport errors and on
+    /// non-2xx responses.
     http-get: func(url: string) -> result<string, string>;
 }
 
 interface indexer {
+    enum protocol { usenet, torrent }
+
     record search-query {
         term: string,
-        season: option<u32>,
-        episode: option<u32>,
+        imdb-id: option<string>,
+        tmdb-id: option<s64>,
+        year: option<u32>,
     }
 
     record release {
         guid: string,
         title: string,
         size: u64,
+        /// An NZB or .torrent URL, or a magnet link.
         download-url: string,
         /// Unix seconds.
         publish-date: s64,
+        protocol: protocol,
+        seeders: option<u32>,
+        leechers: option<u32>,
+        info-hash: option<string>,
+        info-url: option<string>,
+        categories: list<u32>,
     }
 
     /// JSON Schema describing this plugin's settings; the UI renders the form from it.
     settings-schema: func() -> string;
 
     search: func(query: search-query, settings-json: string) -> result<list<release>, string>;
+
+    /// The newest releases, for RSS sync.
+    recent: func(settings-json: string) -> result<list<release>, string>;
+
+    /// Checks the settings work (credentials, reachability).
+    test: func(settings-json: string) -> result<_, string>;
+}
+
+interface notification {
+    record movie-info {
+        title: string,
+        year: u32,
+        tmdb-id: s64,
+        imdb-id: option<string>,
+    }
+
+    record event {
+        /// grab, import, upgrade, download-failed, health-issue, health-restored, test
+        kind: string,
+        title: string,
+        message: string,
+        movie: option<movie-info>,
+    }
+
+    settings-schema: func() -> string;
+
+    send: func(event: event, settings-json: string) -> result<_, string>;
+}
+
+interface import-list {
+    record item {
+        tmdb-id: s64,
+        title: string,
+        year: option<u32>,
+        imdb-id: option<string>,
+    }
+
+    settings-schema: func() -> string;
+
+    fetch: func(settings-json: string) -> result<list<item>, string>;
 }
 
 world indexer-plugin {
     import host;
     export indexer;
+}
+
+world notification-plugin {
+    import host;
+    export notification;
+}
+
+world list-plugin {
+    import host;
+    export import-list;
 }

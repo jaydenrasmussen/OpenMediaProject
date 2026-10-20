@@ -1,0 +1,8 @@
+id = "webhook"
+name = "Webhook"
+version = "0.1.0"
+kind = "notification"
+wasm = "webhook.wasm"
+description = "Sends each event as JSON to a URL you choose."
+# The URL is the user's choice, so the plugin may reach any host.
+allowed_hosts = ["*"]
