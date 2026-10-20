@@ -72,8 +72,9 @@ function MovieDetail() {
 
   async function remove() {
     if (!m || !confirm(`Remove “${m.title}” from the library? Files on disk are kept.`)) return;
+    const exclude = confirm("Stop import lists adding it again?\n\nOK excludes it. Cancel lets lists add it back.");
     try {
-      await del(`/movie/${m.id}`);
+      await del(`/movie/${m.id}?add_exclusion=${exclude}`);
       router.push("/");
     } catch (e) {
       notify(errorMessage(e), "bad");

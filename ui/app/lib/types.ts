@@ -294,3 +294,9 @@ export interface Schema {
   required?: string[];
   properties?: Record<string, SchemaProperty>;
 }
+
+export interface Exclusion {
+  tmdb_id: number;
+  title: string;
+  year: number;
+}

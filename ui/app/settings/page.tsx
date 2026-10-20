@@ -5,6 +5,7 @@ import { CustomFormats } from "./CustomFormats";
 import { DownloadClients } from "./DownloadClients";
 import { General } from "./General";
 import { Indexers } from "./Indexers";
+import { Lists } from "./Lists";
 import { MediaManagement } from "./MediaManagement";
 import { Notifications } from "./Notifications";
 import { Profiles } from "./Profiles";
@@ -19,6 +20,7 @@ const TABS = [
   { id: "rules", label: "Delays & tags", view: Rules },
   { id: "indexers", label: "Indexers", view: Indexers },
   { id: "clients", label: "Download clients", view: DownloadClients },
+  { id: "lists", label: "Lists", view: Lists },
   { id: "notifications", label: "Notifications", view: Notifications },
   { id: "general", label: "General", view: General },
 ] as const;
