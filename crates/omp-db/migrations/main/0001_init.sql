@@ -174,6 +174,14 @@ CREATE TABLE scene_titles (
     PRIMARY KEY (tvdb_id, title, season)
 );
 
+-- Where a download client says its files are versus where we see them.
+CREATE TABLE remote_path_mappings (
+    id          INTEGER PRIMARY KEY,
+    client_id   INTEGER REFERENCES providers(id) ON DELETE CASCADE,   -- NULL: every client
+    remote_path TEXT NOT NULL,
+    local_path  TEXT NOT NULL
+);
+
 CREATE TABLE series (
     id                 INTEGER PRIMARY KEY,
     tmdb_id            INTEGER NOT NULL UNIQUE,

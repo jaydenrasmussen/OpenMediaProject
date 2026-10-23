@@ -332,3 +332,48 @@ async fn a_failed_download_is_recorded_and_blocklisted_per_series() {
     assert!(h.iter().any(|x| x.event == HistoryEvent::DownloadFailed));
     assert_eq!(r.client.removed(), [("d2".to_owned(), true)]);
 }
+
+#[tokio::test]
+async fn a_client_path_is_translated_before_importing() {
+    let r = rig().await;
+    let title = "Some.Show.S01E01.1080p.WEB-DL.x264-GRP";
+    let local = r.dir.path().join("mnt").join(title);
+    std::fs::create_dir_all(&local).unwrap();
+    std::fs::write(local.join(format!("{title}.mkv")), b"x").unwrap();
+    r.db.remote_path_mappings()
+        .insert(
+            None,
+            "/remote/dl",
+            &r.dir.path().join("mnt").to_string_lossy(),
+        )
+        .await
+        .unwrap();
+    record_grab(&r, "d3", title).await;
+    r.client.set_items(vec![client_item(
+        "d3",
+        title,
+        DownloadItemStatus::Completed,
+        Some(format!("/remote/dl/{title}")),
+    )]);
+    let monitor = DownloadMonitor::new();
+    let config = ImportConfig {
+        mode: ImportMode::Move,
+        ..Default::default()
+    };
+    let result = process_downloads(
+        &r.db,
+        &monitor,
+        &r.registry,
+        &config,
+        &Probe,
+        &NoDiskCheck,
+        &options(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.imported, ["d3"], "{result:?}");
+    assert_eq!(
+        monitor.get("d3").unwrap().item.output_path.unwrap(),
+        local.to_string_lossy()
+    );
+}

@@ -292,7 +292,7 @@ Findings from the spikes:
 4. [x] Manual import of unmatched downloads
 5. [x] SkyHook metadata provider (TVDB episode lists over TMDB data; falls back to TMDB; OMP_SKYHOOK=off disables)
 6. [x] OpenAPI spec (GET /api/v1/openapi.json; hand-kept table checked by tests against the real routes; bodies are untyped objects)
-7. [ ] Remote path mappings
+7. [x] Remote path mappings (per client or all; longest match; Windows-style remotes)
 8. [ ] Plugin install by URL
 
 ### Phase 1 — Movies vertical slice (Radarr core) (6–8 weeks)

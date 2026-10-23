@@ -57,7 +57,7 @@ pub use sync::{
 };
 pub use tracking::{
     DownloadMonitor, MonitorOptions, RefreshResult, TrackedDownload, TrackedState, record_failure,
-    record_tv_failure,
+    record_tv_failure, remap_path,
 };
 pub use tv_evaluate::{
     EvaluatedTvRelease, TvEvaluateRequest, TvEvaluation, TvQueueMap, TvSnapshot,

@@ -142,3 +142,52 @@ impl ImportExclusions<'_> {
         )
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct RemotePathMapping {
+    pub id: i64,
+    /// The download client it applies to; `None` means every client.
+    pub client_id: Option<i64>,
+    pub remote_path: String,
+    pub local_path: String,
+}
+
+pub struct RemotePathMappings<'a>(pub(crate) &'a SqlitePool);
+
+impl RemotePathMappings<'_> {
+    pub async fn list(&self) -> Result<Vec<RemotePathMapping>> {
+        Ok(sqlx::query_as(
+            "SELECT id, client_id, remote_path, local_path FROM remote_path_mappings ORDER BY id",
+        )
+        .fetch_all(self.0)
+        .await?)
+    }
+
+    pub async fn insert(
+        &self,
+        client_id: Option<i64>,
+        remote_path: &str,
+        local_path: &str,
+    ) -> Result<i64> {
+        Ok(sqlx::query(
+            "INSERT INTO remote_path_mappings (client_id, remote_path, local_path) VALUES (?, ?, ?)",
+        )
+        .bind(client_id)
+        .bind(remote_path)
+        .bind(local_path)
+        .execute(self.0)
+        .await?
+        .last_insert_rowid())
+    }
+
+    pub async fn delete(&self, id: i64) -> Result<()> {
+        let done = sqlx::query("DELETE FROM remote_path_mappings WHERE id = ?")
+            .bind(id)
+            .execute(self.0)
+            .await?;
+        if done.rows_affected() == 0 {
+            return Err(DbError::NotFound);
+        }
+        Ok(())
+    }
+}

@@ -112,6 +112,24 @@ pub(crate) const ROUTES: &[Entry] = &[
         "System",
         "Run a job: RssSync, MoviesSearch, SeriesSearch, ...",
     ),
+    (
+        "get",
+        "/remotepathmapping",
+        "Download clients",
+        "Remote path mappings",
+    ),
+    (
+        "post",
+        "/remotepathmapping",
+        "Download clients",
+        "Add a remote path mapping",
+    ),
+    (
+        "delete",
+        "/remotepathmapping/{id}",
+        "Download clients",
+        "Delete a remote path mapping",
+    ),
     ("get", "/plugin", "Plugins", "Installed plugins"),
     (
         "get",

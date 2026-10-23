@@ -204,6 +204,10 @@ impl Db {
         PendingTvReleases(&self.main)
     }
 
+    pub fn remote_path_mappings(&self) -> crate::repo::RemotePathMappings<'_> {
+        crate::repo::RemotePathMappings(&self.main)
+    }
+
     pub fn scene_titles(&self) -> crate::repo::SceneTitles<'_> {
         crate::repo::SceneTitles(&self.main)
     }

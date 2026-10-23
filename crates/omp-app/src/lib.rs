@@ -15,6 +15,7 @@ mod logs;
 mod manual_import;
 mod notify;
 pub mod openapi;
+mod path_mappings;
 mod plugins;
 mod releases;
 mod tasks;

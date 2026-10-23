@@ -17,7 +17,7 @@ use omp_core::{
 };
 use omp_db::{
     Db,
-    repo::{EpisodeHistoryRecord, HistoryRecord, TvBlocklistEntry},
+    repo::{EpisodeHistoryRecord, HistoryRecord, RemotePathMapping, TvBlocklistEntry},
 };
 use omp_downloads::{ClientItem, ClientRegistry, DownloadItemStatus};
 
@@ -169,6 +169,7 @@ impl DownloadMonitor {
             t.trackable = false;
         }
         let mut reached = Vec::new();
+        let mappings = db.remote_path_mappings().list().await?;
 
         for rc in registry.all() {
             let items = match rc.client.items().await {
@@ -184,7 +185,10 @@ impl DownloadMonitor {
                 }
             };
             reached.push(rc.id);
-            for item in items {
+            for mut item in items {
+                if let Some(path) = item.output_path.take() {
+                    item.output_path = Some(remap_path(&mappings, rc.id, &path));
+                }
                 let history = db.history().by_download_id(&item.download_id).await?;
                 let grabbed = history.iter().rfind(|h| h.event == HistoryEvent::Grabbed);
                 let ep_history = db
@@ -250,6 +254,48 @@ impl DownloadMonitor {
         map.retain(|_, t| t.trackable || !reached.contains(&t.client_id));
         Ok(result)
     }
+}
+
+/// Turns a path as the download client sees it into one we can read, using
+/// the longest matching mapping for that client (or for every client). A path
+/// no mapping covers is returned as it was.
+pub fn remap_path(mappings: &[RemotePathMapping], client_id: i64, path: &str) -> String {
+    let separator = |p: &str| {
+        if p.contains('\\') && !p.contains('/') {
+            '\\'
+        } else {
+            '/'
+        }
+    };
+    let mut best: Option<(&RemotePathMapping, usize)> = None;
+    for m in mappings
+        .iter()
+        .filter(|m| m.client_id.is_none_or(|c| c == client_id))
+    {
+        let remote = m.remote_path.trim_end_matches(['/', '\\']);
+        if remote.is_empty() {
+            continue;
+        }
+        let matches = path.len() >= remote.len()
+            && path.is_char_boundary(remote.len())
+            && path[..remote.len()].eq_ignore_ascii_case(remote)
+            && (path.len() == remote.len()
+                || matches!(path.as_bytes()[remote.len()], b'/' | b'\\'));
+        if matches && best.is_none_or(|(_, len)| remote.len() > len) {
+            best = Some((m, remote.len()));
+        }
+    }
+    let Some((m, len)) = best else {
+        return path.to_owned();
+    };
+    let rest = &path[len..];
+    let sep = separator(&m.remote_path);
+    let rest = if sep == '\\' {
+        rest.replace('\\', "/")
+    } else {
+        rest.to_owned()
+    };
+    format!("{}{}", m.local_path.trim_end_matches(['/', '\\']), rest)
 }
 
 /// Failed in the client: record it, blocklist the release so it is not picked
@@ -452,4 +498,55 @@ fn check_completed(t: &mut TrackedDownload, grabbed: bool) {
     }
     t.warnings.clear();
     t.state = TrackedState::ImportPending;
+}
+
+#[cfg(test)]
+mod remap_tests {
+    use super::*;
+
+    fn m(id: i64, client: Option<i64>, remote: &str, local: &str) -> RemotePathMapping {
+        RemotePathMapping {
+            id,
+            client_id: client,
+            remote_path: remote.into(),
+            local_path: local.into(),
+        }
+    }
+
+    #[test]
+    fn paths_are_translated_by_the_longest_matching_mapping() {
+        let maps = [
+            m(1, None, "/downloads/", "/mnt/dl"),
+            m(2, Some(7), "/downloads/tv", "/mnt/tv-dl/"),
+            m(3, Some(8), "D:\\Torrents", "/mnt/torrents"),
+        ];
+        assert_eq!(
+            remap_path(&maps, 1, "/downloads/movies/x.mkv"),
+            "/mnt/dl/movies/x.mkv"
+        );
+        assert_eq!(
+            remap_path(&maps, 7, "/downloads/tv/Show/e.mkv"),
+            "/mnt/tv-dl/Show/e.mkv"
+        );
+        assert_eq!(
+            remap_path(&maps, 1, "/downloads/tv/Show"),
+            "/mnt/dl/tv/Show",
+            "mapping 2 is for client 7"
+        );
+        assert_eq!(
+            remap_path(&maps, 8, "D:\\Torrents\\Show\\e.mkv"),
+            "/mnt/torrents/Show/e.mkv"
+        );
+        assert_eq!(
+            remap_path(&maps, 8, "d:\\torrents"),
+            "/mnt/torrents",
+            "drive letters ignore case"
+        );
+        assert_eq!(
+            remap_path(&maps, 1, "/downloads2/x"),
+            "/downloads2/x",
+            "only whole path segments match"
+        );
+        assert_eq!(remap_path(&maps, 1, "/elsewhere/x"), "/elsewhere/x");
+    }
 }

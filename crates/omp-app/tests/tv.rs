@@ -889,3 +889,67 @@ async fn manual_import_lists_matches_and_imports_what_a_person_chose() {
         StatusCode::BAD_REQUEST
     );
 }
+
+#[tokio::test]
+async fn remote_path_mappings_are_validated_and_listed() {
+    let r = rig(false).await;
+    let local = r.dir.path().to_string_lossy().into_owned();
+    let add = |body: Value| call(&r, Method::POST, "/api/v1/remotepathmapping", Some(body));
+    assert_eq!(
+        add(json!({ "remote_path": "", "local_path": local }))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        add(json!({ "remote_path": "/dl", "local_path": "/nowhere/at/all" }))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        add(json!({ "remote_path": "/dl", "local_path": "relative" }))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        add(json!({ "client_id": 99, "remote_path": "/dl", "local_path": local }))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    let (s, made) = add(json!({ "remote_path": "/dl", "local_path": local })).await;
+    assert_eq!(s, StatusCode::CREATED, "{made}");
+    assert_eq!(
+        add(json!({ "remote_path": "/dl", "local_path": local }))
+            .await
+            .0,
+        StatusCode::CONFLICT
+    );
+    let (_, all) = get(&r, "/api/v1/remotepathmapping").await;
+    assert_eq!(all.as_array().unwrap().len(), 1);
+    let id = made["id"].as_i64().unwrap();
+    assert_eq!(
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/remotepathmapping/{id}"),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/remotepathmapping/{id}"),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+}

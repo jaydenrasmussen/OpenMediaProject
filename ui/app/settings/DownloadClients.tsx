@@ -1,6 +1,93 @@
 "use client";
 
+import { useState } from "react";
+import { useToast } from "../components/toast";
+import { del, get, post } from "../lib/api";
+import { errorMessage, useLoad } from "../lib/hooks";
+import type { Provider } from "../lib/types";
 import { ProviderManager, type Implementation } from "./ProviderEditor";
+
+interface PathMapping {
+  id: number;
+  client_id: number | null;
+  remote_path: string;
+  local_path: string;
+}
+
+/** For a client that reports paths this server sees differently (another machine, another container). */
+function RemotePathMappings() {
+  const notify = useToast();
+  const list = useLoad(() => get<PathMapping[]>("/remotepathmapping"));
+  const clients = useLoad(() => get<Provider[]>("/downloadclient"));
+  const [client, setClient] = useState("");
+  const [remote, setRemote] = useState("");
+  const [local, setLocal] = useState("");
+
+  async function add() {
+    try {
+      await post("/remotepathmapping", { client_id: client ? Number(client) : null, remote_path: remote, local_path: local });
+      setRemote("");
+      setLocal("");
+      list.reload();
+    } catch (e) {
+      notify(errorMessage(e), "bad");
+    }
+  }
+  async function remove(m: PathMapping) {
+    try {
+      await del(`/remotepathmapping/${m.id}`);
+      list.reload();
+    } catch (e) {
+      notify(errorMessage(e), "bad");
+    }
+  }
+  const name = (id: number | null) => (id == null ? "Every client" : (clients.data?.find((c) => c.id === id)?.name ?? `Client ${id}`));
+
+  return (
+    <section className="card stack" style={{ marginTop: "1.5rem" }}>
+      <h2 style={{ margin: 0 }}>Remote path mappings</h2>
+      <p className="muted small">
+        Needed only when a download client reports a folder under a different name than this server sees it, for instance a client in another container. The longest matching remote path wins.
+      </p>
+      {list.data?.map((m) => (
+        <div key={m.id} className="spread">
+          <span className="small">
+            <strong>{name(m.client_id)}</strong>: <code>{m.remote_path}</code> → <code>{m.local_path}</code>
+          </span>
+          <button className="danger" onClick={() => remove(m)}>
+            Delete
+          </button>
+        </div>
+      ))}
+      <div className="form-grid">
+        <label className="field">
+          <span>Client</span>
+          <select value={client} onChange={(e) => setClient(e.target.value)}>
+            <option value="">Every client</option>
+            {clients.data?.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Remote path (as the client says)</span>
+          <input type="text" value={remote} onChange={(e) => setRemote(e.target.value)} placeholder="/downloads" />
+        </label>
+        <label className="field">
+          <span>Local path (on this server)</span>
+          <input type="text" value={local} onChange={(e) => setLocal(e.target.value)} placeholder="/mnt/downloads" />
+        </label>
+      </div>
+      <div className="row end">
+        <button onClick={add} disabled={!remote.trim() || !local.trim()}>
+          Add mapping
+        </button>
+      </div>
+    </section>
+  );
+}
 
 interface Server {
   host: string;
@@ -104,11 +191,14 @@ const IMPLEMENTATIONS: Implementation[] = [
 
 export function DownloadClients() {
   return (
-    <ProviderManager
+    <>
+      <ProviderManager
       path="downloadclient"
       noun="download client"
       implementations={IMPLEMENTATIONS}
       help="Downloads are handled in this app: the usenet client talks to your news servers and repairs and unpacks releases; the torrent client downloads over BitTorrent. Use Test to check server logins and folders."
-    />
+      />
+      <RemotePathMappings />
+    </>
   );
 }
