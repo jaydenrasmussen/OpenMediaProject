@@ -2338,7 +2338,9 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/plugin/{id}/schema", get(plugin_schema));
 
     // Everything above needs a login session or the API key.
-    let api = api.route("/ws", get(crate::events::websocket));
+    let api = api
+        .route("/ws", get(crate::events::websocket))
+        .route("/openapi.json", get(crate::openapi::serve));
     let api = api
         .route_layer(axum::middleware::from_fn_with_state(
             app.clone(),

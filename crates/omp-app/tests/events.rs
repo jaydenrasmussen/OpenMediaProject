@@ -116,3 +116,43 @@ async fn the_socket_needs_authentication_and_a_same_origin_page() {
         .is_ok()
     );
 }
+
+#[tokio::test]
+async fn every_described_route_exists_and_is_protected() {
+    let (addr, key, _app, _dir) = start().await;
+    let client = reqwest::Client::new();
+    let spec: serde_json::Value = client
+        .get(format!("http://{addr}/api/v1/openapi.json"))
+        .header("x-api-key", &key)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(spec["openapi"], "3.0.3");
+    let public = ["/health", "/auth/status", "/auth/setup", "/auth/login"];
+    for (path, item) in spec["paths"].as_object().unwrap() {
+        for method in item.as_object().unwrap().keys() {
+            let concrete = path
+                .replace("{id}", "1")
+                .replace("{season}", "1")
+                .replace(['{', '}'], "");
+            let m = reqwest::Method::from_bytes(method.to_uppercase().as_bytes()).unwrap();
+            let res = client
+                .request(m, format!("http://{addr}/api/v1{concrete}"))
+                .send()
+                .await
+                .unwrap();
+            let status = res.status().as_u16();
+            if public.contains(&path.as_str()) {
+                assert_ne!(status, 404, "{method} {path}");
+            } else {
+                assert_eq!(
+                    status, 401,
+                    "{method} {path}: a described route must exist and need a login"
+                );
+            }
+        }
+    }
+}

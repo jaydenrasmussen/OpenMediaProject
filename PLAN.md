@@ -291,7 +291,7 @@ Findings from the spikes:
 3. [x] TV import lists (series by TMDB or TVDB id; no series exclusion list yet)
 4. [x] Manual import of unmatched downloads
 5. [x] SkyHook metadata provider (TVDB episode lists over TMDB data; falls back to TMDB; OMP_SKYHOOK=off disables)
-6. [ ] OpenAPI spec
+6. [x] OpenAPI spec (GET /api/v1/openapi.json; hand-kept table checked by tests against the real routes; bodies are untyped objects)
 7. [ ] Remote path mappings
 8. [ ] Plugin install by URL
 
