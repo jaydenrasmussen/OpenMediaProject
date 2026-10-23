@@ -78,7 +78,18 @@ impl App {
             config,
             db,
             tmdb.clone().map(|t| t as Arc<dyn MovieMetadataProvider>),
-            tmdb.map(|t| t as Arc<dyn SeriesMetadataProvider>),
+            tmdb.map(|t| {
+                let tmdb = t as Arc<dyn SeriesMetadataProvider>;
+                // SkyHook's TVDB episode lists are preferred; OMP_SKYHOOK=off uses TMDB alone.
+                if std::env::var("OMP_SKYHOOK")
+                    .is_ok_and(|v| matches!(v.as_str(), "off" | "0" | "false"))
+                {
+                    tmdb
+                } else {
+                    Arc::new(omp_metadata::skyhook::SkyhookSeriesProvider::new(tmdb))
+                        as Arc<dyn SeriesMetadataProvider>
+                }
+            }),
             Some(Arc::new(omp_metadata::scene::HttpSceneSource::new())),
             probe,
             Arc::new(RealDisk),

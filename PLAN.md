@@ -290,7 +290,7 @@ Findings from the spikes:
 2. [x] Scene numbering and mappings (TheXEM numbering + Sonarr scene titles; XEM maps TVDB numbering, applied to TMDB episodes by number)
 3. [x] TV import lists (series by TMDB or TVDB id; no series exclusion list yet)
 4. [x] Manual import of unmatched downloads
-5. [ ] SkyHook metadata provider
+5. [x] SkyHook metadata provider (TVDB episode lists over TMDB data; falls back to TMDB; OMP_SKYHOOK=off disables)
 6. [ ] OpenAPI spec
 7. [ ] Remote path mappings
 8. [ ] Plugin install by URL

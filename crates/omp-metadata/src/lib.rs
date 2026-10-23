@@ -3,6 +3,7 @@
 //! and TMDB can be the fallback (see PLAN.md, Q4/Q10).
 
 pub mod scene;
+pub mod skyhook;
 pub mod tmdb;
 mod tmdb_tv;
 
