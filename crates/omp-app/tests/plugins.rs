@@ -800,3 +800,154 @@ async fn import_lists_add_series_named_by_tvdb_id() {
         1
     );
 }
+
+/// Serves a zip of an installed plugin folder to every request.
+async fn serve_zip(plugin_dir: &std::path::Path, wasm: &str) -> String {
+    use std::io::Write;
+    let mut buf = std::io::Cursor::new(Vec::new());
+    {
+        let mut zip = zip::ZipWriter::new(&mut buf);
+        let opts = zip::write::SimpleFileOptions::default();
+        for name in ["plugin.toml", wasm] {
+            zip.start_file(format!("pkg/{name}"), opts).unwrap();
+            zip.write_all(&std::fs::read(plugin_dir.join(name)).unwrap())
+                .unwrap();
+        }
+        zip.finish().unwrap();
+    }
+    let body = buf.into_inner();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/plugin.zip", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let body = body.clone();
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/zip\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = socket.write_all(head.as_bytes()).await;
+                let _ = socket.write_all(&body).await;
+            });
+        }
+    });
+    url
+}
+
+#[tokio::test]
+async fn a_plugin_is_previewed_installed_and_removed_from_a_url() {
+    let r = rig(false).await;
+    let staging = r._dir.path().join("staging");
+    std::fs::create_dir_all(&staging).unwrap();
+    install_plugin(&staging, "webhook", "webhook.wasm");
+    let url = serve_zip(&staging.join("webhook"), "webhook.wasm").await;
+
+    assert_eq!(
+        call(&r, Method::GET, "/api/v1/plugin", None).await.1["plugins"],
+        json!([])
+    );
+    assert_eq!(
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/plugin/install",
+            Some(json!({ "url": "ftp://x/y.zip" }))
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    // The preview installs nothing but says what the plugin may do.
+    let (s, preview) = call(
+        &r,
+        Method::POST,
+        "/api/v1/plugin/install",
+        Some(json!({ "url": url })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{preview}");
+    assert_eq!(preview["installed"], false);
+    assert_eq!(preview["plugin"]["id"], "webhook");
+    assert!(preview["plugin"]["allowed_hosts"].is_array());
+    assert_eq!(
+        call(&r, Method::GET, "/api/v1/plugin", None).await.1["plugins"],
+        json!([])
+    );
+
+    // A wrong hash is refused; the right one installs and the plugin is usable at once.
+    let hash = preview["plugin"]["sha256"].as_str().unwrap().to_owned();
+    assert_eq!(
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/plugin/install",
+            Some(json!({ "url": url, "sha256": "00" }))
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let (s, done) = call(
+        &r,
+        Method::POST,
+        "/api/v1/plugin/install",
+        Some(json!({ "url": url, "sha256": hash })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{done}");
+    let (_, listed) = call(&r, Method::GET, "/api/v1/plugin", None).await;
+    assert_eq!(listed["plugins"][0]["id"], "webhook");
+    let (s, schema) = call(&r, Method::GET, "/api/v1/plugin/webhook/schema", None).await;
+    assert_eq!(s, StatusCode::OK, "{schema}");
+
+    // Installing again shows the version already there.
+    let (_, again) = call(
+        &r,
+        Method::POST,
+        "/api/v1/plugin/install",
+        Some(json!({ "url": url })),
+    )
+    .await;
+    assert_eq!(
+        again["plugin"]["installed_version"],
+        listed["plugins"][0]["version"]
+    );
+
+    assert_eq!(
+        call(&r, Method::DELETE, "/api/v1/plugin/..", None).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call(&r, Method::DELETE, "/api/v1/plugin/webhook", None)
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(&r, Method::GET, "/api/v1/plugin", None).await.1["plugins"],
+        json!([])
+    );
+    assert_eq!(
+        call(&r, Method::DELETE, "/api/v1/plugin/webhook", None)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+
+    // Not a zip, or not a plugin.
+    let junk = serve_json("not a zip").await;
+    assert_eq!(
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/plugin/install",
+            Some(json!({ "url": junk }))
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+}

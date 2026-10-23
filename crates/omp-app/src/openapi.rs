@@ -132,6 +132,18 @@ pub(crate) const ROUTES: &[Entry] = &[
     ),
     ("get", "/plugin", "Plugins", "Installed plugins"),
     (
+        "post",
+        "/plugin/install",
+        "Plugins",
+        "Preview (no sha256) or install (with the previewed sha256) a plugin zip from a URL",
+    ),
+    (
+        "delete",
+        "/plugin/{id}",
+        "Plugins",
+        "Remove an installed (not bundled) plugin",
+    ),
+    (
         "get",
         "/plugin/{id}/schema",
         "Plugins",

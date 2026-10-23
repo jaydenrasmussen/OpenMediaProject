@@ -310,6 +310,7 @@ export interface PluginInfo {
   kind: "indexer" | "notification" | "list";
   description: string;
   allowed_hosts: string[];
+  removable: boolean;
 }
 
 export interface PluginList {

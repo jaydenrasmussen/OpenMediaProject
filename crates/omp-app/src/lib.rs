@@ -16,6 +16,7 @@ mod manual_import;
 mod notify;
 pub mod openapi;
 mod path_mappings;
+mod plugin_install;
 mod plugins;
 mod releases;
 mod tasks;

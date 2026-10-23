@@ -8,6 +8,7 @@ import { Indexers } from "./Indexers";
 import { Lists } from "./Lists";
 import { MediaManagement } from "./MediaManagement";
 import { Notifications } from "./Notifications";
+import { Plugins } from "./Plugins";
 import { Profiles } from "./Profiles";
 import { QualitySizes } from "./QualitySizes";
 import { Rules } from "./Rules";
@@ -22,6 +23,7 @@ const TABS = [
   { id: "clients", label: "Download clients", view: DownloadClients },
   { id: "lists", label: "Lists", view: Lists },
   { id: "notifications", label: "Notifications", view: Notifications },
+  { id: "plugins", label: "Plugins", view: Plugins },
   { id: "general", label: "General", view: General },
 ] as const;
 

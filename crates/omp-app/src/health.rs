@@ -53,7 +53,7 @@ pub async fn check(app: &App) -> Result<Vec<HealthIssue>, omp_db::DbError> {
     let mut issues = Vec::new();
     let now = Utc::now();
 
-    for problem in app.plugins.problems() {
+    for problem in app.plugins().problems() {
         issues.push(issue(
             "Plugins",
             Level::Warning,

@@ -48,7 +48,7 @@ pub struct App {
     pub scene_source: Option<Arc<dyn omp_metadata::scene::SceneSource>>,
     pub probe: Arc<dyn MediaProbe>,
     pub disk: Arc<dyn DiskSpace>,
-    pub plugins: Arc<crate::plugins::Plugins>,
+    plugins: RwLock<Arc<crate::plugins::Plugins>>,
     pub started: DateTime<Utc>,
     /// A real password hash nobody knows the password to, checked when a login names an unknown user.
     pub(crate) dummy_hash: String,
@@ -144,7 +144,7 @@ impl App {
             scene_source,
             probe,
             disk,
-            plugins: Arc::new(crate::plugins::Plugins::load(&config.plugin_dirs)),
+            plugins: RwLock::new(Arc::new(crate::plugins::Plugins::load(&config.plugin_dirs))),
             config,
             started: Utc::now(),
             login_limiter: crate::auth::LoginLimiter::default(),
@@ -216,6 +216,23 @@ impl App {
     /// The key programs use in the `X-Api-Key` header.
     pub async fn api_key(&self) -> anyhow::Result<String> {
         Ok(crate::auth::api_key(self).await?)
+    }
+
+    /// The plugins that are loaded right now.
+    pub fn plugins(&self) -> Arc<crate::plugins::Plugins> {
+        self.plugins.read().unwrap().clone()
+    }
+
+    /// Loads the plugins again from disk (after one was installed or removed).
+    pub async fn reload_plugins(&self) {
+        let dirs = self.config.plugin_dirs.clone();
+        let fresh = tokio::task::spawn_blocking(move || crate::plugins::Plugins::load(&dirs))
+            .await
+            .map(Arc::new);
+        match fresh {
+            Ok(fresh) => *self.plugins.write().unwrap() = fresh,
+            Err(e) => tracing::warn!("reloading plugins failed: {e}"),
+        }
     }
 
     pub fn registry(&self) -> Arc<ClientRegistry> {

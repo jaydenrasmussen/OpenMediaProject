@@ -293,7 +293,7 @@ Findings from the spikes:
 5. [x] SkyHook metadata provider (TVDB episode lists over TMDB data; falls back to TMDB; OMP_SKYHOOK=off disables)
 6. [x] OpenAPI spec (GET /api/v1/openapi.json; hand-kept table checked by tests against the real routes; bodies are untyped objects)
 7. [x] Remote path mappings (per client or all; longest match; Windows-style remotes)
-8. [ ] Plugin install by URL
+8. [x] Plugin install by URL (zip with plugin.toml + wasm; preview shows allowed hosts, install must quote the previewed SHA-256; plugins reload without a restart)
 
 ### Phase 1 — Movies vertical slice (Radarr core) (6–8 weeks)
 Do movies first: simpler model than TV. This proves the whole pipeline.

@@ -78,8 +78,7 @@ pub async fn tv_rss_sync_once(app: &App) -> Result<Option<TvRssSyncResult>, Serv
     let Ok(_running) = app.tv_rss_lock.try_lock() else {
         return Ok(None);
     };
-    let pool =
-        IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins.clone())).await?;
+    let pool = IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins())).await?;
     let (result, _) = tv_rss_sync(
         &app.db,
         &app.tv_engine,
@@ -97,8 +96,7 @@ pub async fn search_episode_once(
     mode: SearchMode,
     user_invoked: bool,
 ) -> Result<TvSearchResult, ServiceError> {
-    let pool =
-        IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins.clone())).await?;
+    let pool = IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins())).await?;
     omp_services::search_episode(
         &app.db,
         &app.tv_engine,
@@ -118,8 +116,7 @@ pub async fn search_season_once(
     mode: SearchMode,
     user_invoked: bool,
 ) -> Result<TvSearchResult, ServiceError> {
-    let pool =
-        IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins.clone())).await?;
+    let pool = IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins())).await?;
     omp_services::search_season(
         &app.db,
         &app.tv_engine,
@@ -140,8 +137,7 @@ pub async fn search_missing_once(
     only: Option<i64>,
     user_invoked: bool,
 ) -> Result<(usize, usize), ServiceError> {
-    let pool =
-        IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins.clone())).await?;
+    let pool = IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins())).await?;
     let ids: Vec<i64> = match only {
         Some(id) => vec![id],
         None => app
@@ -188,8 +184,7 @@ pub async fn rss_sync_once(app: &App) -> Result<Option<RssSyncResult>, ServiceEr
     let Ok(_running) = app.rss_lock.try_lock() else {
         return Ok(None);
     };
-    let pool =
-        IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins.clone())).await?;
+    let pool = IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins())).await?;
     let result = rss_sync(
         &app.db,
         &app.engine,
@@ -207,8 +202,7 @@ pub async fn search_movie_once(
     mode: SearchMode,
     user_invoked: bool,
 ) -> Result<SearchResult, ServiceError> {
-    let pool =
-        IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins.clone())).await?;
+    let pool = IndexerPool::load_with(&app.db, Duration::from_secs(2), Some(app.plugins())).await?;
     search_movie(
         &app.db,
         &app.engine,

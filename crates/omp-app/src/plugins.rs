@@ -54,9 +54,9 @@ impl Fetcher for ReqwestFetcher {
 pub struct Plugins {
     manifests: Vec<Manifest>,
     problems: Vec<String>,
-    indexers: HashMap<String, Plugin<Indexer>>,
-    notifications: HashMap<String, Plugin<Notification>>,
-    lists: HashMap<String, Plugin<List>>,
+    indexers: HashMap<String, Arc<Plugin<Indexer>>>,
+    notifications: HashMap<String, Arc<Plugin<Notification>>>,
+    lists: HashMap<String, Arc<Plugin<List>>>,
 }
 
 impl Plugins {
@@ -105,13 +105,13 @@ impl Plugins {
             let loaded = match m.kind {
                 Kind::Indexer => host
                     .load_indexer(m.wasm_path(), m.permissions())
-                    .map(|p| drop(me.indexers.insert(m.id.clone(), p))),
+                    .map(|p| drop(me.indexers.insert(m.id.clone(), Arc::new(p)))),
                 Kind::Notification => host
                     .load_notification(m.wasm_path(), m.permissions())
-                    .map(|p| drop(me.notifications.insert(m.id.clone(), p))),
+                    .map(|p| drop(me.notifications.insert(m.id.clone(), Arc::new(p)))),
                 Kind::List => host
                     .load_list(m.wasm_path(), m.permissions())
-                    .map(|p| drop(me.lists.insert(m.id.clone(), p))),
+                    .map(|p| drop(me.lists.insert(m.id.clone(), Arc::new(p)))),
             };
             match loaded {
                 Ok(()) => me.manifests.push(m),
@@ -133,16 +133,16 @@ impl Plugins {
         self.manifests.iter().find(|m| m.id == id)
     }
 
-    pub fn indexer(&self, id: &str) -> Option<&Plugin<Indexer>> {
-        self.indexers.get(id)
+    pub fn indexer(&self, id: &str) -> Option<Arc<Plugin<Indexer>>> {
+        self.indexers.get(id).cloned()
     }
 
-    pub fn notification(&self, id: &str) -> Option<&Plugin<Notification>> {
-        self.notifications.get(id)
+    pub fn notification(&self, id: &str) -> Option<Arc<Plugin<Notification>>> {
+        self.notifications.get(id).cloned()
     }
 
-    pub fn list(&self, id: &str) -> Option<&Plugin<List>> {
-        self.lists.get(id)
+    pub fn list(&self, id: &str) -> Option<Arc<Plugin<List>>> {
+        self.lists.get(id).cloned()
     }
 
     /// The JSON Schema of a plugin's settings.

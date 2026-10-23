@@ -42,7 +42,7 @@ impl NotificationSettings {
 pub async fn send(app: &App, p: &Provider, event: &Event) -> Result<(), String> {
     let plugin_id = p.plugin_id.as_deref().ok_or("no plugin chosen")?;
     let plugin = app
-        .plugins
+        .plugins()
         .notification(plugin_id)
         .ok_or_else(|| format!("plugin '{plugin_id}' isn't installed"))?;
     let settings = NotificationSettings::from_provider(p).settings;

@@ -57,7 +57,7 @@ impl ListSettings {
 pub async fn fetch(app: &App, p: &Provider) -> Result<Vec<omp_plugin_host::ListItem>, String> {
     let plugin_id = p.plugin_id.as_deref().ok_or("no plugin chosen")?;
     let plugin = app
-        .plugins
+        .plugins()
         .list(plugin_id)
         .ok_or_else(|| format!("plugin '{plugin_id}' isn't installed"))?;
     let settings = ListSettings::from_provider(p)?;

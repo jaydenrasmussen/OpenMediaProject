@@ -1591,7 +1591,7 @@ fn validate_notification(app: &App, p: &Provider) -> Result<(), ApiError> {
     let Some(plugin_id) = p.plugin_id.as_deref() else {
         return Err(ApiError::bad_request("choose a notification plugin"));
     };
-    if app.plugins.notification(plugin_id).is_none() {
+    if app.plugins().notification(plugin_id).is_none() {
         return Err(ApiError::bad_request(format!(
             "no notification plugin '{plugin_id}' is installed"
         )));
@@ -1612,7 +1612,7 @@ async fn validate_import_list(app: &App, p: &Provider) -> Result<(), ApiError> {
     let Some(plugin_id) = p.plugin_id.as_deref() else {
         return Err(ApiError::bad_request("choose a list plugin"));
     };
-    if app.plugins.list(plugin_id).is_none() {
+    if app.plugins().list(plugin_id).is_none() {
         return Err(ApiError::bad_request(format!(
             "no list plugin '{plugin_id}' is installed"
         )));
@@ -1669,7 +1669,7 @@ async fn validate_import_list(app: &App, p: &Provider) -> Result<(), ApiError> {
 /// An indexer that names a plugin must name an installed indexer plugin.
 fn validate_indexer_plugin(app: &App, p: &Provider) -> Result<(), ApiError> {
     match p.plugin_id.as_deref() {
-        Some(id) if app.plugins.indexer(id).is_none() => Err(ApiError::bad_request(format!(
+        Some(id) if app.plugins().indexer(id).is_none() => Err(ApiError::bad_request(format!(
             "no indexer plugin '{id}' is installed"
         ))),
         _ => Ok(()),
@@ -2094,8 +2094,9 @@ async fn clear_logs(State(app): Shared) -> ApiResult<StatusCode> {
 }
 
 async fn list_plugins(State(app): Shared) -> Json<Value> {
-    let plugins: Vec<Value> = app
-        .plugins
+    let loaded = app.plugins();
+    let user = crate::plugin_install::user_dir(&app);
+    let plugins: Vec<Value> = loaded
         .manifests()
         .iter()
         .map(|m| {
@@ -2106,14 +2107,16 @@ async fn list_plugins(State(app): Shared) -> Json<Value> {
                 "kind": format!("{:?}", m.kind).to_lowercase(),
                 "description": m.description,
                 "allowed_hosts": m.allowed_hosts,
+                // Plugins the user installed can be removed; bundled ones cannot.
+                "removable": m.dir.parent() == Some(user.as_path()),
             })
         })
         .collect();
-    Json(json!({ "plugins": plugins, "problems": app.plugins.problems() }))
+    Json(json!({ "plugins": plugins, "problems": loaded.problems() }))
 }
 
 async fn plugin_schema(State(app): Shared, Path(id): Path<String>) -> ApiResult {
-    match app.plugins.settings_schema(&id).await {
+    match app.plugins().settings_schema(&id).await {
         None => Err(ApiError::not_found("no such plugin")),
         Some(Err(e)) => Err(ApiError::internal(format!("{e:#}"))),
         Some(Ok(schema)) => serde_json::from_str(&schema)
@@ -2140,7 +2143,7 @@ async fn test_provider(app: Arc<App>, kind: ProviderKind, body: ProviderBody) ->
         ProviderKind::Indexer => match p
             .plugin_id
             .as_deref()
-            .and_then(|id| app.plugins.indexer(id))
+            .and_then(|id| app.plugins().indexer(id))
         {
             Some(plugin) => plugin
                 .test(&p.settings.to_string())
@@ -2322,7 +2325,8 @@ pub fn router(app: Arc<App>) -> Router {
         .merge(crate::tv_api::routes())
         .merge(crate::tv_activity::routes())
         .merge(crate::manual_import::routes())
-        .merge(crate::path_mappings::routes());
+        .merge(crate::path_mappings::routes())
+        .merge(crate::plugin_install::routes());
     let api = api
         .route("/system/task", get(list_tasks))
         .route("/rename", get(rename_previews))
