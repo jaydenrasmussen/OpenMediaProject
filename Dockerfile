@@ -21,9 +21,14 @@ RUN rustup target add wasm32-wasip2 || true
 RUN cargo build --release -p omp-server
 
 # ---- First-party plugins (WASM components; the same files run on any architecture) ----
-FROM rust:1-bookworm AS plugins
+# Built natively on the build machine, once, instead of per target architecture under emulation.
+FROM --platform=$BUILDPLATFORM rust:1-bookworm AS plugins
 WORKDIR /src
+# One target directory for every plugin, so shared dependencies compile once.
+ENV CARGO_TARGET_DIR=/cargo-target
 RUN rustup target add wasm32-wasip2
+# omp-cardigann takes its package settings from the workspace root.
+COPY Cargo.toml ./
 COPY wit wit
 COPY plugins/webhook plugins/webhook
 COPY plugins/custom-list plugins/custom-list
@@ -43,12 +48,13 @@ COPY plugins/plex-library plugins/plex-library
 COPY plugins/jellyfin-library plugins/jellyfin-library
 COPY crates/omp-cardigann crates/omp-cardigann
 COPY plugins/prowlarr-indexers plugins/prowlarr-indexers
-RUN set -eux; \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    set -eux; \
     for p in webhook custom-list discord slack telegram ntfy gotify pushover plex jellyfin-emby sabnzbd qbittorrent transmission nzbget plex-library jellyfin-library prowlarr-indexers; do \
       (cd plugins/$p && cargo build --release --locked --target wasm32-wasip2); \
       mkdir -p /out/$p; \
       cp plugins/$p/plugin.toml /out/$p/; \
-      cp plugins/$p/target/wasm32-wasip2/release/*.wasm /out/$p/; \
+      cp /cargo-target/wasm32-wasip2/release/$(echo $p | tr - _).wasm /out/$p/; \
     done
 
 # ---- Bundled tools: official 7-Zip (has the RAR codec; distro builds may not), par2, static ffprobe ----
