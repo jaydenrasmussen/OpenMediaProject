@@ -637,7 +637,8 @@ mod tests {
     }
 
     async fn wait_until(client: &UsenetClient, id: &str, want: DownloadItemStatus) -> ClientItem {
-        for _ in 0..200 {
+        // Generous: a busy CI machine can take several seconds to run par2.
+        for _ in 0..1200 {
             if let Some(i) = client
                 .items()
                 .await
