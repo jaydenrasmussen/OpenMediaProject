@@ -1,0 +1,222 @@
+package omp:plugin@0.4.0;
+
+/// Services the host gives to every plugin. Plugins have no ambient network
+/// or filesystem access; everything goes through here and is checked against
+/// the permissions declared in plugin.toml.
+interface host {
+    enum log-level { debug, info, warn, error }
+    log: func(level: log-level, message: string);
+
+    record http-request {
+        /// GET, POST, PUT, PATCH, DELETE or HEAD.
+        method: string,
+        url: string,
+        headers: list<tuple<string, string>>,
+        body: option<string>,
+    }
+
+    record http-response {
+        status: u16,
+        body: string,
+        /// Response headers, names in lower case. A header sent several
+        /// times (set-cookie) appears once for each.
+        headers: list<tuple<string, string>>,
+    }
+
+    /// Fails if the URL's host is not in the plugin's allowed list. An HTTP
+    /// error status is a successful call; only transport problems are errors.
+    http: func(request: http-request) -> result<http-response, string>;
+
+    /// GET a URL and return its body. Fails on transport errors and on
+    /// non-2xx responses.
+    http-get: func(url: string) -> result<string, string>;
+}
+
+interface indexer {
+    enum protocol { usenet, torrent }
+
+    record search-query {
+        term: string,
+        imdb-id: option<string>,
+        tmdb-id: option<s64>,
+        year: option<u32>,
+    }
+
+    record release {
+        guid: string,
+        title: string,
+        size: u64,
+        /// An NZB or .torrent URL, or a magnet link.
+        download-url: string,
+        /// Unix seconds.
+        publish-date: s64,
+        protocol: protocol,
+        seeders: option<u32>,
+        leechers: option<u32>,
+        info-hash: option<string>,
+        info-url: option<string>,
+        categories: list<u32>,
+    }
+
+    /// JSON Schema describing this plugin's settings; the UI renders the form from it.
+    settings-schema: func() -> string;
+
+    search: func(query: search-query, settings-json: string) -> result<list<release>, string>;
+
+    /// The newest releases, for RSS sync.
+    recent: func(settings-json: string) -> result<list<release>, string>;
+
+    /// Checks the settings work (credentials, reachability).
+    test: func(settings-json: string) -> result<_, string>;
+}
+
+interface notification {
+    record movie-info {
+        title: string,
+        year: u32,
+        tmdb-id: s64,
+        imdb-id: option<string>,
+    }
+
+    record event {
+        /// grab, import, upgrade, download-failed, health-issue, health-restored, test
+        kind: string,
+        title: string,
+        message: string,
+        movie: option<movie-info>,
+    }
+
+    settings-schema: func() -> string;
+
+    send: func(event: event, settings-json: string) -> result<_, string>;
+}
+
+interface import-list {
+    enum item-kind { movie, series }
+
+    record item {
+        kind: item-kind,
+        /// 0 when the list only knows the TVDB id (series).
+        tmdb-id: s64,
+        tvdb-id: option<s64>,
+        title: string,
+        year: option<u32>,
+        imdb-id: option<string>,
+    }
+
+    settings-schema: func() -> string;
+
+    fetch: func(settings-json: string) -> result<list<item>, string>;
+}
+
+/// An external download client (qBittorrent, SABnzbd, ...) driven over its API.
+interface download-client {
+    enum status { queued, paused, downloading, completed, failed, warning }
+
+    record add-request {
+        title: string,
+        /// A link to the .torrent or .nzb, or a magnet link.
+        url: string,
+        /// "torrent" or "usenet".
+        protocol: string,
+        category: option<string>,
+        /// The torrent's info hash when the indexer gave it (upper case hex).
+        info-hash: option<string>,
+    }
+
+    record item {
+        id: string,
+        title: string,
+        category: option<string>,
+        total-size: u64,
+        remaining-size: u64,
+        status: status,
+        /// Where the finished files are, as the client sees the path.
+        output-path: option<string>,
+        seed-ratio: option<f64>,
+        can-move-files: bool,
+        can-be-removed: bool,
+        message: option<string>,
+        eta-seconds: option<u64>,
+        download-speed: u64,
+    }
+
+    settings-schema: func() -> string;
+
+    /// Returns the client's id for the new download.
+    add: func(request: add-request, settings-json: string) -> result<string, string>;
+
+    items: func(settings-json: string) -> result<list<item>, string>;
+
+    remove: func(id: string, delete-data: bool, settings-json: string) -> result<_, string>;
+
+    pause: func(id: string, settings-json: string) -> result<_, string>;
+
+    resume: func(id: string, settings-json: string) -> result<_, string>;
+
+    /// Checks the settings work (address, credentials).
+    test: func(settings-json: string) -> result<_, string>;
+}
+
+/// A Plex or Jellyfin server whose library the app reads, to see what is
+/// already there. Read-only: nothing is ever written to the server.
+interface media-server {
+    enum item-kind { movie, series, episode }
+
+    record library-item {
+        /// The server's own id for the item; stable between calls.
+        key: string,
+        kind: item-kind,
+        /// For an episode: the key of its series.
+        series-key: option<string>,
+        title: string,
+        year: option<u32>,
+        tmdb-id: option<s64>,
+        imdb-id: option<string>,
+        tvdb-id: option<s64>,
+        season: option<u32>,
+        episode: option<u32>,
+    }
+
+    record page {
+        items: list<library-item>,
+        /// Pass this back to get the next page; none when this was the last.
+        next: option<string>,
+    }
+
+    /// JSON Schema describing this plugin's settings; the UI renders the form from it.
+    settings-schema: func() -> string;
+
+    /// One page of the library. The cursor is none for the first page and
+    /// otherwise a value the plugin returned as `next`. Pages are small
+    /// enough that a page needs only a few requests.
+    library-page: func(cursor: option<string>, settings-json: string) -> result<page, string>;
+
+    /// Checks the settings work (address, token), returning the server's name.
+    test: func(settings-json: string) -> result<string, string>;
+}
+
+world indexer-plugin {
+    import host;
+    export indexer;
+}
+
+world notification-plugin {
+    import host;
+    export notification;
+}
+
+world list-plugin {
+    import host;
+    export import-list;
+}
+
+world download-client-plugin {
+    import host;
+    export download-client;
+}
+
+world media-server-plugin {
+    import host;
+    export media-server;
+}

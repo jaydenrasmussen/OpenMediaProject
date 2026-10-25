@@ -1,0 +1,3000 @@
+//! The HTTP API, under `/api/v1`.
+
+use std::{convert::Infallible, path::PathBuf, sync::Arc};
+
+use axum::{
+    Json, Router,
+    body::Body,
+    extract::{Path, Query, State},
+    http::{Request, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
+use omp_core::{history::HistoryEvent, movie::MovieStatus};
+use omp_db::{
+    Db, DbError,
+    repo::{HistoryRecord, MovieFileRecord, MovieRecord, NewMovie, Provider, ProviderKind},
+};
+use omp_naming::{NamingMovie, build_movie_folder};
+use omp_quality::profile::QualityProfile;
+use omp_services::{SearchMode, load_import_config};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use tower::service_fn;
+
+use crate::{app::App, tasks};
+
+pub(crate) type Shared = State<Arc<App>>;
+pub(crate) type ApiResult<T = Json<Value>> = Result<T, ApiError>;
+
+#[derive(Debug)]
+pub(crate) struct ApiError(pub(crate) StatusCode, pub(crate) String);
+
+impl ApiError {
+    pub(crate) fn internal(m: impl Into<String>) -> Self {
+        Self(StatusCode::INTERNAL_SERVER_ERROR, m.into())
+    }
+    pub(crate) fn bad_request(m: impl Into<String>) -> Self {
+        Self(StatusCode::BAD_REQUEST, m.into())
+    }
+    pub(crate) fn not_found(m: impl Into<String>) -> Self {
+        Self(StatusCode::NOT_FOUND, m.into())
+    }
+    pub(crate) fn unavailable(m: impl Into<String>) -> Self {
+        Self(StatusCode::SERVICE_UNAVAILABLE, m.into())
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (self.0, Json(json!({ "error": self.1 }))).into_response()
+    }
+}
+
+impl From<DbError> for ApiError {
+    fn from(e: DbError) -> Self {
+        match e {
+            DbError::NotFound => Self(StatusCode::NOT_FOUND, "not found".into()),
+            DbError::Conflict(m) => Self(StatusCode::CONFLICT, m),
+            DbError::Constraint(m) => Self(StatusCode::CONFLICT, m),
+            other => {
+                tracing::error!("database error: {other}");
+                Self(StatusCode::INTERNAL_SERVER_ERROR, "database error".into())
+            }
+        }
+    }
+}
+
+impl From<omp_services::ServiceError> for ApiError {
+    fn from(e: omp_services::ServiceError) -> Self {
+        tracing::error!("service error: {e}");
+        Self(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+    }
+}
+
+// ---- JSON shapes -------------------------------------------------------------------------
+
+fn status_name(s: MovieStatus) -> &'static str {
+    match s {
+        MovieStatus::Deleted => "deleted",
+        MovieStatus::Tba => "tba",
+        MovieStatus::Announced => "announced",
+        MovieStatus::InCinemas => "inCinemas",
+        MovieStatus::Released => "released",
+    }
+}
+
+fn parse_status(s: &str) -> Option<MovieStatus> {
+    match s {
+        "tba" => Some(MovieStatus::Tba),
+        "announced" => Some(MovieStatus::Announced),
+        "inCinemas" => Some(MovieStatus::InCinemas),
+        "released" => Some(MovieStatus::Released),
+        _ => None,
+    }
+}
+
+fn file_json(f: &MovieFileRecord) -> Value {
+    json!({
+        "id": f.id,
+        "relative_path": f.relative_path,
+        "size": f.size,
+        "date_added": f.date_added,
+        "quality": f.quality.quality.name,
+        "release_group": f.release_group,
+        "scene_name": f.scene_name,
+        "edition": f.edition,
+    })
+}
+
+fn movie_json(m: &MovieRecord, file: Option<&MovieFileRecord>) -> Value {
+    json!({
+        "id": m.movie.id,
+        "tmdb_id": m.movie.tmdb_id,
+        "imdb_id": m.metadata.imdb_id,
+        "title": m.movie.title,
+        "original_title": m.metadata.original_title,
+        "year": m.movie.year,
+        "overview": m.metadata.overview,
+        "runtime": m.metadata.runtime,
+        "status": status_name(m.metadata.status),
+        "genres": m.metadata.genres,
+        "certification": m.metadata.certification,
+        "collection": m.metadata.collection_title,
+        "in_cinemas": m.metadata.in_cinemas,
+        "digital_release": m.metadata.digital_release,
+        "physical_release": m.metadata.physical_release,
+        "images": m.metadata.images,
+        "monitored": m.movie.monitored,
+        "minimum_availability": status_name(m.movie.minimum_availability),
+        "quality_profile_id": m.movie.quality_profile_id,
+        "path": m.movie.path,
+        "root_folder_path": m.root_folder_path,
+        "tags": m.movie.tags,
+        "added": m.added,
+        "last_search_time": m.last_search_time,
+        "has_file": file.is_some(),
+        "file": file.map(file_json),
+    })
+}
+
+pub(crate) fn event_name(e: HistoryEvent) -> &'static str {
+    match e {
+        HistoryEvent::Unknown => "unknown",
+        HistoryEvent::Grabbed => "grabbed",
+        HistoryEvent::DownloadFolderImported => "downloadFolderImported",
+        HistoryEvent::DownloadFailed => "downloadFailed",
+        HistoryEvent::MovieFileDeleted => "movieFileDeleted",
+        HistoryEvent::MovieFolderImported => "movieFolderImported",
+        HistoryEvent::MovieFileRenamed => "movieFileRenamed",
+        HistoryEvent::DownloadIgnored => "downloadIgnored",
+    }
+}
+
+fn history_json(h: &HistoryRecord) -> Value {
+    json!({
+        "id": h.id,
+        "movie_id": h.movie_id,
+        "event": event_name(h.event),
+        "date": h.date,
+        "source_title": h.source_title,
+        "quality": h.quality.quality.name,
+        "download_id": h.download_id,
+        "data": h.data,
+    })
+}
+
+fn provider_json(p: &Provider) -> Value {
+    json!({
+        "id": p.id,
+        "name": p.name,
+        "implementation": p.implementation,
+        "plugin_id": p.plugin_id,
+        "settings": p.settings,
+        "tags": p.tags,
+        "enabled": p.enabled,
+        "enable_rss": p.enable_rss,
+        "enable_automatic_search": p.enable_automatic_search,
+        "enable_interactive_search": p.enable_interactive_search,
+        "priority": p.priority,
+    })
+}
+
+// ---- handlers ----------------------------------------------------------------------------
+
+async fn health() -> Json<Value> {
+    Json(json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
+}
+
+/// The VPN as set on the Settings page; secrets are never sent back.
+async fn vpn_settings(State(app): Shared) -> Json<Value> {
+    let s = crate::vpn::settings::load(&app.config.data_dir);
+    Json(json!({
+        "managed_by_environment": crate::vpn::settings::from_environment(),
+        "providers": crate::vpn::settings::PROVIDERS,
+        "settings": {
+            "provider": s.provider,
+            "vpn_type": s.vpn_type,
+            "username": s.username,
+            "server_countries": s.server_countries,
+            "server_cities": s.server_cities,
+            "server_hostnames": s.server_hostnames,
+            "wireguard_addresses": s.wireguard_addresses,
+            "firewall_outbound_subnets": s.firewall_outbound_subnets,
+        },
+        "password_set": !s.password.is_empty(),
+        "wireguard_private_key_set": !s.wireguard_private_key.is_empty(),
+    }))
+}
+
+async fn put_vpn_settings(
+    State(app): Shared,
+    Json(body): Json<crate::vpn::settings::VpnSettings>,
+) -> ApiResult {
+    if crate::vpn::settings::from_environment() {
+        return Err(ApiError(
+            StatusCode::CONFLICT,
+            "the VPN is set by the container's environment; change it there".into(),
+        ));
+    }
+    crate::vpn::settings::save(&app.config.data_dir, body).map_err(ApiError::bad_request)?;
+    Ok(Json(json!({ "restart_required": true })))
+}
+
+/// The sites an indexer can be added from: torrent sites (read from their
+/// definitions) and usenet indexers (Newznab).
+async fn indexer_catalogue(State(app): Shared) -> Json<Value> {
+    let torrent: Vec<Value> = app
+        .cardigann
+        .summaries()
+        .into_iter()
+        .map(|s| {
+            let mut v = serde_json::to_value(s).unwrap_or_default();
+            if let Some(o) = v.as_object_mut() {
+                o.remove("fields");
+            }
+            v
+        })
+        .collect();
+    let usenet: Vec<Value> = crate::cardigann::USENET_PRESETS
+        .iter()
+        .map(|(name, url, path)| json!({ "name": name, "base_url": url, "api_path": path }))
+        .collect();
+    Json(json!({
+        "torrent": torrent,
+        "usenet": usenet,
+        "problems": app.cardigann.library().problems,
+    }))
+}
+
+async fn get_flaresolverr(State(app): Shared) -> Json<Value> {
+    Json(json!({ "url": app.cardigann.solver().unwrap_or_default() }))
+}
+
+#[derive(Deserialize)]
+struct FlareSolverrBody {
+    #[serde(default)]
+    url: String,
+}
+
+/// FlareSolverr is the helper some sites need to get past Cloudflare's check.
+/// An address is only saved once something answers there like FlareSolverr.
+async fn put_flaresolverr(State(app): Shared, Json(b): Json<FlareSolverrBody>) -> ApiResult {
+    let url = b.url.trim().trim_end_matches('/').to_owned();
+    if !url.is_empty() {
+        let parsed =
+            url::Url::parse(&url).map_err(|_| ApiError::bad_request("that is not an address"))?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(ApiError::bad_request(
+                "the address must start with http:// or https://",
+            ));
+        }
+        let client = omp_net::client_builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| ApiError::internal(e.to_string()))?;
+        let reply: Value = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| {
+                ApiError::bad_request(format!("nothing answered there: {}", e.without_url()))
+            })?
+            .json()
+            .await
+            .map_err(|_| ApiError::bad_request("something answered, but it is not FlareSolverr"))?;
+        if !reply["msg"]
+            .as_str()
+            .is_some_and(|m| m.contains("FlareSolverr"))
+        {
+            return Err(ApiError::bad_request(
+                "something answered, but it is not FlareSolverr",
+            ));
+        }
+    }
+    app.cardigann
+        .save_solver((!url.is_empty()).then_some(url))
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(json!({ "saved": true })))
+}
+
+/// One torrent site with the fields it asks for.
+async fn indexer_site(State(app): Shared, Path(id): Path<String>) -> ApiResult {
+    let site = app
+        .cardigann
+        .library()
+        .get(&id)
+        .ok_or_else(|| ApiError::not_found("no such site"))?;
+    to_json(&omp_cardigann::library::summarize(&site))
+}
+
+#[derive(Deserialize)]
+struct DownloadQuery {
+    link: String,
+}
+
+/// Hands a download client the torrent behind a link on a site that needs the
+/// app to sign in for it. A magnet link is sent on by redirect.
+async fn indexer_download(
+    State(app): Shared,
+    Path(id): Path<i64>,
+    axum::extract::Query(q): axum::extract::Query<DownloadQuery>,
+) -> Result<Response, ApiError> {
+    match app.cardigann.fetch(id, &q.link).await {
+        Ok(omp_cardigann::Fetched::Magnet(m)) => {
+            Ok((StatusCode::FOUND, [(axum::http::header::LOCATION, m)]).into_response())
+        }
+        Ok(omp_cardigann::Fetched::Torrent(bytes)) => Ok((
+            [
+                (axum::http::header::CONTENT_TYPE, "application/x-bittorrent"),
+                (
+                    axum::http::header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"release.torrent\"",
+                ),
+            ],
+            bytes,
+        )
+            .into_response()),
+        Err(e) => Err(ApiError(StatusCode::BAD_GATEWAY, e)),
+    }
+}
+
+async fn vpn_status() -> Json<Value> {
+    Json(serde_json::to_value(crate::vpn::status().await).unwrap_or_default())
+}
+
+async fn media_server_status(State(app): Shared) -> ApiResult {
+    let rows = app.db.media_server_items().statuses().await?;
+    Ok(Json(Value::Array(
+        rows.into_iter()
+            .map(|s| {
+                json!({
+                    "provider_id": s.provider_id,
+                    "synced_at": s.synced_at,
+                    "error": s.error,
+                    "movies": s.movies,
+                    "series": s.series,
+                    "episodes": s.episodes,
+                })
+            })
+            .collect(),
+    )))
+}
+
+/// Movies and series a media server holds that this library does not.
+async fn media_server_untracked(State(app): Shared) -> ApiResult {
+    crate::media_servers::untracked(&app)
+        .await
+        .map(Json)
+        .map_err(ApiError::internal)
+}
+
+async fn health_checks(State(app): Shared) -> ApiResult {
+    let issues = crate::health::check(&app).await?;
+    Ok(Json(
+        serde_json::to_value(issues).map_err(|e| ApiError::internal(e.to_string()))?,
+    ))
+}
+
+async fn list_backups(State(app): Shared) -> ApiResult {
+    let backups = crate::backups::list(&app)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    Ok(Json(
+        serde_json::to_value(backups).map_err(|e| ApiError::internal(e.to_string()))?,
+    ))
+}
+
+async fn create_backup(State(app): Shared) -> ApiResult<(StatusCode, Json<Value>)> {
+    let b = crate::backups::create(&app)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::to_value(b).map_err(|e| ApiError::internal(e.to_string()))?),
+    ))
+}
+
+async fn download_backup(
+    State(app): Shared,
+    Path(name): Path<String>,
+) -> Result<Response, ApiError> {
+    let path = crate::backups::path_of(&app, &name)
+        .ok_or_else(|| ApiError::not_found("no such backup"))?;
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|_| ApiError::not_found("no such backup"))?;
+    Ok((
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/vnd.sqlite3".to_owned(),
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{name}\""),
+            ),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+async fn delete_backup(State(app): Shared, Path(name): Path<String>) -> ApiResult<StatusCode> {
+    let path = crate::backups::path_of(&app, &name)
+        .ok_or_else(|| ApiError::not_found("no such backup"))?;
+    tokio::fs::remove_file(path)
+        .await
+        .map_err(|_| ApiError::not_found("no such backup"))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Stages a backup to replace the database when the app next starts.
+async fn restore_backup(
+    State(app): Shared,
+    Path(name): Path<String>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let path = crate::backups::path_of(&app, &name)
+        .filter(|p| p.is_file())
+        .ok_or_else(|| ApiError::not_found("no such backup"))?;
+    Db::stage_restore(&app.config.data_dir, &path)
+        .await
+        .map_err(|e| ApiError::bad_request(e.to_string()))?;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "restart_required": true })),
+    ))
+}
+
+/// Stops the server so a restart policy can bring it back (after a restore).
+async fn restart(State(app): Shared) -> (StatusCode, Json<Value>) {
+    let app = app.clone();
+    tokio::spawn(async move {
+        // Let the response go out first.
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        app.request_shutdown();
+    });
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({ "status": "restarting" })),
+    )
+}
+
+async fn system_status(State(app): Shared) -> Json<Value> {
+    Json(json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "started": app.started,
+        "tmdb_configured": app.metadata.is_some(),
+        "tmdb_token_set": app.config.tmdb_token.is_some(),
+        "data_dir": app.config.data_dir,
+        "data_dir_free": app.disk.free_bytes(&app.config.data_dir.to_string_lossy()),
+        "downloads_dir": app.config.downloads_dir,
+        "downloads_dir_free": app.disk.free_bytes(&app.config.downloads_dir.to_string_lossy()),
+    }))
+}
+
+async fn list_movies(State(app): Shared) -> ApiResult {
+    let movies = app.db.movies().list().await?;
+    let presence = app.presence();
+    let mut out = Vec::with_capacity(movies.len());
+    for m in &movies {
+        let file = app.db.movie_files().for_movie(m.movie.id).await?;
+        let mut v = movie_json(m, file.as_ref());
+        crate::media_servers::annotate_movie(&presence, &mut v);
+        out.push(v);
+    }
+    Ok(Json(Value::Array(out)))
+}
+
+async fn get_movie(State(app): Shared, Path(id): Path<i64>) -> ApiResult {
+    let m = app.db.movies().get(id).await?;
+    let file = app.db.movie_files().for_movie(id).await?;
+    let mut v = movie_json(&m, file.as_ref());
+    crate::media_servers::annotate_movie(&app.presence(), &mut v);
+    Ok(Json(v))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct AddMovie {
+    pub(crate) tmdb_id: i64,
+    pub(crate) quality_profile_id: i32,
+    pub(crate) root_folder_path: String,
+    #[serde(default = "yes")]
+    pub(crate) monitored: bool,
+    pub(crate) minimum_availability: Option<String>,
+    #[serde(default)]
+    pub(crate) tags: Vec<i32>,
+    /// Search for the movie right away.
+    #[serde(default)]
+    pub(crate) search_now: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+async fn add_movie(
+    State(app): Shared,
+    Json(req): Json<AddMovie>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let record = add_to_library(&app, req).await?;
+    Ok((StatusCode::CREATED, Json(movie_json(&record, None))))
+}
+
+/// Adds a movie from the metadata provider to the library. Shared by the
+/// API and import lists.
+pub(crate) async fn add_to_library(app: &Arc<App>, req: AddMovie) -> Result<MovieRecord, ApiError> {
+    let Some(provider) = app.metadata.clone() else {
+        return Err(ApiError::unavailable(
+            "no metadata provider is configured (set TMDB_READ_TOKEN)",
+        ));
+    };
+    if !app
+        .db
+        .root_folders()
+        .list()
+        .await?
+        .iter()
+        .any(|r| r.path == req.root_folder_path)
+    {
+        return Err(ApiError::bad_request(
+            "root_folder_path is not a configured root folder",
+        ));
+    }
+    let minimum = match req.minimum_availability.as_deref() {
+        None => MovieStatus::Announced,
+        Some(s) => parse_status(s)
+            .ok_or_else(|| ApiError::bad_request(format!("unknown minimum_availability '{s}'")))?,
+    };
+    app.db
+        .quality_profiles()
+        .get(req.quality_profile_id)
+        .await
+        .map_err(|_| ApiError::bad_request("unknown quality_profile_id"))?;
+
+    if app
+        .db
+        .movies()
+        .find_by_tmdb_id(req.tmdb_id)
+        .await?
+        .is_some()
+    {
+        return Err(ApiError(
+            StatusCode::CONFLICT,
+            "this movie is already in the library".into(),
+        ));
+    }
+
+    let meta = provider.movie(req.tmdb_id).await.map_err(|e| match e {
+        omp_metadata::MetadataError::NotFound => ApiError::not_found("TMDB has no such movie"),
+        other => ApiError(StatusCode::BAD_GATEWAY, other.to_string()),
+    })?;
+
+    let naming = load_import_config(&app.db).await?.naming;
+    let folder = build_movie_folder(
+        &NamingMovie {
+            title: meta.title.clone(),
+            original_title: Some(meta.original_title.clone()),
+            year: meta.year,
+            imdb_id: meta.imdb_id.clone(),
+            tmdb_id: meta.tmdb_id,
+            certification: meta.certification.clone(),
+            collection_title: meta.collection_title.clone(),
+            translations: Vec::new(),
+        },
+        &naming,
+    );
+    let path = PathBuf::from(&req.root_folder_path).join(folder);
+
+    let metadata_id = app.db.movies().upsert_metadata(&meta).await?;
+    let id = app
+        .db
+        .movies()
+        .add(&NewMovie {
+            metadata_id,
+            monitored: req.monitored,
+            minimum_availability: minimum,
+            quality_profile_id: req.quality_profile_id,
+            path: path.to_string_lossy().into_owned(),
+            root_folder_path: Some(req.root_folder_path),
+            tags: req.tags,
+        })
+        .await?;
+    // The folder may already hold the movie.
+    let _ = tasks::rescan_movie_once(app, id).await;
+    let record = app.db.movies().get(id).await?;
+    if req.search_now && req.monitored {
+        let app = app.clone();
+        tokio::spawn(async move {
+            if let Err(e) = tasks::search_movie_once(&app, id, SearchMode::Automatic, true).await {
+                tracing::warn!("search for new movie failed: {e}");
+            }
+        });
+    }
+    Ok(record)
+}
+
+#[derive(Deserialize)]
+struct UpdateMovie {
+    monitored: Option<bool>,
+    minimum_availability: Option<String>,
+    quality_profile_id: Option<i32>,
+    path: Option<String>,
+    tags: Option<Vec<i32>>,
+}
+
+async fn apply_movie_update(app: &App, id: i64, req: UpdateMovie) -> Result<(), ApiError> {
+    let current = app.db.movies().get(id).await?;
+    let minimum = match req.minimum_availability.as_deref() {
+        None => current.movie.minimum_availability,
+        Some(s) => parse_status(s)
+            .ok_or_else(|| ApiError::bad_request(format!("unknown minimum_availability '{s}'")))?,
+    };
+    if let Some(p) = req.quality_profile_id {
+        app.db
+            .quality_profiles()
+            .get(p)
+            .await
+            .map_err(|_| ApiError::bad_request("unknown quality_profile_id"))?;
+    }
+    app.db
+        .movies()
+        .update(
+            id,
+            &omp_db::repo::MovieUpdate {
+                monitored: req.monitored.unwrap_or(current.movie.monitored),
+                minimum_availability: minimum,
+                quality_profile_id: req
+                    .quality_profile_id
+                    .unwrap_or(current.movie.quality_profile_id),
+                path: req.path.unwrap_or(current.movie.path.clone()),
+                root_folder_path: current.root_folder_path.clone(),
+                tags: req.tags.unwrap_or(current.movie.tags.clone()),
+            },
+        )
+        .await?;
+    Ok(())
+}
+
+async fn update_movie(
+    State(app): Shared,
+    Path(id): Path<i64>,
+    Json(req): Json<UpdateMovie>,
+) -> ApiResult {
+    apply_movie_update(&app, id, req).await?;
+    get_movie(State(app), Path(id)).await
+}
+
+#[derive(Deserialize, Default)]
+struct DeleteMovie {
+    /// Stop import lists adding this movie again.
+    #[serde(default)]
+    add_exclusion: bool,
+    /// Also delete the movie's folder from disk (to the recycle bin if set up).
+    #[serde(default)]
+    delete_files: bool,
+}
+
+/// True when `path` is a folder inside one of the root folders (and is not a
+/// root folder itself), so deleting it cannot take a whole library or the
+/// system with it.
+pub(crate) async fn is_inside_a_root(app: &App, path: &str) -> Result<bool, ApiError> {
+    let path = std::path::Path::new(path);
+    Ok(app
+        .db
+        .root_folders()
+        .list()
+        .await?
+        .iter()
+        .any(|r| path.starts_with(&r.path) && path != std::path::Path::new(&r.path))
+        && !path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir)))
+}
+
+async fn delete_movie(
+    State(app): Shared,
+    Path(id): Path<i64>,
+    Query(q): Query<DeleteMovie>,
+) -> ApiResult<StatusCode> {
+    remove_movie(&app, id, q.delete_files, q.add_exclusion).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remove_movie(
+    app: &App,
+    id: i64,
+    delete_files: bool,
+    add_exclusion: bool,
+) -> Result<(), ApiError> {
+    let m = app.db.movies().get(id).await?;
+    if delete_files && std::path::Path::new(&m.movie.path).exists() {
+        if !is_inside_a_root(app, &m.movie.path).await? {
+            return Err(ApiError::bad_request(
+                "the movie's folder is not inside a root folder, so it will not be deleted",
+            ));
+        }
+        let config = load_import_config(&app.db).await?;
+        let path = std::path::PathBuf::from(&m.movie.path);
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        omp_services::dispose_file(&config, &path, &name)
+            .await
+            .map_err(|e| ApiError::internal(format!("could not delete the folder: {e}")))?;
+    }
+    if add_exclusion {
+        app.db
+            .import_exclusions()
+            .add(m.movie.tmdb_id, &m.movie.title, m.movie.year)
+            .await?;
+    }
+    app.db.movies().delete(id).await?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct EditMovies {
+    movie_ids: Vec<i64>,
+    #[serde(flatten)]
+    changes: UpdateMovie,
+}
+
+/// Applies the same changes to many movies (the movie editor). Every id is
+/// checked before anything is saved.
+async fn edit_movies(State(app): Shared, Json(req): Json<EditMovies>) -> ApiResult {
+    if req.movie_ids.is_empty() {
+        return Err(ApiError::bad_request("choose at least one movie"));
+    }
+    if req.changes.path.is_some() {
+        return Err(ApiError::bad_request(
+            "a path can only be changed for one movie at a time",
+        ));
+    }
+    for id in &req.movie_ids {
+        app.db.movies().get(*id).await?;
+    }
+    for id in &req.movie_ids {
+        apply_movie_update(
+            &app,
+            *id,
+            UpdateMovie {
+                monitored: req.changes.monitored,
+                minimum_availability: req.changes.minimum_availability.clone(),
+                quality_profile_id: req.changes.quality_profile_id,
+                path: None,
+                tags: req.changes.tags.clone(),
+            },
+        )
+        .await?;
+    }
+    Ok(Json(json!({ "updated": req.movie_ids.len() })))
+}
+
+#[derive(Deserialize)]
+struct DeleteMovies {
+    movie_ids: Vec<i64>,
+    #[serde(default)]
+    delete_files: bool,
+    #[serde(default)]
+    add_exclusion: bool,
+}
+
+/// Removes many movies. Unknown ids are refused up front.
+async fn delete_movies(State(app): Shared, Json(req): Json<DeleteMovies>) -> ApiResult {
+    if req.movie_ids.is_empty() {
+        return Err(ApiError::bad_request("choose at least one movie"));
+    }
+    for id in &req.movie_ids {
+        app.db.movies().get(*id).await?;
+    }
+    for id in &req.movie_ids {
+        remove_movie(&app, *id, req.delete_files, req.add_exclusion).await?;
+    }
+    Ok(Json(json!({ "deleted": req.movie_ids.len() })))
+}
+
+/// Deletes the movie's file (to the recycle bin if set up) and keeps the movie.
+async fn delete_movie_file(State(app): Shared, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    let m = app.db.movies().get(id).await?;
+    let file = app
+        .db
+        .movie_files()
+        .for_movie(id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("the movie has no file"))?;
+    let config = load_import_config(&app.db).await?;
+    let path = std::path::Path::new(&m.movie.path).join(&file.relative_path);
+    if path.exists() {
+        let name = std::path::Path::new(&file.relative_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        omp_services::dispose_file(&config, &path, &name)
+            .await
+            .map_err(|e| ApiError::internal(format!("could not delete the file: {e}")))?;
+    }
+    app.db.movie_files().delete_for_movie(id).await?;
+    app.db
+        .history()
+        .insert(&HistoryRecord {
+            id: 0,
+            movie_id: id,
+            event: HistoryEvent::MovieFileDeleted,
+            date: chrono::Utc::now(),
+            source_title: file.relative_path.clone(),
+            quality: file.quality,
+            languages: file.languages.clone(),
+            download_id: None,
+            data: [("reason".to_owned(), "Manual".to_owned())].into(),
+        })
+        .await?;
+    if config.unmonitor_deleted && m.movie.monitored {
+        app.db
+            .movies()
+            .update(
+                id,
+                &omp_db::repo::MovieUpdate {
+                    monitored: false,
+                    minimum_availability: m.movie.minimum_availability,
+                    quality_profile_id: m.movie.quality_profile_id,
+                    path: m.movie.path.clone(),
+                    root_folder_path: m.root_folder_path.clone(),
+                    tags: m.movie.tags.clone(),
+                },
+            )
+            .await?;
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_exclusions(State(app): Shared) -> ApiResult {
+    let rows = app.db.import_exclusions().list().await?;
+    Ok(Json(Value::Array(
+        rows.iter()
+            .map(|e| json!({ "tmdb_id": e.tmdb_id, "title": e.title, "year": e.year }))
+            .collect(),
+    )))
+}
+
+async fn delete_exclusion(State(app): Shared, Path(tmdb_id): Path<i64>) -> ApiResult<StatusCode> {
+    app.db.import_exclusions().remove(tmdb_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn queue(State(app): Shared) -> Json<Value> {
+    let items: Vec<Value> = app
+        .monitor
+        .snapshot()
+        .into_iter()
+        .map(|t| {
+            json!({
+                "download_id": t.item.download_id,
+                "eta_seconds": t.item.eta_seconds,
+                "download_speed": t.item.download_speed,
+                "priority": t.item.priority,
+                "title": t.item.title,
+                "movie_id": t.movie_id,
+                "series_id": t.series_id,
+                "episode_ids": t.episode_ids,
+                "state": format!("{:?}", t.state),
+                "status": format!("{:?}", t.item.status),
+                "client": t.client_name,
+                "protocol": format!("{:?}", t.protocol),
+                "indexer": t.indexer,
+                "size": t.item.total_size,
+                "size_left": t.item.remaining_size,
+                "added": t.added,
+                "warnings": t.warnings,
+                "message": t.item.message,
+            })
+        })
+        .collect();
+    Json(Value::Array(items))
+}
+
+/// The registered client that has this tracked download.
+fn client_of(
+    app: &App,
+    download_id: &str,
+) -> Result<
+    (
+        Arc<omp_downloads::RegisteredClient>,
+        omp_services::TrackedDownload,
+    ),
+    ApiError,
+> {
+    let tracked = app
+        .monitor
+        .get(download_id)
+        .ok_or_else(|| ApiError::not_found("that download isn't in the queue"))?;
+    let client = app
+        .registry()
+        .get(tracked.client_id)
+        .ok_or_else(|| ApiError::not_found("its download client is gone"))?;
+    Ok((client, tracked))
+}
+
+fn control_error(e: omp_downloads::ClientError) -> ApiError {
+    ApiError(StatusCode::BAD_GATEWAY, e.to_string())
+}
+
+async fn pause_queue_item(State(app): Shared, Path(id): Path<String>) -> ApiResult<StatusCode> {
+    let (client, _) = client_of(&app, &id)?;
+    client.client.pause(&id).await.map_err(control_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn resume_queue_item(State(app): Shared, Path(id): Path<String>) -> ApiResult<StatusCode> {
+    let (client, _) = client_of(&app, &id)?;
+    client.client.resume(&id).await.map_err(control_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct SetPriority {
+    priority: omp_downloads::QueuePriority,
+}
+
+async fn prioritise_queue_item(
+    State(app): Shared,
+    Path(id): Path<String>,
+    Json(req): Json<SetPriority>,
+) -> ApiResult<StatusCode> {
+    let (client, _) = client_of(&app, &id)?;
+    client
+        .client
+        .set_priority(&id, req.priority)
+        .await
+        .map_err(control_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize, Default)]
+struct RemoveQueue {
+    /// Also delete what the client downloaded.
+    #[serde(default)]
+    delete_data: bool,
+    /// Treat the release as failed so it is not picked again.
+    #[serde(default)]
+    blocklist: bool,
+    /// After blocklisting, look for another release.
+    #[serde(default)]
+    search: bool,
+}
+
+async fn remove_queue_item(
+    State(app): Shared,
+    Path(download_id): Path<String>,
+    Query(q): Query<RemoveQueue>,
+) -> ApiResult<StatusCode> {
+    let tracked = app
+        .monitor
+        .get(&download_id)
+        .ok_or_else(|| ApiError::not_found("that download isn't in the queue"))?;
+    let client = app
+        .registry()
+        .get(tracked.client_id)
+        .ok_or_else(|| ApiError::not_found("its download client is gone"))?;
+    client
+        .client
+        .remove(&download_id, q.delete_data)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    app.monitor.forget(&download_id);
+
+    if q.blocklist
+        && let Some(series_id) = tracked.series_id
+    {
+        let grabs: Vec<_> = app
+            .db
+            .episode_history()
+            .by_download_id(&download_id)
+            .await?
+            .into_iter()
+            .filter(|h| h.event == HistoryEvent::Grabbed)
+            .collect();
+        let refs: Vec<_> = grabs.iter().collect();
+        omp_services::record_tv_failure(
+            &app.db,
+            &refs,
+            &download_id,
+            tracked.protocol,
+            "Removed from the queue and blocklisted".into(),
+            chrono::Utc::now(),
+        )
+        .await?;
+        if q.search {
+            let app = app.clone();
+            let first = grabs.first().map(|g| g.episode_id);
+            tokio::spawn(async move {
+                let Some(episode_id) = first else { return };
+                if let Err(e) =
+                    tasks::search_episode_once(&app, episode_id, SearchMode::Automatic, true).await
+                {
+                    tracing::warn!(series_id, "search after blocklisting failed: {e}");
+                }
+            });
+        }
+    } else if q.blocklist {
+        let grab = app
+            .db
+            .history()
+            .by_download_id(&download_id)
+            .await?
+            .into_iter()
+            .rev()
+            .find(|h| h.event == HistoryEvent::Grabbed);
+        if let Some(grab) = grab {
+            omp_services::record_failure(
+                &app.db,
+                &grab,
+                &download_id,
+                tracked.protocol,
+                "Removed from the queue and blocklisted".into(),
+                chrono::Utc::now(),
+            )
+            .await?;
+            if q.search {
+                let app = app.clone();
+                let movie_id = grab.movie_id;
+                tokio::spawn(async move {
+                    if let Err(e) =
+                        tasks::search_movie_once(&app, movie_id, SearchMode::Automatic, true).await
+                    {
+                        tracing::warn!("search after blocklisting failed: {e}");
+                    }
+                });
+            }
+        }
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_blocklist(State(app): Shared, Query(p): Query<Paging>) -> ApiResult {
+    let rows = app
+        .db
+        .blocklist()
+        .recent(p.limit.clamp(1, 500), p.offset.max(0))
+        .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for b in &rows {
+        let title = app
+            .db
+            .movies()
+            .get(b.movie_id)
+            .await
+            .map(|m| m.movie.title)
+            .unwrap_or_default();
+        out.push(json!({
+            "id": b.id,
+            "movie_id": b.movie_id,
+            "movie_title": title,
+            "source_title": b.source_title,
+            "quality": b.quality.quality.name,
+            "protocol": format!("{:?}", b.protocol),
+            "indexer": b.indexer,
+            "size": b.size,
+            "message": b.message,
+            "date": b.date,
+        }));
+    }
+    Ok(Json(Value::Array(out)))
+}
+
+async fn delete_blocklist_entry(State(app): Shared, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    app.db.blocklist().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn clear_blocklist(State(app): Shared) -> ApiResult<StatusCode> {
+    app.db.blocklist().clear().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Monitored movies without a file that no media server holds either.
+async fn wanted_missing(State(app): Shared) -> ApiResult {
+    let presence = app.presence();
+    let mut out = Vec::new();
+    for m in app.db.movies().list().await? {
+        if !m.movie.monitored {
+            continue;
+        }
+        if app.db.movie_files().for_movie(m.movie.id).await?.is_none() {
+            let mut v = movie_json(&m, None);
+            crate::media_servers::annotate_movie(&presence, &mut v);
+            if v["media_servers"].as_array().is_some_and(Vec::is_empty) {
+                out.push(v);
+            }
+        }
+    }
+    Ok(Json(Value::Array(out)))
+}
+
+/// Monitored movies whose file is below the profile's cutoff.
+async fn wanted_cutoff(State(app): Shared) -> ApiResult {
+    let profiles = app.db.quality_profiles().list().await?;
+    let formats = app.db.custom_formats().load_compiled().await?;
+    let mut out = Vec::new();
+    for m in app.db.movies().list().await? {
+        if !m.movie.monitored {
+            continue;
+        }
+        let Some(file) = app.db.movie_files().for_movie(m.movie.id).await? else {
+            continue;
+        };
+        let Some(profile) = profiles.iter().find(|p| p.id == m.movie.quality_profile_id) else {
+            continue;
+        };
+        let ids = omp_services::matching_ids(&formats, &omp_services::input_for_file(&file, &m));
+        if omp_quality::upgrade::cutoff_not_met(profile, &file.quality, &ids, None) {
+            out.push(movie_json(&m, Some(&file)));
+        }
+    }
+    Ok(Json(Value::Array(out)))
+}
+
+#[derive(Deserialize)]
+struct Paging {
+    #[serde(default = "default_page_size")]
+    limit: i64,
+    #[serde(default)]
+    offset: i64,
+    /// Only this movie's events.
+    movie_id: Option<i64>,
+}
+
+fn default_page_size() -> i64 {
+    50
+}
+
+async fn history(State(app): Shared, Query(p): Query<Paging>) -> ApiResult {
+    let rows = match p.movie_id {
+        Some(id) => app.db.history().for_movie(id).await?,
+        None => {
+            app.db
+                .history()
+                .recent(p.limit.clamp(1, 500), p.offset.max(0))
+                .await?
+        }
+    };
+    Ok(Json(Value::Array(rows.iter().map(history_json).collect())))
+}
+
+#[derive(Deserialize)]
+struct Command {
+    name: String,
+    movie_id: Option<i64>,
+    series_id: Option<i64>,
+    episode_id: Option<i64>,
+    season_number: Option<i32>,
+    /// Run to completion before answering (for scripts and tests).
+    #[serde(default)]
+    wait: bool,
+}
+
+async fn command(
+    State(app): Shared,
+    Json(cmd): Json<Command>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let job = {
+        let app = app.clone();
+        let name = cmd.name.clone();
+        let movie_id = cmd.movie_id;
+        let series_id = cmd.series_id;
+        let episode_id = cmd.episode_id;
+        let season_number = cmd.season_number;
+        async move {
+            match name.as_str() {
+                "RssSync" => tasks::rss_sync_once(&app)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
+                "ProcessDownloads" => tasks::process_downloads_once(&app)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
+                "MoviesSearch" => match movie_id {
+                    Some(id) => tasks::search_movie_once(&app, id, SearchMode::Automatic, true)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("MoviesSearch needs a movie_id".into()),
+                },
+                "RescanMovie" => match movie_id {
+                    Some(id) => tasks::rescan_movie_once(&app, id)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("RescanMovie needs a movie_id".into()),
+                },
+                "RenameMovie" => match movie_id {
+                    Some(id) => tasks::rename_movies_once(&app, Some(id))
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("RenameMovie needs a movie_id".into()),
+                },
+                "RenameMovies" => tasks::rename_movies_once(&app, None)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
+                "RefreshMovie" => match movie_id {
+                    Some(id) => tasks::refresh_movies_once(&app, Some(id))
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("RefreshMovie needs a movie_id".into()),
+                },
+                "MediaServerSync" => crate::media_servers::sync_all(&app).await.map(|_| ()),
+                "ImportListSync" => crate::lists::sync_once(&app)
+                    .await
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| {
+                        if r.problems.is_empty() {
+                            Ok(())
+                        } else {
+                            Err(r.problems.join("; "))
+                        }
+                    }),
+                "RefreshSeries" => match series_id {
+                    Some(id) => crate::tv_api::refresh(&app, Some(id)).await.map(|_| ()),
+                    None => Err("RefreshSeries needs a series_id".into()),
+                },
+                "RefreshSceneMappings" => tasks::refresh_scene_once(&app).await.map(|_| ()),
+                "WriteMetadata" => crate::metadata_files::write(
+                    &app,
+                    movie_id,
+                    series_id,
+                    movie_id.is_none() && series_id.is_none(),
+                )
+                .await
+                .map(|_| ()),
+                "RescanSeries" => match series_id {
+                    Some(id) => omp_services::rescan_series(&app.db, id, chrono::Utc::now())
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("RescanSeries needs a series_id".into()),
+                },
+                "RenameSeries" => tasks::rename_series_once(&app, series_id)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
+                "EpisodeSearch" => match episode_id {
+                    Some(id) => tasks::search_episode_once(&app, id, SearchMode::Automatic, true)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("EpisodeSearch needs an episode_id".into()),
+                },
+                "SeasonSearch" => match (series_id, season_number) {
+                    (Some(id), Some(season)) => {
+                        tasks::search_season_once(&app, id, season, SearchMode::Automatic, true)
+                            .await
+                            .map(|_| ())
+                            .map_err(|e| e.to_string())
+                    }
+                    _ => Err("SeasonSearch needs a series_id and a season_number".into()),
+                },
+                "SeriesSearch" => match series_id {
+                    Some(id) => tasks::search_missing_once(&app, Some(id), true)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    None => Err("SeriesSearch needs a series_id".into()),
+                },
+                "MissingEpisodesSearch" => tasks::search_missing_once(&app, None, true)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
+                "RefreshAllSeries" => crate::tv_api::refresh(&app, None).await.map(|_| ()),
+                "RefreshMovies" => tasks::refresh_movies_once(&app, None)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
+                other => Err(format!("unknown command '{other}'")),
+            }
+        }
+    };
+    if !matches!(
+        cmd.name.as_str(),
+        "RssSync"
+            | "ProcessDownloads"
+            | "MoviesSearch"
+            | "RescanMovie"
+            | "RefreshMovie"
+            | "RefreshMovies"
+            | "RefreshSeries"
+            | "RefreshAllSeries"
+            | "RescanSeries"
+            | "WriteMetadata"
+            | "RefreshSceneMappings"
+            | "RenameSeries"
+            | "EpisodeSearch"
+            | "SeasonSearch"
+            | "SeriesSearch"
+            | "MissingEpisodesSearch"
+            | "ImportListSync"
+            | "MediaServerSync"
+            | "RenameMovie"
+            | "RenameMovies"
+    ) {
+        return Err(ApiError::bad_request(format!(
+            "unknown command '{}'",
+            cmd.name
+        )));
+    }
+    let missing = match cmd.name.as_str() {
+        "RefreshSeries" | "SeriesSearch" | "RescanSeries" => {
+            cmd.series_id.is_none().then_some("a series_id")
+        }
+        "EpisodeSearch" => cmd.episode_id.is_none().then_some("an episode_id"),
+        "SeasonSearch" => (cmd.series_id.is_none() || cmd.season_number.is_none())
+            .then_some("a series_id and a season_number"),
+        _ => None,
+    };
+    if let Some(what) = missing {
+        return Err(ApiError::bad_request(format!("{} needs {what}", cmd.name)));
+    }
+    if matches!(
+        cmd.name.as_str(),
+        "MoviesSearch" | "RescanMovie" | "RefreshMovie" | "RenameMovie"
+    ) && cmd.movie_id.is_none()
+    {
+        return Err(ApiError::bad_request(format!(
+            "{} needs a movie_id",
+            cmd.name
+        )));
+    }
+    if cmd.wait {
+        return match job.await {
+            Ok(()) => Ok((
+                StatusCode::OK,
+                Json(json!({ "name": cmd.name, "status": "completed" })),
+            )),
+            Err(e) => Err(ApiError(StatusCode::INTERNAL_SERVER_ERROR, e)),
+        };
+    }
+    let name = cmd.name.clone();
+    tokio::spawn(async move {
+        if let Err(e) = job.await {
+            tracing::warn!(command = %name, "command failed: {e}");
+        }
+    });
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "name": cmd.name, "status": "queued" })),
+    ))
+}
+
+// ---- lookup and interactive search -------------------------------------------------------
+
+#[derive(Deserialize)]
+struct Lookup {
+    term: String,
+}
+
+fn lookup_json(m: &omp_core::movie::MovieMetadata, in_library: Option<i64>) -> Value {
+    json!({
+        "tmdb_id": m.tmdb_id,
+        "imdb_id": m.imdb_id,
+        "title": m.title,
+        "year": m.year,
+        "overview": m.overview,
+        "runtime": m.runtime,
+        "images": m.images,
+        "in_library": in_library,
+    })
+}
+
+/// Search TMDB. `tmdb:603` and `imdb:tt0133093` look one movie up directly;
+/// anything else is a title search, with an optional trailing year.
+async fn movie_lookup(State(app): Shared, Query(q): Query<Lookup>) -> ApiResult {
+    let Some(provider) = app.metadata.clone() else {
+        return Err(ApiError::unavailable(
+            "no metadata provider is configured (set TMDB_READ_TOKEN)",
+        ));
+    };
+    let term = q.term.trim();
+    if term.is_empty() {
+        return Err(ApiError::bad_request("term is required"));
+    }
+    let found: Vec<omp_core::movie::MovieMetadata> = if let Some(id) = term.strip_prefix("tmdb:") {
+        let id: i64 = id
+            .trim()
+            .parse()
+            .map_err(|_| ApiError::bad_request("tmdb: needs a number"))?;
+        vec![provider.movie(id).await.map_err(metadata_error)?]
+    } else if let Some(id) = term.strip_prefix("imdb:") {
+        vec![
+            provider
+                .movie_by_imdb_id(id.trim())
+                .await
+                .map_err(metadata_error)?,
+        ]
+    } else {
+        let (title, year) = split_year(term);
+        provider.search(title, year).await.map_err(metadata_error)?
+    };
+    let mut out = Vec::new();
+    for m in &found {
+        let existing = app
+            .db
+            .movies()
+            .find_by_tmdb_id(m.tmdb_id)
+            .await?
+            .map(|r| r.movie.id);
+        let mut v = lookup_json(m, existing);
+        crate::media_servers::annotate_movie(&app.presence(), &mut v);
+        out.push(v);
+    }
+    Ok(Json(Value::Array(out)))
+}
+
+// ---- collections -------------------------------------------------------------------------
+
+/// Collections that have a movie in the library, with how many are owned.
+async fn list_collections(State(app): Shared) -> ApiResult {
+    let mut by_id: std::collections::BTreeMap<i64, (String, Vec<i64>)> = Default::default();
+    for m in app.db.movies().list().await? {
+        if let (Some(id), Some(name)) = (
+            m.metadata.collection_tmdb_id,
+            m.metadata.collection_title.clone(),
+        ) {
+            by_id
+                .entry(id)
+                .or_insert_with(|| (name, Vec::new()))
+                .1
+                .push(m.movie.id);
+        }
+    }
+    Ok(Json(Value::Array(
+        by_id
+            .into_iter()
+            .map(|(id, (name, movies))| {
+                json!({ "tmdb_id": id, "title": name, "movies_in_library": movies.len() })
+            })
+            .collect(),
+    )))
+}
+
+async fn collection_info(app: &App, id: i64) -> Result<omp_metadata::CollectionInfo, ApiError> {
+    let Some(provider) = app.metadata.clone() else {
+        return Err(ApiError::unavailable(
+            "no metadata provider is configured (set TMDB_READ_TOKEN)",
+        ));
+    };
+    provider.collection(id).await.map_err(metadata_error)
+}
+
+/// One collection, each of its movies marked with the library entry if owned.
+async fn get_collection(State(app): Shared, Path(id): Path<i64>) -> ApiResult {
+    let info = collection_info(&app, id).await?;
+    let mut movies = Vec::new();
+    for m in &info.movies {
+        let existing = app
+            .db
+            .movies()
+            .find_by_tmdb_id(m.tmdb_id)
+            .await?
+            .map(|r| r.movie.id);
+        movies.push(lookup_json(m, existing));
+    }
+    Ok(Json(json!({
+        "tmdb_id": info.tmdb_id,
+        "title": info.name,
+        "overview": info.overview,
+        "movies": movies,
+    })))
+}
+
+#[derive(Deserialize)]
+struct AddCollection {
+    quality_profile_id: i32,
+    root_folder_path: String,
+    #[serde(default = "yes")]
+    monitored: bool,
+    minimum_availability: Option<String>,
+    #[serde(default)]
+    tags: Vec<i32>,
+    #[serde(default)]
+    search_now: bool,
+}
+
+/// Adds every movie of the collection that the library does not have yet.
+async fn add_collection(
+    State(app): Shared,
+    Path(id): Path<i64>,
+    Json(req): Json<AddCollection>,
+) -> ApiResult {
+    let info = collection_info(&app, id).await?;
+    let mut added = Vec::new();
+    let mut skipped = Vec::new();
+    for m in &info.movies {
+        if app.db.movies().find_by_tmdb_id(m.tmdb_id).await?.is_some() {
+            skipped.push(m.tmdb_id);
+            continue;
+        }
+        let record = add_to_library(
+            &app,
+            AddMovie {
+                tmdb_id: m.tmdb_id,
+                quality_profile_id: req.quality_profile_id,
+                root_folder_path: req.root_folder_path.clone(),
+                monitored: req.monitored,
+                minimum_availability: req.minimum_availability.clone(),
+                tags: req.tags.clone(),
+                search_now: req.search_now,
+            },
+        )
+        .await?;
+        added.push(record.movie.id);
+    }
+    Ok(Json(
+        json!({ "added": added, "already_in_library": skipped }),
+    ))
+}
+
+pub(crate) fn metadata_error(e: omp_metadata::MetadataError) -> ApiError {
+    match e {
+        omp_metadata::MetadataError::NotFound => ApiError::not_found("no such movie"),
+        other => ApiError(StatusCode::BAD_GATEWAY, other.to_string()),
+    }
+}
+
+/// "The Matrix 1999" or "The Matrix (1999)" -> ("The Matrix", Some(1999)).
+pub(crate) fn split_year(term: &str) -> (&str, Option<i32>) {
+    let trimmed = term.trim_end_matches(')').trim_end();
+    if let Some((head, tail)) = trimmed.rsplit_once(|c: char| c.is_whitespace() || c == '(')
+        && tail.len() == 4
+        && let Ok(year) = tail.parse::<i32>()
+        && (1870..=2200).contains(&year)
+    {
+        let head = head.trim_end_matches('(').trim();
+        if !head.is_empty() {
+            return (head, Some(year));
+        }
+    }
+    (term, None)
+}
+
+#[derive(Deserialize)]
+struct ReleaseSearch {
+    movie_id: i64,
+}
+
+#[derive(Deserialize)]
+struct PushedRelease {
+    title: String,
+    download_url: String,
+    /// "usenet" or "torrent".
+    protocol: String,
+    #[serde(default)]
+    size: u64,
+    publish_date: Option<chrono::DateTime<chrono::Utc>>,
+    /// A name for the source; shown in history.
+    indexer: Option<String>,
+    info_hash: Option<String>,
+    seeders: Option<i32>,
+}
+
+/// Lets another program hand us a release (Radarr's `POST /release/push`).
+async fn push_release(State(app): Shared, Json(r): Json<PushedRelease>) -> ApiResult {
+    use omp_core::release::{DownloadProtocol, ReleaseInfo, TorrentRelease};
+    if r.title.trim().is_empty() {
+        return Err(ApiError::bad_request("title is required"));
+    }
+    let url = r.download_url.trim();
+    if !(url.starts_with("http://") || url.starts_with("https://") || url.starts_with("magnet:")) {
+        return Err(ApiError::bad_request(
+            "download_url must be an http(s) or magnet link",
+        ));
+    }
+    let protocol = match r.protocol.to_ascii_lowercase().as_str() {
+        "usenet" => DownloadProtocol::Usenet,
+        "torrent" => DownloadProtocol::Torrent,
+        _ => return Err(ApiError::bad_request("protocol must be usenet or torrent")),
+    };
+    let release = ReleaseInfo {
+        guid: r.info_hash.clone().unwrap_or_else(|| url.to_owned()),
+        title: r.title.trim().to_owned(),
+        size: r.size,
+        download_url: url.to_owned(),
+        indexer_id: 0,
+        indexer: r.indexer.unwrap_or_else(|| "Pushed".into()),
+        indexer_priority: 25,
+        protocol,
+        publish_date: r.publish_date.unwrap_or_else(chrono::Utc::now),
+        container: None,
+        indexer_flags: Default::default(),
+        imdb_id: None,
+        tmdb_id: 0,
+        torrent: (protocol == DownloadProtocol::Torrent).then(|| TorrentRelease {
+            magnet_url: url.starts_with("magnet:").then(|| url.to_owned()),
+            info_hash: r.info_hash,
+            seeders: r.seeders,
+            peers: None,
+            ..Default::default()
+        }),
+    };
+    let (evaluation, processed) = tasks::push_release_once(&app, release).await?;
+    let item = &evaluation.items[0];
+    Ok(Json(json!({
+        "approved": item.decision.approved(),
+        "grabbed": !processed.grabbed.is_empty(),
+        "pending": !processed.pending.is_empty(),
+        "matched_movie_id": item.movie.as_ref().map(|m| m.movie.id),
+        "rejections": item.decision.rejections.iter().map(|x| x.message.clone()).collect::<Vec<_>>(),
+    })))
+}
+
+/// Searches every interactive-search indexer for a movie and returns what was
+/// found with the decision engine's verdict on each. Nothing is grabbed.
+async fn search_releases(State(app): Shared, Query(q): Query<ReleaseSearch>) -> ApiResult {
+    app.db.movies().get(q.movie_id).await?;
+    let result = tasks::search_movie_once(&app, q.movie_id, SearchMode::Interactive, true).await?;
+    let failures: Vec<Value> = result
+        .failures
+        .iter()
+        .map(|f| json!({ "indexer": f.indexer, "error": f.error.to_string() }))
+        .collect();
+
+    // Best approved releases first, in the engine's order; the rest by size.
+    let mut rank: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    for (n, i) in result
+        .evaluation
+        .approved_best_first()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        rank.insert(i, n + 1);
+    }
+    let (search_id, evaluation) = app.search_cache.lock().unwrap().insert(result.evaluation);
+    let now = chrono::Utc::now();
+    let mut items: Vec<(usize, Value)> = evaluation
+        .items
+        .iter()
+        .enumerate()
+        .map(|(i, it)| {
+            let r = &it.release;
+            (
+                i,
+                json!({
+                    "id": format!("{search_id}-{i}"),
+                    "guid": r.guid,
+                    "title": r.title,
+                    "indexer": r.indexer,
+                    "protocol": format!("{:?}", r.protocol).to_lowercase(),
+                    "size": r.size,
+                    "age_hours": r.age_hours(now),
+                    "seeders": r.torrent.as_ref().and_then(|t| t.seeders),
+                    "peers": r.torrent.as_ref().and_then(|t| t.peers),
+                    "quality": it.parsed.as_ref().map(|p| p.quality.quality.name),
+                    "release_group": it.parsed.as_ref().and_then(|p| p.release_group.clone()),
+                    "custom_format_score": it.custom_format_score,
+                    "matched_movie_id": it.movie.as_ref().map(|m| m.movie.id),
+                    "approved": it.decision.approved(),
+                    "temporarily_rejected": it.decision.temporarily_rejected(),
+                    "rejections": it.decision.rejections.iter().map(|x| x.message.clone()).collect::<Vec<_>>(),
+                    "rank": rank.get(&i),
+                }),
+            )
+        })
+        .collect();
+    items.sort_by_key(|(i, v)| {
+        (
+            rank.get(i).copied().unwrap_or(usize::MAX),
+            std::cmp::Reverse(v["size"].as_u64().unwrap_or(0)),
+        )
+    });
+    Ok(Json(json!({
+        "releases": items.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
+        "indexer_failures": failures,
+    })))
+}
+
+#[derive(Deserialize)]
+struct GrabRelease {
+    /// An `id` from a release search.
+    id: String,
+}
+
+async fn grab_release(State(app): Shared, Json(req): Json<GrabRelease>) -> ApiResult {
+    let (search, index) = req
+        .id
+        .split_once('-')
+        .and_then(|(s, i)| Some((s.parse::<u64>().ok()?, i.parse::<usize>().ok()?)))
+        .ok_or_else(|| ApiError::bad_request("malformed release id"))?;
+    let evaluation = app
+        .search_cache
+        .lock()
+        .unwrap()
+        .get(search)
+        .ok_or_else(|| ApiError::not_found("those search results have expired; search again"))?;
+    if index >= evaluation.items.len() {
+        return Err(ApiError::bad_request("no such release in those results"));
+    }
+    let ctx = omp_services::GrabContext {
+        now: chrono::Utc::now(),
+        process_start: app.started,
+        category: Some(app.config.download_category.clone()),
+    };
+    let grabbed = omp_services::grab_selected(&app.db, &evaluation, &app.registry(), &ctx, index)
+        .await
+        .map_err(|m| ApiError(StatusCode::BAD_GATEWAY, m))?;
+    Ok(Json(json!({
+        "download_id": grabbed.download_id,
+        "client": grabbed.client_name,
+        "title": evaluation.items[index].release.title,
+    })))
+}
+
+// ---- importing an existing library ---------------------------------------------------------
+
+async fn unmapped(State(app): Shared, Path(id): Path<i64>) -> ApiResult {
+    let root = app
+        .db
+        .root_folders()
+        .list()
+        .await?
+        .into_iter()
+        .find(|r| r.id == id)
+        .ok_or_else(|| ApiError::not_found("no such root folder"))?;
+    let folders = omp_services::unmapped_folders(&app.db, std::path::Path::new(&root.path)).await?;
+    Ok(Json(Value::Array(
+        folders
+            .iter()
+            .map(|f| {
+                json!({
+                    "name": f.name,
+                    "path": f.path,
+                    "title": f.title,
+                    "year": f.year,
+                    "has_media": f.has_media,
+                })
+            })
+            .collect(),
+    )))
+}
+
+#[derive(Deserialize)]
+struct ImportItem {
+    /// An existing folder inside a root folder.
+    path: String,
+    tmdb_id: i64,
+}
+
+#[derive(Deserialize)]
+struct ImportBatch {
+    items: Vec<ImportItem>,
+    quality_profile_id: i32,
+    #[serde(default = "yes")]
+    monitored: bool,
+    minimum_availability: Option<String>,
+}
+
+/// Adds movies whose folders already exist, keeping the folders where they
+/// are, and picks up the files inside them. Each item succeeds or fails on
+/// its own.
+async fn import_movies(State(app): Shared, Json(req): Json<ImportBatch>) -> ApiResult {
+    let Some(provider) = app.metadata.clone() else {
+        return Err(ApiError::unavailable(
+            "no metadata provider is configured (set TMDB_READ_TOKEN)",
+        ));
+    };
+    if req.items.len() > 500 {
+        return Err(ApiError::bad_request("import at most 500 movies at a time"));
+    }
+    let minimum = match req.minimum_availability.as_deref() {
+        None => MovieStatus::Announced,
+        Some(s) => parse_status(s)
+            .ok_or_else(|| ApiError::bad_request(format!("unknown minimum_availability '{s}'")))?,
+    };
+    app.db
+        .quality_profiles()
+        .get(req.quality_profile_id)
+        .await
+        .map_err(|_| ApiError::bad_request("unknown quality_profile_id"))?;
+    let roots = app.db.root_folders().list().await?;
+
+    let mut results = Vec::new();
+    for item in &req.items {
+        let outcome: Result<i64, String> = async {
+            let path = std::path::Path::new(&item.path);
+            // Only folders directly inside a root folder can be adopted.
+            let root = roots
+                .iter()
+                .find(|r| path.parent() == Some(std::path::Path::new(&r.path)))
+                .ok_or("the folder is not directly inside a root folder")?;
+            if !path.is_dir() {
+                return Err("the folder does not exist".to_owned());
+            }
+            if app
+                .db
+                .movies()
+                .find_by_tmdb_id(item.tmdb_id)
+                .await
+                .map_err(|e| e.to_string())?
+                .is_some()
+            {
+                return Err("this movie is already in the library".into());
+            }
+            if app
+                .db
+                .movies()
+                .list()
+                .await
+                .map_err(|e| e.to_string())?
+                .iter()
+                .any(|m| m.movie.path == item.path)
+            {
+                return Err("another movie already uses this folder".into());
+            }
+            let meta = provider
+                .movie(item.tmdb_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            let metadata_id = app
+                .db
+                .movies()
+                .upsert_metadata(&meta)
+                .await
+                .map_err(|e| e.to_string())?;
+            let id = app
+                .db
+                .movies()
+                .add(&NewMovie {
+                    metadata_id,
+                    monitored: req.monitored,
+                    minimum_availability: minimum,
+                    quality_profile_id: req.quality_profile_id,
+                    path: item.path.clone(),
+                    root_folder_path: Some(root.path.clone()),
+                    tags: Vec::new(),
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+            tasks::rescan_movie_once(&app, id)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(id)
+        }
+        .await;
+        results.push(match outcome {
+            Ok(id) => json!({ "path": item.path, "ok": true, "movie_id": id }),
+            Err(error) => json!({ "path": item.path, "ok": false, "error": error }),
+        });
+    }
+    Ok(Json(json!({ "results": results })))
+}
+
+// ---- settings ----------------------------------------------------------------------------
+
+async fn list_root_folders(State(app): Shared) -> ApiResult {
+    let rows = app.db.root_folders().list().await?;
+    Ok(Json(Value::Array(
+        rows.iter()
+            .map(|r| {
+                json!({
+                    "id": r.id,
+                    "path": r.path,
+                    "free_space": app.disk.free_bytes(&r.path),
+                })
+            })
+            .collect(),
+    )))
+}
+
+#[derive(Deserialize)]
+struct NewRoot {
+    path: String,
+}
+
+async fn add_root_folder(
+    State(app): Shared,
+    Json(req): Json<NewRoot>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let path = std::path::Path::new(&req.path);
+    if !path.is_absolute() {
+        return Err(ApiError::bad_request("the path must be absolute"));
+    }
+    if !path.is_dir() {
+        return Err(ApiError::bad_request("that folder does not exist"));
+    }
+    let r = app
+        .db
+        .root_folders()
+        .add(req.path.trim_end_matches('/'))
+        .await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "id": r.id, "path": r.path })),
+    ))
+}
+
+async fn delete_root_folder(State(app): Shared, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    app.db.root_folders().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_profiles(State(app): Shared) -> ApiResult {
+    let profiles = app.db.quality_profiles().list().await?;
+    Ok(Json(
+        serde_json::to_value(profiles).map_err(|e| ApiError::bad_request(e.to_string()))?,
+    ))
+}
+
+async fn get_profile(State(app): Shared, Path(id): Path<i32>) -> ApiResult {
+    let p = app.db.quality_profiles().get(id).await?;
+    Ok(Json(
+        serde_json::to_value(p).map_err(|e| ApiError::bad_request(e.to_string()))?,
+    ))
+}
+
+async fn add_profile(
+    State(app): Shared,
+    Json(mut p): Json<QualityProfile>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    p.id = 0;
+    p.validate().map_err(ApiError::bad_request)?;
+    let id = app.db.quality_profiles().insert(&p).await?;
+    let saved = app.db.quality_profiles().get(id).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::to_value(saved).map_err(|e| ApiError::bad_request(e.to_string()))?),
+    ))
+}
+
+async fn update_profile(
+    State(app): Shared,
+    Path(id): Path<i32>,
+    Json(mut p): Json<QualityProfile>,
+) -> ApiResult {
+    p.id = id;
+    p.validate().map_err(ApiError::bad_request)?;
+    app.db.quality_profiles().update(&p).await?;
+    get_profile(State(app), Path(id)).await
+}
+
+async fn delete_profile(State(app): Shared, Path(id): Path<i32>) -> ApiResult<StatusCode> {
+    app.db.quality_profiles().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct ProviderBody {
+    name: String,
+    implementation: String,
+    plugin_id: Option<String>,
+    #[serde(default)]
+    settings: Value,
+    #[serde(default)]
+    tags: Vec<i32>,
+    #[serde(default = "yes")]
+    enabled: bool,
+    #[serde(default = "yes")]
+    enable_rss: bool,
+    #[serde(default = "yes")]
+    enable_automatic_search: bool,
+    #[serde(default = "yes")]
+    enable_interactive_search: bool,
+    #[serde(default = "default_priority")]
+    priority: i32,
+}
+
+fn default_priority() -> i32 {
+    25
+}
+
+impl ProviderBody {
+    fn into_provider(self, id: i64, kind: ProviderKind) -> Provider {
+        Provider {
+            id,
+            kind,
+            name: self.name,
+            implementation: self.implementation,
+            plugin_id: self.plugin_id,
+            settings: if self.settings.is_null() {
+                json!({})
+            } else {
+                self.settings
+            },
+            tags: self.tags,
+            enabled: self.enabled,
+            enable_rss: self.enable_rss,
+            enable_automatic_search: self.enable_automatic_search,
+            enable_interactive_search: self.enable_interactive_search,
+            priority: self.priority,
+        }
+    }
+}
+
+fn validate_provider(kind: ProviderKind, p: &Provider) -> Result<(), ApiError> {
+    if p.name.trim().is_empty() {
+        return Err(ApiError::bad_request("name is required"));
+    }
+    let known: &[&str] = match kind {
+        ProviderKind::Indexer => &["newznab", "torznab", "cardigann"],
+        ProviderKind::DownloadClient => &["torrent", "usenet"],
+        _ => return Ok(()),
+    };
+    // Plugin-provided implementations are validated by the plugin host.
+    if p.plugin_id.is_none() && !known.contains(&p.implementation.as_str()) {
+        return Err(ApiError::bad_request(format!(
+            "unknown implementation '{}'",
+            p.implementation
+        )));
+    }
+    Ok(())
+}
+
+async fn list_providers(app: Arc<App>, kind: ProviderKind) -> ApiResult {
+    let rows = app.db.providers().list(kind).await?;
+    Ok(Json(Value::Array(rows.iter().map(provider_json).collect())))
+}
+
+/// A notification is a plugin plus the events it wants.
+fn validate_notification(app: &App, p: &Provider) -> Result<(), ApiError> {
+    let s = crate::notify::NotificationSettings::from_provider(p);
+    if p.implementation == crate::email::IMPLEMENTATION {
+        crate::email::EmailSettings::parse(&s.settings).map_err(ApiError::bad_request)?;
+    } else {
+        let Some(plugin_id) = p.plugin_id.as_deref() else {
+            return Err(ApiError::bad_request("choose a notification plugin"));
+        };
+        if app.plugins().notification(plugin_id).is_none() {
+            return Err(ApiError::bad_request(format!(
+                "no notification plugin '{plugin_id}' is installed"
+            )));
+        }
+    }
+    if let Some(bad) = s
+        .triggers
+        .iter()
+        .find(|t| !crate::notify::TRIGGERS.contains(&t.as_str()))
+    {
+        return Err(ApiError::bad_request(format!("unknown event '{bad}'")));
+    }
+    Ok(())
+}
+
+/// An import list is a list plugin plus what to do with the movies it names.
+async fn validate_import_list(app: &App, p: &Provider) -> Result<(), ApiError> {
+    let Some(plugin_id) = p.plugin_id.as_deref() else {
+        return Err(ApiError::bad_request("choose a list plugin"));
+    };
+    if app.plugins().list(plugin_id).is_none() {
+        return Err(ApiError::bad_request(format!(
+            "no list plugin '{plugin_id}' is installed"
+        )));
+    }
+    let s = crate::lists::ListSettings::from_provider(p).map_err(ApiError::bad_request)?;
+    if !app
+        .db
+        .root_folders()
+        .list()
+        .await?
+        .iter()
+        .any(|r| r.path == s.root_folder_path)
+    {
+        return Err(ApiError::bad_request(
+            "root_folder_path is not a configured root folder",
+        ));
+    }
+    app.db
+        .quality_profiles()
+        .get(s.quality_profile_id)
+        .await
+        .map_err(|_| ApiError::bad_request("unknown quality_profile_id"))?;
+    if let Some(m) = s.minimum_availability.as_deref()
+        && parse_status(m).is_none()
+    {
+        return Err(ApiError::bad_request(format!(
+            "unknown minimum_availability '{m}'"
+        )));
+    }
+    // Where series go is optional, but if given it has to exist.
+    if let Some(root) = s.series_root_folder_path.as_deref()
+        && !app
+            .db
+            .root_folders()
+            .list()
+            .await?
+            .iter()
+            .any(|r| r.path == root)
+    {
+        return Err(ApiError::bad_request(
+            "series_root_folder_path is not a configured root folder",
+        ));
+    }
+    if let Some(profile) = s.series_quality_profile_id {
+        app.db
+            .quality_profiles()
+            .get(profile)
+            .await
+            .map_err(|_| ApiError::bad_request("unknown series_quality_profile_id"))?;
+    }
+    Ok(())
+}
+
+/// An indexer that names a plugin must name an installed indexer plugin.
+fn validate_indexer_plugin(app: &App, p: &Provider) -> Result<(), ApiError> {
+    if p.implementation == "cardigann" {
+        if !app.cardigann.handles(p) {
+            return Err(ApiError::bad_request("choose one of the sites in the list"));
+        }
+        return Ok(());
+    }
+    match p.plugin_id.as_deref() {
+        Some(id) if app.plugins().indexer(id).is_none() => Err(ApiError::bad_request(format!(
+            "no indexer plugin '{id}' is installed"
+        ))),
+        _ => Ok(()),
+    }
+}
+
+/// A media server must name an installed media server plugin.
+fn validate_media_server(app: &App, p: &Provider) -> Result<(), ApiError> {
+    match p.plugin_id.as_deref() {
+        Some(id) if app.plugins().media_server(id).is_some() => Ok(()),
+        Some(id) => Err(ApiError::bad_request(format!(
+            "no media server plugin '{id}' is installed"
+        ))),
+        None => Err(ApiError::bad_request("choose a media server plugin")),
+    }
+}
+
+/// A download client that names a plugin must name an installed client plugin.
+fn validate_client_plugin(app: &App, p: &Provider) -> Result<(), ApiError> {
+    match p.plugin_id.as_deref() {
+        Some(id) if app.plugins().download_client(id).is_none() => Err(ApiError::bad_request(
+            format!("no download client plugin '{id}' is installed"),
+        )),
+        _ => Ok(()),
+    }
+}
+
+async fn save_provider(
+    app: Arc<App>,
+    kind: ProviderKind,
+    id: Option<i64>,
+    body: ProviderBody,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let mut p = body.into_provider(id.unwrap_or(0), kind);
+    validate_provider(kind, &p)?;
+    if kind == ProviderKind::Notification {
+        validate_notification(&app, &p)?;
+    }
+    if kind == ProviderKind::Indexer {
+        validate_indexer_plugin(&app, &p)?;
+    }
+    if kind == ProviderKind::DownloadClient {
+        validate_client_plugin(&app, &p)?;
+    }
+    if kind == ProviderKind::ImportList {
+        validate_import_list(&app, &p).await?;
+    }
+    if kind == ProviderKind::MediaServer {
+        validate_media_server(&app, &p)?;
+    }
+    let status = match id {
+        Some(id) => {
+            let existing = app.db.providers().get(id).await?;
+            if existing.kind != kind {
+                return Err(ApiError::not_found("not found"));
+            }
+            app.db.providers().update(&p).await?;
+            StatusCode::OK
+        }
+        None => {
+            p.id = app.db.providers().insert(&p).await?;
+            StatusCode::CREATED
+        }
+    };
+    if kind == ProviderKind::DownloadClient {
+        app.reload_clients()
+            .await
+            .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+    if kind == ProviderKind::MediaServer {
+        // Read the new server in the background; its status says how that went.
+        let app = app.clone();
+        let p = p.clone();
+        tokio::spawn(async move {
+            if p.enabled {
+                let _ = crate::media_servers::sync_provider(&app, &p).await;
+            }
+            app.refresh_presence().await;
+        });
+    }
+    Ok((status, Json(provider_json(&p))))
+}
+
+async fn delete_provider(app: Arc<App>, kind: ProviderKind, id: i64) -> ApiResult<StatusCode> {
+    if app.db.providers().get(id).await?.kind != kind {
+        return Err(ApiError::not_found("not found"));
+    }
+    app.db.providers().delete(id).await?;
+    app.cardigann.forget(id);
+    if kind == ProviderKind::DownloadClient {
+        app.reload_clients()
+            .await
+            .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+    if kind == ProviderKind::MediaServer {
+        app.refresh_presence().await;
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---- profiles and other settings ---------------------------------------------------------
+
+pub(crate) fn to_json<T: serde::Serialize>(v: &T) -> ApiResult {
+    serde_json::to_value(v)
+        .map(Json)
+        .map_err(|e| ApiError::internal(e.to_string()))
+}
+
+async fn list_custom_formats(State(app): Shared) -> ApiResult {
+    to_json(&app.db.custom_formats().list().await?)
+}
+
+fn check_custom_format(f: &omp_quality::custom_format::CustomFormatDef) -> Result<(), ApiError> {
+    if f.name.trim().is_empty() {
+        return Err(ApiError::bad_request("a custom format needs a name"));
+    }
+    f.build().map(|_| ()).map_err(ApiError::bad_request)
+}
+
+async fn add_custom_format(
+    State(app): Shared,
+    Json(mut f): Json<omp_quality::custom_format::CustomFormatDef>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    f.id = 0;
+    check_custom_format(&f)?;
+    let id = app.db.custom_formats().insert(&f).await?;
+    f.id = id;
+    Ok((StatusCode::CREATED, to_json(&f)?))
+}
+
+async fn update_custom_format(
+    State(app): Shared,
+    Path(id): Path<i32>,
+    Json(mut f): Json<omp_quality::custom_format::CustomFormatDef>,
+) -> ApiResult {
+    f.id = id;
+    check_custom_format(&f)?;
+    app.db.custom_formats().update(&f).await?;
+    to_json(&f)
+}
+
+async fn delete_custom_format(State(app): Shared, Path(id): Path<i32>) -> ApiResult<StatusCode> {
+    app.db.custom_formats().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_delay_profiles(State(app): Shared) -> ApiResult {
+    to_json(&app.db.delay_profiles().list().await?)
+}
+
+async fn add_delay_profile(
+    State(app): Shared,
+    Json(mut p): Json<omp_quality::delay::DelayProfile>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    p.id = 0;
+    let id = app.db.delay_profiles().insert(&p).await?;
+    p.id = id;
+    Ok((StatusCode::CREATED, to_json(&p)?))
+}
+
+async fn update_delay_profile(
+    State(app): Shared,
+    Path(id): Path<i32>,
+    Json(mut p): Json<omp_quality::delay::DelayProfile>,
+) -> ApiResult {
+    p.id = id;
+    app.db.delay_profiles().update(&p).await?;
+    to_json(&p)
+}
+
+async fn delete_delay_profile(State(app): Shared, Path(id): Path<i32>) -> ApiResult<StatusCode> {
+    app.db.delay_profiles().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_release_profiles(State(app): Shared) -> ApiResult {
+    to_json(&app.db.release_profiles().list().await?)
+}
+
+async fn add_release_profile(
+    State(app): Shared,
+    Json(mut p): Json<omp_quality::release_profile::ReleaseProfile>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    p.id = 0;
+    let id = app.db.release_profiles().insert(&p).await?;
+    p.id = id;
+    Ok((StatusCode::CREATED, to_json(&p)?))
+}
+
+async fn update_release_profile(
+    State(app): Shared,
+    Path(id): Path<i32>,
+    Json(mut p): Json<omp_quality::release_profile::ReleaseProfile>,
+) -> ApiResult {
+    p.id = id;
+    app.db.release_profiles().update(&p).await?;
+    to_json(&p)
+}
+
+async fn delete_release_profile(State(app): Shared, Path(id): Path<i32>) -> ApiResult<StatusCode> {
+    app.db.release_profiles().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_tags(State(app): Shared) -> ApiResult {
+    let tags = app.db.tags().list().await?;
+    Ok(Json(Value::Array(
+        tags.iter()
+            .map(|t| json!({ "id": t.id, "label": t.label }))
+            .collect(),
+    )))
+}
+
+#[derive(Deserialize)]
+struct NewTag {
+    label: String,
+}
+
+async fn add_tag(
+    State(app): Shared,
+    Json(t): Json<NewTag>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let tag = app.db.tags().get_or_create(&t.label).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "id": tag.id, "label": tag.label })),
+    ))
+}
+
+async fn delete_tag(State(app): Shared, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    app.db.tags().delete(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn definition_json(d: &omp_quality::definition::QualityDefinition) -> Value {
+    json!({
+        "quality_id": d.quality.id,
+        "title": d.quality.name,
+        "weight": d.weight,
+        "min_size": d.min_size,
+        "max_size": d.max_size,
+        "preferred_size": d.preferred_size,
+    })
+}
+
+async fn list_quality_definitions(State(app): Shared) -> ApiResult {
+    let defs = app.db.quality_definitions().load().await?;
+    Ok(Json(Value::Array(
+        defs.all().iter().map(definition_json).collect(),
+    )))
+}
+
+#[derive(Deserialize)]
+struct DefinitionUpdate {
+    min_size: Option<f64>,
+    max_size: Option<f64>,
+    preferred_size: Option<f64>,
+}
+
+/// Sizes are megabytes per minute of runtime.
+async fn update_quality_definition(
+    State(app): Shared,
+    Path(quality_id): Path<u32>,
+    Json(u): Json<DefinitionUpdate>,
+) -> ApiResult {
+    let defs = app.db.quality_definitions().load().await?;
+    let mut d = defs
+        .all()
+        .iter()
+        .find(|d| d.quality.id == quality_id)
+        .cloned()
+        .ok_or_else(|| ApiError::not_found("no such quality"))?;
+    for v in [u.min_size, u.max_size, u.preferred_size]
+        .into_iter()
+        .flatten()
+    {
+        if !v.is_finite() || v < 0.0 {
+            return Err(ApiError::bad_request("sizes must be zero or more"));
+        }
+    }
+    if let (Some(min), Some(max)) = (u.min_size, u.max_size)
+        && max != 0.0
+        && min > max
+    {
+        return Err(ApiError::bad_request(
+            "the minimum size cannot be above the maximum",
+        ));
+    }
+    if let (Some(pref), Some(max)) = (u.preferred_size, u.max_size)
+        && max != 0.0
+        && pref > max
+    {
+        return Err(ApiError::bad_request(
+            "the preferred size cannot be above the maximum",
+        ));
+    }
+    d.min_size = u.min_size;
+    d.max_size = u.max_size;
+    d.preferred_size = u.preferred_size;
+    app.db.quality_definitions().save(&d).await?;
+    Ok(Json(definition_json(&d)))
+}
+
+async fn get_decision_config(State(app): Shared) -> ApiResult {
+    to_json(&omp_services::load_decision_config(&app.db).await?)
+}
+
+async fn put_decision_config(
+    State(app): Shared,
+    Json(c): Json<omp_decision::model::DecisionConfig>,
+) -> ApiResult {
+    omp_services::save_decision_config(&app.db, &c).await?;
+    to_json(&c)
+}
+
+#[derive(Deserialize)]
+struct RenameQuery {
+    movie_id: Option<i64>,
+}
+
+fn preview_json(p: &omp_services::RenamePreview) -> Value {
+    json!({ "movie_id": p.movie_id, "title": p.title, "existing": p.existing, "new": p.new })
+}
+
+/// Files whose names differ from the current naming format.
+async fn rename_previews(State(app): Shared, Query(q): Query<RenameQuery>) -> ApiResult {
+    let naming = load_import_config(&app.db).await?.naming;
+    let previews = match q.movie_id {
+        Some(id) => omp_services::rename_preview(&app.db, &naming, id)
+            .await?
+            .into_iter()
+            .collect(),
+        None => omp_services::rename_previews(&app.db, &naming).await?,
+    };
+    Ok(Json(Value::Array(
+        previews.iter().map(preview_json).collect(),
+    )))
+}
+
+#[derive(Deserialize)]
+struct FeedQuery {
+    #[serde(default = "default_past_days")]
+    past_days: i64,
+    #[serde(default = "default_future_days")]
+    future_days: i64,
+    #[serde(default)]
+    unmonitored: bool,
+}
+
+fn default_past_days() -> i64 {
+    7
+}
+
+fn default_future_days() -> i64 {
+    90
+}
+
+/// Subscribe to this from a calendar app: `/api/v1/calendar/feed.ics?apikey=...`.
+async fn calendar_feed(
+    State(app): Shared,
+    Query(q): Query<FeedQuery>,
+) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    let now = chrono::Utc::now();
+    let today = now.date_naive();
+    let movies: Vec<MovieRecord> = app
+        .db
+        .movies()
+        .list()
+        .await?
+        .into_iter()
+        .filter(|m| q.unmonitored || m.movie.monitored)
+        .collect();
+    let mut series = Vec::new();
+    for s in app.db.series().list().await? {
+        if q.unmonitored || s.monitored {
+            let episodes: Vec<_> = app
+                .db
+                .episodes()
+                .for_series(s.id)
+                .await?
+                .into_iter()
+                .filter(|e| q.unmonitored || e.monitored)
+                .collect();
+            series.push((s, episodes));
+        }
+    }
+    let body = crate::ical::feed_with_episodes(
+        &movies,
+        &series,
+        today - chrono::Duration::days(q.past_days.clamp(0, 365)),
+        today + chrono::Duration::days(q.future_days.clamp(0, 730)),
+        now,
+    );
+    Ok((
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/calendar; charset=utf-8",
+        )],
+        body,
+    )
+        .into_response())
+}
+
+async fn list_tasks(State(app): Shared) -> Json<Value> {
+    let tasks: Vec<Value> = app
+        .task_statuses()
+        .into_iter()
+        .map(|t| {
+            let next = t
+                .last_run
+                .map(|l| l + chrono::Duration::seconds(t.interval_secs as i64));
+            json!({
+                "name": t.name,
+                "label": t.label,
+                "interval_secs": t.interval_secs,
+                "last_run": t.last_run,
+                "next_run": next,
+                "last_duration_ms": t.last_duration_ms,
+                "last_error": t.last_error,
+            })
+        })
+        .collect();
+    Json(Value::Array(tasks))
+}
+
+#[derive(Deserialize)]
+struct LogQuery {
+    #[serde(default = "default_log_level")]
+    level: String,
+    search: Option<String>,
+    #[serde(default = "default_page_size")]
+    limit: i64,
+    #[serde(default)]
+    offset: i64,
+}
+
+fn default_log_level() -> String {
+    "info".into()
+}
+
+async fn list_logs(State(app): Shared, Query(q): Query<LogQuery>) -> ApiResult {
+    if !["error", "warn", "info", "debug"].contains(&q.level.as_str()) {
+        return Err(ApiError::bad_request(
+            "level must be error, warn, info or debug",
+        ));
+    }
+    let search = q.search.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let rows = app
+        .db
+        .logs()
+        .recent(&q.level, search, q.limit.clamp(1, 500), q.offset.max(0))
+        .await?;
+    Ok(Json(Value::Array(
+        rows.iter()
+            .map(|l| json!({ "time": l.time, "level": l.level, "logger": l.logger, "message": l.message }))
+            .collect(),
+    )))
+}
+
+/// The event log as a plain text file, newest first.
+async fn download_logs(State(app): Shared) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    let rows = app.db.logs().recent("debug", None, 5000, 0).await?;
+    let mut text = String::new();
+    for l in rows.iter().rev() {
+        text.push_str(&format!(
+            "{} {:5} {} {}\n",
+            l.time.to_rfc3339(),
+            l.level,
+            l.logger,
+            l.message.replace('\n', " | ")
+        ));
+    }
+    Ok((
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; charset=utf-8",
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                "attachment; filename=\"omp.log\"",
+            ),
+        ],
+        text,
+    )
+        .into_response())
+}
+
+async fn clear_logs(State(app): Shared) -> ApiResult<StatusCode> {
+    app.db.logs().clear().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_plugins(State(app): Shared) -> Json<Value> {
+    let loaded = app.plugins();
+    let user = crate::plugin_install::user_dir(&app);
+    let plugins: Vec<Value> = loaded
+        .manifests()
+        .iter()
+        .map(|m| {
+            json!({
+                "id": m.id,
+                "name": m.name,
+                "version": m.version,
+                "kind": format!("{:?}", m.kind).to_lowercase(),
+                "description": m.description,
+                "allowed_hosts": m.allowed_hosts,
+                // Plugins the user installed can be removed; bundled ones cannot.
+                "removable": m.dir.parent() == Some(user.as_path()),
+            })
+        })
+        .collect();
+    Json(json!({ "plugins": plugins, "problems": loaded.problems() }))
+}
+
+async fn plugin_schema(State(app): Shared, Path(id): Path<String>) -> ApiResult {
+    match app.plugins().settings_schema(&id).await {
+        None => Err(ApiError::not_found("no such plugin")),
+        Some(Err(e)) => Err(ApiError::internal(format!("{e:#}"))),
+        Some(Ok(schema)) => serde_json::from_str(&schema)
+            .map(Json)
+            .map_err(|e| ApiError::internal(format!("the plugin's schema isn't JSON: {e}"))),
+    }
+}
+
+/// Tries a provider's settings without saving them.
+async fn test_provider(app: Arc<App>, kind: ProviderKind, body: ProviderBody) -> ApiResult {
+    let p = body.into_provider(0, kind);
+    validate_provider(kind, &p)?;
+    if kind == ProviderKind::Notification {
+        validate_notification(&app, &p)?;
+    }
+    if kind == ProviderKind::Indexer {
+        validate_indexer_plugin(&app, &p)?;
+    }
+    if kind == ProviderKind::DownloadClient {
+        validate_client_plugin(&app, &p)?;
+    }
+    if kind == ProviderKind::ImportList {
+        validate_import_list(&app, &p).await?;
+    }
+    if kind == ProviderKind::MediaServer {
+        validate_media_server(&app, &p)?;
+    }
+    let outcome = match kind {
+        ProviderKind::MediaServer => match p
+            .plugin_id
+            .as_deref()
+            .and_then(|id| app.plugins().media_server(id))
+        {
+            Some(plugin) => {
+                return Ok(Json(match plugin.test(&p.settings.to_string()).await {
+                    Ok(name) => json!({ "ok": true, "server": name }),
+                    Err(e) => json!({ "ok": false, "error": format!("{e:#}") }),
+                }));
+            }
+            None => Err("the plugin isn't installed".to_owned()),
+        },
+        ProviderKind::ImportList => crate::lists::fetch(&app, &p).await.map(|_| ()),
+        ProviderKind::Indexer => match p
+            .plugin_id
+            .as_deref()
+            .and_then(|id| app.plugins().indexer(id))
+        {
+            Some(plugin) => plugin
+                .test(&p.settings.to_string())
+                .await
+                .map_err(|e| format!("{e:#}")),
+            None if p.implementation == "cardigann" => app.cardigann.test(&p).await,
+            None => omp_services::test_indexer(&p).await,
+        },
+        ProviderKind::DownloadClient => {
+            crate::clients::test_client(&p, &app.config, &app.plugins()).await
+        }
+        ProviderKind::Notification => {
+            crate::notify::send(&app, &p, &crate::notify::test_event()).await
+        }
+        _ => Ok(()),
+    };
+    Ok(Json(match outcome {
+        Ok(()) => json!({ "ok": true }),
+        Err(error) => json!({ "ok": false, "error": error }),
+    }))
+}
+
+macro_rules! provider_routes {
+    ($router:expr, $path:literal, $kind:expr) => {{
+        let item = concat!($path, "/{id}");
+        let test = concat!($path, "/test");
+        $router
+            .route(
+                test,
+                post(|State(app): Shared, Json(b): Json<ProviderBody>| {
+                    test_provider(app, $kind, b)
+                }),
+            )
+            .route(
+                $path,
+                get(|State(app): Shared| list_providers(app, $kind)).post(
+                    |State(app): Shared, Json(b): Json<ProviderBody>| {
+                        save_provider(app, $kind, None, b)
+                    },
+                ),
+            )
+            .route(
+                item,
+                axum::routing::put(
+                    |State(app): Shared, Path(id): Path<i64>, Json(b): Json<ProviderBody>| {
+                        save_provider(app, $kind, Some(id), b)
+                    },
+                )
+                .delete(|State(app): Shared, Path(id): Path<i64>| delete_provider(app, $kind, id)),
+            )
+    }};
+}
+
+async fn get_import_config(State(app): Shared) -> ApiResult {
+    let c = load_import_config(&app.db).await?;
+    Ok(Json(
+        serde_json::to_value(c).map_err(|e| ApiError::bad_request(e.to_string()))?,
+    ))
+}
+
+async fn put_import_config(
+    State(app): Shared,
+    Json(c): Json<omp_services::ImportConfig>,
+) -> ApiResult {
+    omp_services::save_import_config(&app.db, &c).await?;
+    get_import_config(State(app)).await
+}
+
+/// The router: the API plus the static UI as the fallback.
+pub fn router(app: Arc<App>) -> Router {
+    let files = crate::ui_files::UiFiles::new(
+        &app.config.ui_dir,
+        app.config.embedded_ui,
+        &app.config.url_base,
+    );
+    let ui = service_fn(move |req: Request<Body>| {
+        let files = files.clone();
+        async move { Ok::<_, Infallible>(files.serve(req.uri()).await) }
+    });
+
+    let api = Router::new()
+        .route("/system/status", get(system_status))
+        .route("/system/health", get(health_checks))
+        .route("/indexer/catalogue", get(indexer_catalogue))
+        .route("/indexer/site/{id}", get(indexer_site))
+        .route(
+            "/indexer/flaresolverr",
+            get(get_flaresolverr).put(put_flaresolverr),
+        )
+        .route("/indexer/{id}/download", get(indexer_download))
+        .route("/system/vpn", get(vpn_status))
+        .route(
+            "/system/vpn/settings",
+            get(vpn_settings).put(put_vpn_settings),
+        )
+        .route("/system/backup", get(list_backups).post(create_backup))
+        .route(
+            "/system/backup/{name}",
+            get(download_backup).delete(delete_backup),
+        )
+        .route("/auth/logout", post(crate::auth::logout))
+        .route("/auth/password", post(crate::auth::change_password))
+        .route("/auth/apikey", get(crate::auth::get_api_key))
+        .route(
+            "/auth/apikey/regenerate",
+            post(crate::auth::regenerate_api_key),
+        )
+        .route("/movie", get(list_movies).post(add_movie))
+        .route("/movie/lookup", get(movie_lookup))
+        .route("/collection", get(list_collections))
+        .route("/collection/{id}", get(get_collection))
+        .route("/collection/{id}/add", post(add_collection))
+        .route("/movie/import", post(import_movies))
+        .route(
+            "/movie/editor",
+            axum::routing::put(edit_movies).delete(delete_movies),
+        )
+        .route("/rootfolder/{id}/unmapped", get(unmapped))
+        .route("/release", get(search_releases).post(grab_release))
+        .route("/release/push", post(push_release))
+        .route(
+            "/movie/{id}",
+            get(get_movie).put(update_movie).delete(delete_movie),
+        )
+        .route("/movie/{id}/file", axum::routing::delete(delete_movie_file))
+        .route("/queue", get(queue))
+        .route("/queue/{download_id}/pause", post(pause_queue_item))
+        .route("/queue/{download_id}/resume", post(resume_queue_item))
+        .route(
+            "/queue/{download_id}/priority",
+            axum::routing::put(prioritise_queue_item),
+        )
+        .route(
+            "/queue/{download_id}",
+            axum::routing::delete(remove_queue_item),
+        )
+        .route("/blocklist", get(list_blocklist).delete(clear_blocklist))
+        .route(
+            "/blocklist/{id}",
+            axum::routing::delete(delete_blocklist_entry),
+        )
+        .route("/wanted/missing", get(wanted_missing))
+        .route("/wanted/cutoff", get(wanted_cutoff))
+        .route("/history", get(history))
+        .route("/command", post(command))
+        .route("/rootfolder", get(list_root_folders).post(add_root_folder))
+        .route(
+            "/rootfolder/{id}",
+            axum::routing::delete(delete_root_folder),
+        )
+        .route("/qualityprofile", get(list_profiles).post(add_profile))
+        .route(
+            "/qualityprofile/{id}",
+            get(get_profile).put(update_profile).delete(delete_profile),
+        )
+        .route(
+            "/config/import",
+            get(get_import_config).put(put_import_config),
+        )
+        .route(
+            "/config/decision",
+            get(get_decision_config).put(put_decision_config),
+        )
+        .route(
+            "/customformat",
+            get(list_custom_formats).post(add_custom_format),
+        )
+        .route(
+            "/customformat/{id}",
+            axum::routing::put(update_custom_format).delete(delete_custom_format),
+        )
+        .route(
+            "/delayprofile",
+            get(list_delay_profiles).post(add_delay_profile),
+        )
+        .route(
+            "/delayprofile/{id}",
+            axum::routing::put(update_delay_profile).delete(delete_delay_profile),
+        )
+        .route(
+            "/releaseprofile",
+            get(list_release_profiles).post(add_release_profile),
+        )
+        .route(
+            "/releaseprofile/{id}",
+            axum::routing::put(update_release_profile).delete(delete_release_profile),
+        )
+        .route("/tag", get(list_tags).post(add_tag))
+        .route("/tag/{id}", axum::routing::delete(delete_tag))
+        .route("/qualitydefinition", get(list_quality_definitions))
+        .route(
+            "/qualitydefinition/{quality_id}",
+            axum::routing::put(update_quality_definition),
+        );
+    let api = provider_routes!(api, "/indexer", ProviderKind::Indexer);
+    let api = provider_routes!(api, "/downloadclient", ProviderKind::DownloadClient);
+    let api = provider_routes!(api, "/mediaserver", ProviderKind::MediaServer);
+    let api = api
+        .route("/mediaserver/status", get(media_server_status))
+        .route("/mediaserver/untracked", get(media_server_untracked));
+    let api = provider_routes!(api, "/notification", ProviderKind::Notification);
+    let api = provider_routes!(api, "/importlist", ProviderKind::ImportList);
+    let api = api
+        .merge(crate::browse::routes())
+        .merge(crate::tv_api::routes())
+        .merge(crate::tv_activity::routes())
+        .merge(crate::manual_import::routes())
+        .merge(crate::path_mappings::routes())
+        .merge(crate::plugin_install::routes())
+        .merge(crate::images::routes());
+    let api = api
+        .route("/system/task", get(list_tasks))
+        .route("/rename", get(rename_previews))
+        .route("/system/backup/{name}/restore", post(restore_backup))
+        .route("/system/restart", post(restart))
+        .route("/calendar/feed.ics", get(calendar_feed))
+        .route("/log", get(list_logs).delete(clear_logs));
+    let api = api.route("/exclusion", get(list_exclusions)).route(
+        "/exclusion/{tmdb_id}",
+        axum::routing::delete(delete_exclusion),
+    );
+    let api = api
+        .route("/plugin", get(list_plugins))
+        .route("/plugin/{id}/schema", get(plugin_schema));
+
+    // Everything above needs a login session or the API key.
+    let api = api
+        .route(
+            "/config/security",
+            get(crate::auth::get_security).put(crate::auth::put_security),
+        )
+        .route(
+            "/config/host",
+            get(crate::host_settings::get_host).put(crate::host_settings::put_host),
+        )
+        .route(
+            "/config/ui",
+            get(crate::host_settings::get_ui).put(crate::host_settings::put_ui),
+        )
+        .route("/log/download", get(download_logs))
+        .route("/ws", get(crate::events::websocket))
+        .route("/openapi.json", get(crate::openapi::serve));
+    let api = api
+        .route_layer(axum::middleware::from_fn_with_state(
+            app.clone(),
+            crate::events::announce_changes,
+        ))
+        .route_layer(axum::middleware::from_fn_with_state(
+            app.clone(),
+            crate::auth::require_auth,
+        ));
+    let public = Router::new()
+        .route("/health", get(health))
+        .route("/auth/status", get(crate::auth::status))
+        .route("/auth/setup", post(crate::auth::setup))
+        .route("/auth/login", post(crate::auth::login));
+    // Unknown API paths are errors, not the UI shell.
+    let api = api
+        .merge(public)
+        .fallback(|| async { ApiError::not_found("no such API endpoint") });
+    let base = crate::ui_files::normalize_base(&app.config.url_base);
+    let inner = Router::new()
+        .nest("/api/v1", api)
+        .fallback_service(ui)
+        .with_state(app);
+    if base.is_empty() {
+        return inner;
+    }
+    // Behind a prefix everything lives under it; the bare root points there.
+    let target = format!("{base}/");
+    Router::new()
+        .nest_service(&base, inner)
+        .fallback(move |uri: axum::http::Uri| async move {
+            if uri.path() == "/" {
+                axum::response::Redirect::temporary(&target).into_response()
+            } else {
+                StatusCode::NOT_FOUND.into_response()
+            }
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_year;
+
+    #[test]
+    fn years_are_split_off_search_terms() {
+        assert_eq!(split_year("The Matrix 1999"), ("The Matrix", Some(1999)));
+        assert_eq!(split_year("The Matrix (1999)"), ("The Matrix", Some(1999)));
+        assert_eq!(
+            split_year("2001"),
+            ("2001", None),
+            "a title that is only a number"
+        );
+        assert_eq!(
+            split_year("Blade Runner 2049"),
+            ("Blade Runner", Some(2049))
+        );
+        assert_eq!(split_year("Alien"), ("Alien", None));
+        assert_eq!(split_year("Apollo 13"), ("Apollo 13", None));
+    }
+}

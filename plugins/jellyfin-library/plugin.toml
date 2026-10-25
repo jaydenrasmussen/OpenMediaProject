@@ -1,0 +1,8 @@
+id = "jellyfin-library"
+name = "Jellyfin / Emby library"
+version = "0.1.0"
+kind = "media_server"
+wasm = "jellyfin_library.wasm"
+description = "Reads what is already in your Jellyfin or Emby library, so it shows beside your movies and series."
+# The address is the user's choice.
+allowed_hosts = ["*"]

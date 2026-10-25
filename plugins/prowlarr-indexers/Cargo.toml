@@ -1,0 +1,18 @@
+[package]
+name = "prowlarr-indexers"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+omp-cardigann = { path = "../../crates/omp-cardigann" }
+async-trait = "0.1"
+serde_json = "1"
+wit-bindgen = "0.63"
+
+# Plugins build on their own, outside the main workspace.
+[workspace]

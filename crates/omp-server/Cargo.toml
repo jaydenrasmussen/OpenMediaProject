@@ -1,0 +1,20 @@
+[package]
+name = "omp-server"
+description = "OpenMediaProject server binary"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+dotenvy = "0.15"
+rust-embed = "8"
+omp-app = { path = "../omp-app" }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

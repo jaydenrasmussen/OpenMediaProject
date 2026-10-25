@@ -1,0 +1,24 @@
+# Extracted from Radarr src/NzbDrone.Core.Test/ParserTests/QualityParserFixture.cs @ df2faa64 (GPL-3.0)
+# title	source_detection	resolution_detection
+Movie - 2018 [HDTV-1080p]	Name	Name
+Movie.Title.S10E09.Eddie.Murphy.The.Honeydrippers.1080i.UPSCALE.HDTV.DD5.1.MPEG2-zebra	Name	Name
+Movie.Title.2018.Bluray720p	Name	Name
+Movie.Title.2018.Bluray1080p	Name	Name
+Movie.Title.2018.Bluray2160p	Name	Name
+Movie.Title.2018.848x480.dvd	Name	Name
+Movie.Title.2018.848x480.Bluray	Name	Name
+Movie.Title.2018.1280x720.Bluray	Name	Name
+Movie.Title.2018.1920x1080.Bluray	Name	Name
+Movie.Title.2018.848x480	Unknown	Name
+Movie.Title.2018.1280x720	Unknown	Name
+Movie.Title.2018.1920x1080	Unknown	Name
+Movie.Title.2011.S02E01.WS.PDTV.x264-REPACK-TLA	Name	Unknown
+Movie.Title.S01E01.Bluray	Name	Unknown
+Movie.Title.S01E01.HD.TV	Name	Unknown
+Movie.Title.S01E01.SD.TV	Name	Unknown
+Movie.Title.S01E02.Chained.Heat.mkv	Extension	Extension
+Movie Name - S01E01 - Title.avi	Extension	Extension
+Movie.Title..9x18.sunshine_days.avi	Extension	Extension
+[CR] Movie Title - 004 [48CE2D0F].avi	Extension	Extension
+Movie.Name.S01E02.Chained.Heat.1080p.mkv	Extension	Name
+Movie Name - S01E01 - Title.720p.avi	Extension	Name

@@ -1,0 +1,110 @@
+{
+ "id": 3577,
+ "_id": "525423c9760ee31328001f52",
+ "air_date": "2009-02-17",
+ "episodes": [
+  {
+   "air_date": "2009-02-17",
+   "episode_number": 1,
+   "episode_type": "standard",
+   "id": 62131,
+   "name": "Good Cop / Bad Cop",
+   "overview": "Season 1 Minisode 1: Hank and Marie celebrate Valentine's Day.",
+   "runtime": 3,
+   "season_number": 0
+  },
+  {
+   "air_date": "2009-02-17",
+   "episode_number": 2,
+   "episode_type": "standard",
+   "id": 62133,
+   "name": "Wedding Day",
+   "overview": "Season 1 Minisode 2: Hank and Walt have a discussion on Hank and Marie's wedding day.",
+   "runtime": 5,
+   "season_number": 0
+  },
+  {
+   "air_date": "2009-02-17",
+   "episode_number": 3,
+   "episode_type": "standard",
+   "id": 62132,
+   "name": "TwaüghtHammër",
+   "overview": "Season 1 Minisode 3: Jesse explains the origins of his band, TwaüghtHammër.",
+   "runtime": 5,
+   "season_number": 0
+  },
+  {
+   "air_date": "2009-02-17",
+   "episode_number": 4,
+   "episode_type": "standard",
+   "id": 62135,
+   "name": "Marie's Confession",
+   "overview": "Season 1 Minisode 4: Marie confesses about her shop-lifting.",
+   "runtime": 3,
+   "season_number": 0
+  },
+  {
+   "air_date": "2009-02-24",
+   "episode_number": 5,
+   "episode_type": "standard",
+   "id": 62134,
+   "name": "The Break-In",
+   "overview": "Season 1 Minisode 5: Walt asks for help from Badger to break into an old woman's house and get his vacuum cleaner back.",
+   "runtime": 5,
+   "season_number": 0
+  },
+  {
+   "air_date": null,
+   "episode_number": 6,
+   "episode_type": "standard",
+   "id": 62136,
+   "name": "Jesse Pinkman Evidence Tape",
+   "overview": "Jesse goes on record and describes on camera everything he remembers about Walt's business dealings and criminal activity.",
+   "runtime": 5,
+   "season_number": 0
+  },
+  {
+   "air_date": null,
+   "episode_number": 7,
+   "episode_type": "standard",
+   "id": 1836320,
+   "name": "Walt's Confession",
+   "overview": "The video confession recorded by Walt.",
+   "runtime": 7,
+   "season_number": 0
+  },
+  {
+   "air_date": "2011-06-07",
+   "episode_number": 8,
+   "episode_type": "standard",
+   "id": 1836324,
+   "name": "Pizza of Destiny: Cranston's Greatest Shot",
+   "overview": "A detailed bonus feature about a particular scene in which Bryan Cranston tosses a pizza on the roof for the DVD/Blu-ray of 'Breaking Bad Season 3.",
+   "runtime": 3,
+   "season_number": 0
+  },
+  {
+   "air_date": "2013-11-26",
+   "episode_number": 9,
+   "episode_type": "standard",
+   "id": 1836322,
+   "name": "Alternate Ending",
+   "overview": "Special to the 2013 DVD and Blu-Ray release of Breaking Bad. The series ends with Hal from Malcolm in the Middle (also played by Bryan Cranston) wakes up, to reveal that the series had been a dream.",
+   "runtime": 3,
+   "season_number": 0
+  }
+ ],
+ "name": "Specials",
+ "networks": [
+  {
+   "id": 174,
+   "logo_path": "/pmvRmATOCaDykE6JrVoeYxlFHw3.png",
+   "name": "AMC",
+   "origin_country": "US"
+  }
+ ],
+ "overview": "",
+ "poster_path": "/4RaIvSQgHHHPfaI1jFqaMR8UJWM.jpg",
+ "season_number": 0,
+ "vote_average": 0.0
+}

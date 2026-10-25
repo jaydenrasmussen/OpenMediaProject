@@ -1,0 +1,12 @@
+.git
+.github
+target
+ui/node_modules
+ui/.next
+ui/out
+data
+.env
+*.md
+!LICENSE
+
+plugins/*/target

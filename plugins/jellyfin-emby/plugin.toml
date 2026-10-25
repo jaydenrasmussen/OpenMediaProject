@@ -1,0 +1,7 @@
+id = "jellyfin-emby"
+name = "Jellyfin / Emby"
+version = "0.1.0"
+kind = "notification"
+wasm = "jellyfin_emby.wasm"
+description = "Asks your Jellyfin or Emby server to scan its libraries after an import."
+allowed_hosts = ["*"]

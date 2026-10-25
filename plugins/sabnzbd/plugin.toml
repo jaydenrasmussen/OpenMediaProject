@@ -1,0 +1,9 @@
+id = "sabnzbd"
+name = "SABnzbd"
+version = "0.1.0"
+kind = "download_client"
+protocol = "usenet"
+wasm = "sabnzbd.wasm"
+description = "Sends NZBs to your SABnzbd and follows them."
+# The address is the user's choice.
+allowed_hosts = ["*"]

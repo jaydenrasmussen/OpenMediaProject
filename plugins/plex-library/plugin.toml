@@ -1,0 +1,8 @@
+id = "plex-library"
+name = "Plex library"
+version = "0.1.0"
+kind = "media_server"
+wasm = "plex_library.wasm"
+description = "Reads what is already in your Plex library, so it shows beside your movies and series."
+# The address is the user's choice.
+allowed_hosts = ["*"]

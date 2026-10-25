@@ -1,0 +1,32 @@
+[package]
+name = "omp-usenet"
+description = "Built-in usenet (NZB) download client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+crc32fast = "1"
+omp-core = { path = "../omp-core" }
+omp-downloads = { path = "../omp-downloads" }
+omp-net = { path = "../omp-net" }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+roxmltree = "0.20"
+thiserror = "2"
+tokio.workspace = true
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+webpki-roots = "1"
+tracing.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+rcgen = "0.13"
+tempfile = "3"

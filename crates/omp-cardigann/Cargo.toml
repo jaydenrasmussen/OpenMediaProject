@@ -1,0 +1,34 @@
+[package]
+name = "omp-cardigann"
+description = "Reads Prowlarr/Cardigann indexer definitions and searches the sites they describe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+ego-tree = "0.10"
+encoding_rs = "0.8"
+fancy-regex = "0.14"
+html-escape = "0.2"
+percent-encoding = "2"
+roxmltree = "0.20"
+rust-embed = { version = "8", features = ["debug-embed", "include-exclude"] }
+scraper = { version = "0.23", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml_ng = "0.10"
+thiserror = "2"
+unicode-normalization = "0.1"
+url = "2"
+
+[dev-dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+async-trait = "0.1"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+
+[lints]
+workspace = true

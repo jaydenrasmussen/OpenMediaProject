@@ -1,0 +1,7 @@
+id = "pushover"
+name = "Pushover"
+version = "0.1.0"
+kind = "notification"
+wasm = "pushover.wasm"
+description = "Sends events to your phone through Pushover."
+allowed_hosts = ["api.pushover.net"]

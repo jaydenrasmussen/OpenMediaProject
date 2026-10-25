@@ -1,0 +1,7 @@
+id = "slack"
+name = "Slack"
+version = "0.1.0"
+kind = "notification"
+wasm = "slack.wasm"
+description = "Posts events to a Slack channel through an incoming webhook."
+allowed_hosts = ["hooks.slack.com"]

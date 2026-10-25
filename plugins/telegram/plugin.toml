@@ -1,0 +1,7 @@
+id = "telegram"
+name = "Telegram"
+version = "0.1.0"
+kind = "notification"
+wasm = "telegram.wasm"
+description = "Sends events to a Telegram chat from a bot."
+allowed_hosts = ["api.telegram.org"]

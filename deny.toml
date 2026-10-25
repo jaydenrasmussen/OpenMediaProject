@@ -1,0 +1,24 @@
+[advisories]
+version = 2
+ignore = [
+    # librqbit's hashing helper is unmaintained; there is no replacement to move to
+    # without leaving librqbit. It only computes SHA-1 of torrent pieces.
+    { id = "RUSTSEC-2025-0060", reason = "unmaintained crate inside librqbit; only hashes torrent pieces" },
+    # librqbit-utp holds bytes in a ring buffer; the flaw needs an element whose Drop
+    # panics, and bytes have no Drop.
+    { id = "RUSTSEC-2025-0057", reason = "fxhash is a tiny hasher used inside the selectors crate of scraper, which reads HTML; no input reaches it as a security boundary" },
+    { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml reads the indexer definitions, which ship with the app or are put in the config folder by its owner" },
+    { id = "RUSTSEC-2026-0293", reason = "ringbuf in librqbit-utp stores plain bytes, which cannot panic on drop" },
+]
+
+[licenses]
+version = 2
+# GPL-3.0 project: permissive and weak-copyleft licences are compatible.
+allow = [
+    "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause",
+    "ISC", "Unicode-3.0", "Zlib", "MPL-2.0", "CC0-1.0", "CDLA-Permissive-2.0", "0BSD", "GPL-3.0-only", "GPL-3.0-or-later",
+    "LGPL-3.0-only", "LGPL-3.0-or-later",
+]
+
+[bans]
+multiple-versions = "warn"

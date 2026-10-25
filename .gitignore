@@ -1,0 +1,19 @@
+# Rust
+/target/
+
+# UI
+/ui/node_modules/
+/ui/.next/
+/ui/out/
+
+# Local config and data
+.env
+/data/
+
+# macOS / editors
+.DS_Store
+.idea/
+.vscode/
+/plugins/*/target/
+/e2e/node_modules/
+/e2e/test-results/

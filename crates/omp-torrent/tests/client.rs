@@ -1,0 +1,399 @@
+//! Runs the real librqbit with no network: the torrent's data is already on
+//! disk, so adding it hashes the files and it completes at once.
+
+use std::time::Duration;
+
+use axum::{Router, routing::get};
+use chrono::Utc;
+use librqbit::{CreateTorrentOptions, create_torrent, spawn_utils::BlockingSpawner};
+use omp_core::release::{DownloadProtocol, IndexerFlags, ReleaseInfo};
+use omp_downloads::{AddRequest, DownloadClient, DownloadItemStatus};
+use omp_torrent::{TorrentClient, TorrentSettings};
+
+fn release(url: String) -> ReleaseInfo {
+    ReleaseInfo {
+        guid: "g".into(),
+        title: "Some.Movie.2020.1080p.BluRay.x264-GRP".into(),
+        size: 0,
+        download_url: url,
+        indexer_id: 0,
+        indexer: "Idx".into(),
+        indexer_priority: 25,
+        protocol: DownloadProtocol::Torrent,
+        publish_date: Utc::now(),
+        container: None,
+        indexer_flags: IndexerFlags(0),
+        imdb_id: None,
+        tmdb_id: 0,
+        torrent: None,
+    }
+}
+
+async fn serve(bytes: Vec<u8>) -> String {
+    let app = Router::new().route("/a.torrent", get(move || async move { bytes.clone() }));
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/a.torrent", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    url
+}
+
+async fn wait_for(client: &TorrentClient, status: DownloadItemStatus) -> omp_downloads::ClientItem {
+    for _ in 0..100 {
+        let items = client.items().await.unwrap();
+        if let Some(i) = items.into_iter().find(|i| i.status == status) {
+            return i;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!(
+        "never reached {status:?}: {:?}",
+        client.items().await.unwrap()
+    );
+}
+
+#[tokio::test]
+async fn adds_from_a_url_tracks_to_completion_and_removes() {
+    let dir = tempfile::tempdir().unwrap();
+    let downloads = dir.path().join("downloads");
+
+    // The finished data, where the client will look for it: <dir>/movies/<name>/
+    let data = downloads.join("movies").join("Some.Movie.2020");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(data.join("movie.mkv"), vec![7u8; 300_000]).unwrap();
+    std::fs::write(data.join("movie.nfo"), b"info").unwrap();
+
+    let made = create_torrent(
+        &data,
+        CreateTorrentOptions::default(),
+        &BlockingSpawner::new(1),
+    )
+    .await
+    .unwrap();
+    let url = serve(made.as_bytes().unwrap().to_vec()).await;
+
+    let mut settings = TorrentSettings::new(&downloads);
+    settings.enable_dht = false;
+    let client = TorrentClient::start(settings).await.unwrap();
+    assert_eq!(client.protocol(), DownloadProtocol::Torrent);
+
+    let rel = release(url);
+    let id = client
+        .add(&AddRequest {
+            release: &rel,
+            category: Some("movies"),
+        })
+        .await
+        .unwrap();
+    assert_eq!(id.len(), 40);
+    assert_eq!(id, id.to_uppercase());
+    assert_eq!(id, made.info_hash().as_string().to_uppercase());
+
+    let item = wait_for(&client, DownloadItemStatus::Completed).await;
+    assert_eq!(item.download_id, id);
+    assert_eq!(item.category.as_deref(), Some("movies"));
+    assert_eq!(item.title, "Some.Movie.2020");
+    assert_eq!(item.remaining_size, 0);
+    assert!(
+        item.can_move_files && item.can_be_removed,
+        "no seeding goal, so done"
+    );
+    let out = std::path::PathBuf::from(item.output_path.unwrap());
+    assert!(
+        out.join("movie.mkv").exists(),
+        "output path points at the content: {out:?}"
+    );
+
+    // Adding it again is not an error and gives the same id.
+    assert_eq!(
+        client
+            .add(&AddRequest {
+                release: &rel,
+                category: Some("movies")
+            })
+            .await
+            .unwrap(),
+        id
+    );
+
+    client.remove(&id, false).await.unwrap();
+    assert!(client.items().await.unwrap().is_empty());
+    assert!(
+        out.join("movie.mkv").exists(),
+        "data kept when not asked to delete it"
+    );
+    client.stop().await;
+}
+
+#[tokio::test]
+async fn seeding_goal_keeps_files_in_place_until_met() {
+    let dir = tempfile::tempdir().unwrap();
+    let downloads = dir.path().join("downloads");
+    let data = dir.path().join("source").join("Seeded");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(data.join("a.mkv"), vec![1u8; 100_000]).unwrap();
+    // A torrent with a single file lands directly in the category folder.
+    std::fs::create_dir_all(downloads.join("movies")).unwrap();
+    std::fs::write(downloads.join("movies").join("a.mkv"), vec![1u8; 100_000]).unwrap();
+    let made = create_torrent(
+        &data,
+        CreateTorrentOptions::default(),
+        &BlockingSpawner::new(1),
+    )
+    .await
+    .unwrap();
+    let url = serve(made.as_bytes().unwrap().to_vec()).await;
+
+    let mut settings = TorrentSettings::new(&downloads);
+    settings.enable_dht = false;
+    settings.seed_ratio_limit = 2.0;
+    let client = TorrentClient::start(settings).await.unwrap();
+    client
+        .add(&AddRequest {
+            release: &release(url),
+            category: Some("movies"),
+        })
+        .await
+        .unwrap();
+
+    let item = wait_for(&client, DownloadItemStatus::Completed).await;
+    assert!(
+        item.output_path
+            .as_deref()
+            .unwrap()
+            .ends_with("movies/a.mkv"),
+        "{:?}",
+        item.output_path
+    );
+    assert!(
+        !item.can_move_files && !item.can_be_removed,
+        "still has to seed to ratio 2"
+    );
+    client.stop().await;
+}
+
+#[tokio::test]
+async fn bad_sources_are_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut settings = TorrentSettings::new(dir.path());
+    settings.enable_dht = false;
+    let client = TorrentClient::start(settings).await.unwrap();
+
+    let none = release(String::new());
+    let r = client
+        .add(&AddRequest {
+            release: &none,
+            category: None,
+        })
+        .await;
+    assert!(
+        matches!(r, Err(omp_downloads::ClientError::ReleaseUnavailable(_))),
+        "{r:?}"
+    );
+
+    let dead = release("http://127.0.0.1:9/nothing.torrent".into());
+    let r = client
+        .add(&AddRequest {
+            release: &dead,
+            category: None,
+        })
+        .await;
+    assert!(
+        matches!(
+            r,
+            Err(omp_downloads::ClientError::ReleaseDownloadFailed { .. })
+        ),
+        "{r:?}"
+    );
+    client.stop().await;
+}
+
+/// A torrent whose data is nowhere: it can never finish, so it stays in the queue.
+async fn unfinishable(dir: &std::path::Path, name: &str, seed: u8) -> (String, String) {
+    let source = dir.join("source").join(name);
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join(format!("{name}.bin")), vec![seed; 50_000]).unwrap();
+    let made = create_torrent(
+        &source,
+        CreateTorrentOptions::default(),
+        &BlockingSpawner::new(1),
+    )
+    .await
+    .unwrap();
+    let url = serve(made.as_bytes().unwrap().to_vec()).await;
+    (url, made.info_hash().as_string().to_uppercase())
+}
+
+async fn status_of(client: &TorrentClient, id: &str) -> DownloadItemStatus {
+    client
+        .items()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|i| i.download_id == id)
+        .map(|i| i.status)
+        .unwrap()
+}
+
+/// Looks until the download is (or is not) in the given status; the queue
+/// acts whenever the items are read.
+async fn settle(client: &TorrentClient, id: &str, status: DownloadItemStatus, is: bool) {
+    for _ in 0..80 {
+        let _ = client.items().await.unwrap();
+        if (status_of(client, id).await == status) == is {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test]
+async fn downloads_can_be_paused_prioritised_and_queued() {
+    let dir = tempfile::tempdir().unwrap();
+    let (url_a, a) = unfinishable(dir.path(), "Alpha", 1).await;
+    let (url_b, b) = unfinishable(dir.path(), "Beta", 2).await;
+    let mut settings = TorrentSettings::new(dir.path().join("downloads"));
+    settings.enable_dht = false;
+    settings.max_active_downloads = 1;
+    let client = TorrentClient::start(settings).await.unwrap();
+    for url in [url_a, url_b] {
+        client
+            .add(&AddRequest {
+                release: &release(url),
+                category: None,
+            })
+            .await
+            .unwrap();
+    }
+
+    // One runs (after checking its files), the other waits its turn.
+    for _ in 0..50 {
+        if status_of(&client, &a).await != DownloadItemStatus::Queued {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_ne!(status_of(&client, &a).await, DownloadItemStatus::Queued);
+    assert_eq!(status_of(&client, &b).await, DownloadItemStatus::Queued);
+
+    // A higher priority takes the place.
+    client
+        .set_priority(&b, omp_downloads::QueuePriority::High)
+        .await
+        .unwrap();
+    settle(&client, &b, DownloadItemStatus::Queued, false).await;
+    assert_eq!(status_of(&client, &a).await, DownloadItemStatus::Queued);
+    let item = client
+        .items()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|i| i.download_id == b)
+        .unwrap();
+    assert_eq!(item.priority, omp_downloads::QueuePriority::High);
+
+    // Forced downloads ignore the limit.
+    client
+        .set_priority(&a, omp_downloads::QueuePriority::Force)
+        .await
+        .unwrap();
+    settle(&client, &a, DownloadItemStatus::Queued, false).await;
+    settle(&client, &b, DownloadItemStatus::Queued, false).await;
+    assert_ne!(
+        status_of(&client, &b).await,
+        DownloadItemStatus::Queued,
+        "both run"
+    );
+
+    // A person's pause sticks; resuming brings it back.
+    client.pause(&a).await.unwrap();
+    let _ = client.items().await.unwrap();
+    assert_eq!(status_of(&client, &a).await, DownloadItemStatus::Paused);
+    client.resume(&a).await.unwrap();
+    assert_ne!(status_of(&client, &a).await, DownloadItemStatus::Paused);
+    assert!(
+        client
+            .pause("0000000000000000000000000000000000000000")
+            .await
+            .is_err()
+    );
+    client.stop().await;
+}
+
+/// A finished torrent from a one-file source, ready to be "downloaded".
+async fn single_file_torrent(dir: &std::path::Path, name: &str, fill: u8) -> String {
+    let data = dir.join("source").join(name);
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(data.join(format!("{name}.mkv")), vec![fill; 100_000]).unwrap();
+    std::fs::create_dir_all(dir.join("downloads/movies")).unwrap();
+    std::fs::write(
+        dir.join("downloads/movies").join(format!("{name}.mkv")),
+        vec![fill; 100_000],
+    )
+    .unwrap();
+    let made = create_torrent(
+        &data,
+        CreateTorrentOptions::default(),
+        &BlockingSpawner::new(1),
+    )
+    .await
+    .unwrap();
+    serve(made.as_bytes().unwrap().to_vec()).await
+}
+
+#[tokio::test]
+async fn an_indexers_seeding_goals_replace_the_clients() {
+    let dir = tempfile::tempdir().unwrap();
+    let hold = single_file_torrent(dir.path(), "Held", 3).await;
+    let free = single_file_torrent(dir.path(), "Free", 4).await;
+
+    let mut settings = TorrentSettings::new(dir.path().join("downloads"));
+    settings.enable_dht = false;
+    settings.seed_ratio_limit = 2.0; // the client wants to seed to 2
+    let client = TorrentClient::start(settings).await.unwrap();
+
+    // This indexer says seeding is not needed: it sets goals of zero.
+    let mut a = release(free);
+    a.torrent = Some(omp_core::release::TorrentRelease {
+        seed_ratio: Some(0.0),
+        seed_time_minutes: Some(0),
+        ..Default::default()
+    });
+    // This one asks for a ratio of 5, which is more than the client's 2.
+    let mut b = release(hold);
+    b.torrent = Some(omp_core::release::TorrentRelease {
+        seed_ratio: Some(5.0),
+        ..Default::default()
+    });
+    for r in [&a, &b] {
+        client
+            .add(&AddRequest {
+                release: r,
+                category: Some("movies"),
+            })
+            .await
+            .unwrap();
+    }
+    // Both are complete already; look at what each is allowed to do.
+    let mut items = Vec::new();
+    for _ in 0..100 {
+        items = client.items().await.unwrap();
+        if items.len() == 2
+            && items
+                .iter()
+                .all(|i| i.status == DownloadItemStatus::Completed)
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let by = |name: &str| items.iter().find(|i| i.title == name).unwrap();
+    assert!(
+        by("Free").can_be_removed,
+        "the indexer asked for no seeding"
+    );
+    assert!(
+        !by("Held").can_be_removed,
+        "the indexer asked for a ratio of 5"
+    );
+    client.stop().await;
+}

@@ -1,0 +1,18 @@
+[package]
+name = "omp-quality"
+description = "Quality profiles, custom formats and upgrade rules"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omp-core = { path = "../omp-core" }
+omp-parser = { path = "../omp-parser" }
+serde = { version = "1.0.229", features = ["derive"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+serde_json = "1.0.154"

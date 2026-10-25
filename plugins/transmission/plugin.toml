@@ -1,0 +1,9 @@
+id = "transmission"
+name = "Transmission"
+version = "0.1.0"
+kind = "download_client"
+protocol = "torrent"
+wasm = "transmission.wasm"
+description = "Sends torrents to your Transmission and follows them."
+# The address is the user's choice.
+allowed_hosts = ["*"]

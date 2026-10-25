@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="1.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+<channel>
+  <title>Example Tracker</title>
+  <item>
+    <title>The.Matrix.1999.2160p.UHD.BluRay.x265-GRP</title>
+    <guid>https://tracker.example/t/1</guid>
+    <link>https://tracker.example/dl/1.torrent</link>
+    <comments>https://tracker.example/t/1#comments</comments>
+    <pubDate>Sat, 03 Oct 2026 10:00:00 +0000</pubDate>
+    <enclosure url="https://tracker.example/dl/1.torrent" length="55000000000" type="application/x-bittorrent"/>
+    <torznab:attr name="seeders" value="120"/>
+    <torznab:attr name="peers" value="150"/>
+    <torznab:attr name="infohash" value="ABCDEF0123456789ABCDEF0123456789ABCDEF01"/>
+    <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:ABCDEF0123456789ABCDEF0123456789ABCDEF01"/>
+    <torznab:attr name="size" value="55000000000"/>
+    <torznab:attr name="tmdbid" value="603"/>
+    <torznab:attr name="imdb" value="0133093"/>
+    <torznab:attr name="downloadvolumefactor" value="0"/>
+    <torznab:attr name="uploadvolumefactor" value="2"/>
+    <torznab:attr name="tag" value="internal"/>
+    <torznab:attr name="tag" value="scene"/>
+  </item>
+  <item>
+    <title>The.Matrix.1999.1080p.WEB-DL-X</title>
+    <guid>https://tracker.example/t/2</guid>
+    <pubDate>Sat, 03 Oct 2026 09:00:00 +0000</pubDate>
+    <enclosure url="https://tracker.example/dl/2.torrent" length="4000000000" type="application/x-bittorrent"/>
+    <torznab:attr name="seeders" value="7"/>
+    <torznab:attr name="leechers" value="3"/>
+    <torznab:attr name="downloadvolumefactor" value="0.75"/>
+  </item>
+  <item>
+    <title>Half.Leech.2020.1080p</title>
+    <guid>https://tracker.example/t/3</guid>
+    <pubDate>Sat, 03 Oct 2026 08:00:00 +0000</pubDate>
+    <enclosure url="https://tracker.example/dl/3.torrent" length="1000" type="application/x-bittorrent"/>
+    <torznab:attr name="downloadvolumefactor" value="0.5"/>
+  </item>
+</channel>
+</rss>

@@ -1,0 +1,189 @@
+name: Release
+
+# Run by hand: Actions → Release → Run workflow. It builds and pushes the
+# container image, builds the Linux downloads, tags the commit and publishes a
+# GitHub release with notes generated from the merged pull requests.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, such as 1.2.0 or 1.3.0-rc.1 (no leading v)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark it as a pre-release (it does not become the stable image tag)'
+        required: false
+        default: false
+        type: boolean
+      notes:
+        description: 'Text to put at the top of the release notes (optional)'
+        required: false
+        default: ''
+        type: string
+      skip_ci_check:
+        description: 'Release even if the PR workflow has not passed on this commit'
+        required: false
+        default: false
+        type: boolean
+
+# One release at a time, and never cancel one half way.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  check:
+    name: Check the version and the commit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: The version is a version, and the tag is free
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::'$VERSION' is not a version like 1.2.0 or 1.3.0-rc.1 (no leading v)."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::The tag v$VERSION already exists."
+            exit 1
+          fi
+          if [[ "$VERSION" == *-* && "${{ inputs.prerelease }}" != "true" ]]; then
+            echo "::error::$VERSION has a pre-release suffix, so tick 'Mark it as a pre-release'."
+            exit 1
+          fi
+      - name: The PR workflow passed on this commit
+        if: ${{ !inputs.skip_ci_check }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ok=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow PR --commit "$GITHUB_SHA" \
+                 --status success --json conclusion --jq 'length')
+          if [ "$ok" = "0" ]; then
+            echo "::error::The PR workflow has not passed on $GITHUB_SHA. Wait for it, or tick 'skip_ci_check'."
+            exit 1
+          fi
+
+  image:
+    name: Container image
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stamp the version
+        run: sed -i -E '0,/^version = ".*"/s//version = "'"$VERSION"'"/' Cargo.toml && grep -m1 '^version' Cargo.toml
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}},value=${{ inputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }},enable=${{ !inputs.prerelease }}
+            type=semver,pattern={{major}},value=${{ inputs.version }},enable=${{ !inputs.prerelease }}
+            type=raw,value=stable,enable=${{ !inputs.prerelease }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  download:
+    name: Linux download (${{ matrix.arch }})
+    needs: check
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stamp the version
+        run: sed -i -E '0,/^version = ".*"/s//version = "'"$VERSION"'"/' Cargo.toml
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the binary and the plugins
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: export
+          platforms: ${{ matrix.platform }}
+          outputs: type=local,dest=out
+          cache-from: type=gha,scope=export-${{ matrix.arch }}
+          cache-to: type=gha,scope=export-${{ matrix.arch }},mode=max
+      - name: Pack it
+        run: |
+          name="openmediaproject-$VERSION-linux-${{ matrix.arch }}"
+          mkdir -p "dist/$name"
+          cp out/omp-server "dist/$name/"
+          cp -r out/plugins "dist/$name/plugins"
+          cp LICENSE README.md "dist/$name/"
+          chmod +x "dist/$name/omp-server"
+          tar -C dist -czf "$name.tar.gz" "$name"
+          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: download-${{ matrix.arch }}
+          path: |
+            openmediaproject-*.tar.gz
+            openmediaproject-*.tar.gz.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Tag and publish
+    needs: [image, download]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: download-*
+          path: files
+          merge-multiple: true
+      - name: Checksums in one file
+        run: cd files && cat *.sha256 > SHA256SUMS && rm *.sha256 && ls -l
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ inputs.notes }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          {
+            [ -n "$NOTES" ] && printf '%s\n\n' "$NOTES"
+            printf '**Container:** `docker pull %s:%s`\n\n' "$image" "$VERSION"
+            printf '**Without Docker:** download the tarball for your machine below and run `omp-server`. It needs `par2`, `7zz` (7-Zip) and `ffprobe` on the path; the container includes them. Check the download against `SHA256SUMS`.\n'
+          } > header.md
+          flags=(--target "$GITHUB_SHA" --title "OpenMediaProject $VERSION" --generate-notes --notes-file header.md)
+          [ "$PRERELEASE" = "true" ] && flags+=(--prerelease) || flags+=(--latest)
+          gh release create "v$VERSION" files/* "${flags[@]}"
+      # A release made with the workflow token does not start publish-release.yml,
+      # which is why the image is pushed above and not there.

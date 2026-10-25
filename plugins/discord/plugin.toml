@@ -1,0 +1,7 @@
+id = "discord"
+name = "Discord"
+version = "0.1.0"
+kind = "notification"
+wasm = "discord.wasm"
+description = "Posts events to a Discord channel through a webhook URL."
+allowed_hosts = ["discord.com", "discordapp.com"]

@@ -1,0 +1,7 @@
+id = "prowlarr-indexers"
+name = "Torrent sites (Prowlarr definitions)"
+version = "0.1.0"
+kind = "indexer"
+wasm = "prowlarr_indexers.wasm"
+description = "Searches the torrent sites in Prowlarr's definitions: public sites, and private ones with your account. Magnet links and direct downloads only."
+allowed_hosts = ["*"]

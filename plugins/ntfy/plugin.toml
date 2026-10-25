@@ -1,0 +1,7 @@
+id = "ntfy"
+name = "ntfy"
+version = "0.1.0"
+kind = "notification"
+wasm = "ntfy.wasm"
+description = "Publishes events to an ntfy topic (ntfy.sh or your own server)."
+allowed_hosts = ["*"]

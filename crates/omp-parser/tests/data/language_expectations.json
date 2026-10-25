@@ -1,0 +1,519 @@
+{
+ "should_parse_language_english": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "English"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_unknown": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Unknown"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_french": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "French"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_french_english": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "French",
+   "English"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_spanish": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Spanish"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_german": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "German"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_italian": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Italian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_danish": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Danish"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_dutch": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Dutch"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_japanese": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Japanese"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_icelandic": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Icelandic"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_chinese": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Chinese"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_russian": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Russian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_romanian": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Romanian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_hindi": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Hindi"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_thai": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Thai"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_bulgarian": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Bulgarian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_brazilian_portuguese": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "PortugueseBR"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_polish": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Polish"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_polish_subbed": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Unknown"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_vietnamese": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Vietnamese"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_swedish": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Swedish"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_norwegian": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Norwegian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_finnish": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Finnish"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_turkish": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Turkish"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_portuguese": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Portuguese"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_flemish": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Flemish"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_greek": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Greek"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_korean": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Korean"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_hungarian": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Hungarian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_hebrew": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Hebrew"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_lithuanian": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Lithuanian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_czech": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Czech"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_arabic": {
+  "mode": "movie",
+  "is_dir": false,
+  "contains": [
+   "Arabic"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_ukrainian": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Ukrainian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_ukrainian_multi": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Ukrainian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_persian": {
+  "mode": "movie",
+  "is_dir": false,
+  "contains": [
+   "Persian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_bengali": {
+  "mode": "movie",
+  "is_dir": false,
+  "contains": [
+   "Bengali"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_telugu": {
+  "mode": "movie",
+  "is_dir": false,
+  "contains": [
+   "Telugu"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_slovak": {
+  "mode": "movie",
+  "is_dir": false,
+  "contains": [
+   "Slovak"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_latvian": {
+  "mode": "movie",
+  "is_dir": false,
+  "contains": [
+   "Latvian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_spanish_latino": {
+  "mode": "direct",
+  "is_dir": false,
+  "contains": [],
+  "first": [
+   "SpanishLatino"
+  ],
+  "count": null
+ },
+ "should_parse_language_catalan": {
+  "mode": "movie",
+  "is_dir": true,
+  "contains": [
+   "Catalan"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_malayalam": {
+  "mode": "direct",
+  "is_dir": false,
+  "contains": [
+   "Malayalam"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_kannada": {
+  "mode": "direct",
+  "is_dir": false,
+  "contains": [
+   "Kannada"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_albanian": {
+  "mode": "direct",
+  "is_dir": false,
+  "contains": [
+   "Albanian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_afrikaans": {
+  "mode": "direct",
+  "is_dir": false,
+  "contains": [
+   "Afrikaans"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_marathi": {
+  "mode": "direct",
+  "is_dir": false,
+  "contains": [
+   "Marathi"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_tagalog": {
+  "mode": "direct",
+  "is_dir": false,
+  "contains": [
+   "Tagalog"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_urdu": {
+  "mode": "direct",
+  "is_dir": false,
+  "contains": [
+   "Urdu"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_romansh": {
+  "mode": "direct",
+  "is_dir": false,
+  "contains": [
+   "Romansh"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_mongolian": {
+  "mode": "direct",
+  "is_dir": false,
+  "contains": [
+   "Mongolian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_parse_language_georgian": {
+  "mode": "direct",
+  "is_dir": false,
+  "contains": [
+   "Georgian"
+  ],
+  "first": [],
+  "count": null
+ },
+ "should_add_original_language_to_german_release_with_dl_tag": {
+  "mode": "movie",
+  "is_dir": false,
+  "contains": [
+   "German",
+   "Original"
+  ],
+  "first": [],
+  "count": 2
+ },
+ "should_not_add_original_language_to_german_release_when_title_contains_web_dl": {
+  "mode": "movie",
+  "is_dir": false,
+  "contains": [
+   "German"
+  ],
+  "first": [],
+  "count": 1
+ },
+ "should_parse_original_title_from_release_name": {
+  "mode": "movie",
+  "is_dir": false,
+  "contains": [
+   "Original"
+  ],
+  "first": [],
+  "count": 1
+ },
+ "should_add_original_language_and_english_to_german_release_with_ml_tag": {
+  "mode": "movie",
+  "is_dir": false,
+  "contains": [
+   "German",
+   "Original",
+   "English"
+  ],
+  "first": [],
+  "count": 3
+ }
+}

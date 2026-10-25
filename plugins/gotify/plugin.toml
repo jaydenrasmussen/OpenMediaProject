@@ -1,0 +1,7 @@
+id = "gotify"
+name = "Gotify"
+version = "0.1.0"
+kind = "notification"
+wasm = "gotify.wasm"
+description = "Sends events to your Gotify server."
+allowed_hosts = ["*"]

@@ -1,0 +1,9 @@
+id = "nzbget"
+name = "NZBGet"
+version = "0.1.0"
+kind = "download_client"
+protocol = "usenet"
+wasm = "nzbget.wasm"
+description = "Sends NZBs to your NZBGet and follows them."
+# The address is the user's choice.
+allowed_hosts = ["*"]

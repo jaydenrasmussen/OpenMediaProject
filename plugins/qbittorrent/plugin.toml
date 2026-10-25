@@ -1,0 +1,9 @@
+id = "qbittorrent"
+name = "qBittorrent"
+version = "0.1.0"
+kind = "download_client"
+protocol = "torrent"
+wasm = "qbittorrent.wasm"
+description = "Sends torrents to your qBittorrent and follows them."
+# The address is the user's choice.
+allowed_hosts = ["*"]

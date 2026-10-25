@@ -1,0 +1,7 @@
+id = "plex"
+name = "Plex"
+version = "0.1.0"
+kind = "notification"
+wasm = "plex.wasm"
+description = "Asks your Plex server to scan its libraries after an import."
+allowed_hosts = ["*"]

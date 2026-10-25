@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<caps>
+  <server version="0.2" title="Example NZB" strapline="test" email="a@b.c" url="https://idx.example/" image="https://idx.example/logo.png"/>
+  <limits max="100" default="50"/>
+  <registration available="no" open="no"/>
+  <searching>
+    <search available="yes" supportedParams="q,group,limit,cat" searchEngine="sphinx"/>
+    <tv-search available="yes" supportedParams="q,rid,season,ep"/>
+    <movie-search available="yes" supportedParams="q,imdbid,tmdbid,genre" searchEngine="raw"/>
+  </searching>
+  <categories>
+    <category id="2000" name="Movies">
+      <subcat id="2010" name="Movies/Foreign"/>
+      <subcat id="2040" name="Movies/HD" description="HD movies"/>
+    </category>
+    <category id="5000" name="TV"/>
+  </categories>
+</caps>

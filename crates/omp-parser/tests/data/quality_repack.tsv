@@ -1,0 +1,8 @@
+# Extracted from Radarr src/NzbDrone.Core.Test/ParserTests/QualityParserFixture.cs @ df2faa64 (GPL-3.0)
+# title	is_repack	version
+Movie Title 2018 REPACK 720p HDTV x264 aAF	true	2
+Movie.Title.2018.REPACK.720p.HDTV.x264-aAF	true	2
+Movie.Title.2018.REPACK2.720p.HDTV.x264-aAF	true	3
+Movie.Title.2018.PROPER.720p.HDTV.x264-aAF	false	2
+Movie.Title.2018.RERIP.720p.BluRay.x264-DEMAND	true	2
+Movie.Title.2018.RERIP2.720p.BluRay.x264-DEMAND	true	3
