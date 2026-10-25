@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
 # ---- UI: static Next.js export -------------------------------------------
-FROM node:22-slim AS ui
+# The output is static files, so it is built once on the build machine, not per architecture.
+FROM --platform=$BUILDPLATFORM node:22-slim AS ui
 WORKDIR /ui
 COPY ui/package.json ui/package-lock.json ./
 RUN npm ci
@@ -9,7 +10,9 @@ COPY ui/ ./
 RUN npm run build
 
 # ---- Server ---------------------------------------------------------------
-FROM rust:1-bookworm AS server
+# Runs natively on the build machine and cross-compiles, instead of building under emulation.
+FROM --platform=$BUILDPLATFORM rust:1-bookworm AS server
+ARG TARGETARCH
 WORKDIR /src
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates crates
@@ -18,7 +21,25 @@ COPY wit wit
 COPY --from=ui /ui/out ui/out
 # rust-toolchain.toml lists the wasm target; the server build does not need it.
 RUN rustup target add wasm32-wasip2 || true
-RUN cargo build --release -p omp-server
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    set -eux; \
+    case "$TARGETARCH" in \
+      amd64) ARCH=x86_64; PKG=x86-64 ;; \
+      arm64) ARCH=aarch64; PKG=aarch64 ;; \
+      *) echo "unsupported arch $TARGETARCH"; exit 1 ;; \
+    esac; \
+    TRIPLE=$ARCH-unknown-linux-gnu; \
+    if [ "$(uname -m)" != "$ARCH" ]; then \
+      dpkg --add-architecture $TARGETARCH; \
+      apt-get update && apt-get install -y --no-install-recommends gcc-$PKG-linux-gnu libc6-dev-$TARGETARCH-cross libssl-dev:$TARGETARCH \
+        && rm -rf /var/lib/apt/lists/*; \
+      export OPENSSL_LIB_DIR=/usr/lib/$ARCH-linux-gnu OPENSSL_INCLUDE_DIR=/usr/include; \
+      UP=$(echo $TRIPLE | tr 'a-z-' 'A-Z_'); \
+      export CARGO_TARGET_${UP}_LINKER=$ARCH-linux-gnu-gcc CC_$(echo $TRIPLE | tr - _)=$ARCH-linux-gnu-gcc; \
+    fi; \
+    rustup target add $TRIPLE; \
+    cargo build --release -p omp-server --target $TRIPLE; \
+    cp target/$TRIPLE/release/omp-server /omp-server
 
 # ---- First-party plugins (WASM components; the same files run on any architecture) ----
 # Built natively on the build machine, once, instead of per target architecture under emulation.
@@ -94,7 +115,7 @@ RUN env | grep -v -E '^(HOME|PATH|HOSTNAME|PWD|OLDPWD|SHLVL|TERM|_)=' > /gluetun
 
 # ---- Release tarballs: just the binary and the plugins (build with --target export) ----
 FROM scratch AS export
-COPY --from=server /src/target/release/omp-server /omp-server
+COPY --from=server /omp-server /omp-server
 COPY --from=plugins /out /plugins
 
 # ---- Runtime --------------------------------------------------------------
@@ -109,7 +130,7 @@ COPY --from=tools /tools/7zz /usr/local/bin/7zz
 COPY --from=tools /tools/par2 /usr/local/bin/par2
 COPY --from=tools /tools/ffprobe /usr/local/bin/ffprobe
 COPY --from=tools /tools/License.txt /usr/share/doc/7zip/License.txt
-COPY --from=server /src/target/release/omp-server /usr/local/bin/omp-server
+COPY --from=server /omp-server /usr/local/bin/omp-server
 COPY --from=plugins /out /opt/omp/plugins
 COPY --from=gluetun /gluetun-entrypoint /usr/local/bin/gluetun-entrypoint
 COPY --from=gluetun /gluetun.defaults /etc/gluetun.defaults
