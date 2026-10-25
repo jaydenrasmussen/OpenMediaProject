@@ -17,3 +17,6 @@
 /plugins/*/target/
 /e2e/node_modules/
 /e2e/test-results/
+
+# Leftover build output from an old SvelteKit frontend
+/frontend/
