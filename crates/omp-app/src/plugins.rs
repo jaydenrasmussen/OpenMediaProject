@@ -4,11 +4,12 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 
 use chrono::{TimeZone, Utc};
 use omp_core::release::{DownloadProtocol, ReleaseInfo, TorrentRelease};
+use omp_db::Db;
 use omp_db::repo::Provider;
 use omp_indexers::MovieSearch;
 use omp_plugin_host::{
     Fetcher, HttpRequest, HttpResponse, Indexer, Kind, List, Manifest, Notification, Plugin,
-    PluginHost, Protocol, SearchQuery, discover,
+    PluginHost, Protocol, SearchQuery, Storage, discover,
 };
 use omp_services::PluginIndexers;
 
@@ -51,6 +52,28 @@ impl Fetcher for ReqwestFetcher {
     }
 }
 
+/// Backs plugin storage with the app's own database, in the `plugin_storage`
+/// table (one row per plugin id and key; see `omp-db`'s `providers` table
+/// for the equivalent per-provider pattern this follows).
+struct DbStorage(Db);
+
+#[async_trait::async_trait]
+impl Storage for DbStorage {
+    async fn get(&self, plugin_id: &str, key: &str) -> anyhow::Result<Option<String>> {
+        Ok(self.0.plugin_storage().get(plugin_id, key).await?)
+    }
+
+    async fn set(&self, plugin_id: &str, key: &str, value: &str) -> anyhow::Result<()> {
+        self.0.plugin_storage().set(plugin_id, key, value).await?;
+        Ok(())
+    }
+
+    async fn delete(&self, plugin_id: &str, key: &str) -> anyhow::Result<()> {
+        self.0.plugin_storage().delete(plugin_id, key).await?;
+        Ok(())
+    }
+}
+
 pub struct Plugins {
     manifests: Vec<Manifest>,
     problems: Vec<String>,
@@ -70,18 +93,19 @@ impl Plugins {
         }
     }
 
-    /// Loads every plugin under `dirs`. A plugin that fails to load is
-    /// reported in [`Self::problems`]; the rest still work.
-    pub fn load(dirs: &[PathBuf]) -> Self {
+    /// Loads every plugin under `dirs`, with per-plugin storage backed by
+    /// `db`. A plugin that fails to load is reported in [`Self::problems`];
+    /// the rest still work.
+    pub fn load(dirs: &[PathBuf], db: Db) -> Self {
         let mut me = Self::none();
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("OpenMediaProject/", env!("CARGO_PKG_VERSION")))
             .build();
-        let host = client
-            .map_err(anyhow::Error::from)
-            .and_then(|client| PluginHost::new(Arc::new(ReqwestFetcher { client })));
+        let host = client.map_err(anyhow::Error::from).and_then(|client| {
+            PluginHost::with_storage(Arc::new(ReqwestFetcher { client }), Arc::new(DbStorage(db)))
+        });
         let host = match host {
             Ok(h) => h,
             Err(e) => {
@@ -104,13 +128,13 @@ impl Plugins {
         for m in manifests {
             let loaded = match m.kind {
                 Kind::Indexer => host
-                    .load_indexer(m.wasm_path(), m.permissions())
+                    .load_indexer(m.wasm_path(), &m.id, m.permissions())
                     .map(|p| drop(me.indexers.insert(m.id.clone(), Arc::new(p)))),
                 Kind::Notification => host
-                    .load_notification(m.wasm_path(), m.permissions())
+                    .load_notification(m.wasm_path(), &m.id, m.permissions())
                     .map(|p| drop(me.notifications.insert(m.id.clone(), Arc::new(p)))),
                 Kind::List => host
-                    .load_list(m.wasm_path(), m.permissions())
+                    .load_list(m.wasm_path(), &m.id, m.permissions())
                     .map(|p| drop(me.lists.insert(m.id.clone(), Arc::new(p)))),
             };
             match loaded {

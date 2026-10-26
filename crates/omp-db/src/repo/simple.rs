@@ -191,3 +191,41 @@ impl RemotePathMappings<'_> {
         Ok(())
     }
 }
+
+/// Per-plugin key/value storage. Every call is scoped to one `plugin_id`, so
+/// a plugin can only ever read or write its own keys.
+pub struct PluginStorage<'a>(pub(crate) &'a SqlitePool);
+
+impl PluginStorage<'_> {
+    pub async fn get(&self, plugin_id: &str, key: &str) -> Result<Option<String>> {
+        Ok(
+            sqlx::query_scalar("SELECT value FROM plugin_storage WHERE plugin_id = ? AND key = ?")
+                .bind(plugin_id)
+                .bind(key)
+                .fetch_optional(self.0)
+                .await?,
+        )
+    }
+
+    pub async fn set(&self, plugin_id: &str, key: &str, value: &str) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO plugin_storage (plugin_id, key, value) VALUES (?, ?, ?)
+             ON CONFLICT(plugin_id, key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(plugin_id)
+        .bind(key)
+        .bind(value)
+        .execute(self.0)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn delete(&self, plugin_id: &str, key: &str) -> Result<()> {
+        sqlx::query("DELETE FROM plugin_storage WHERE plugin_id = ? AND key = ?")
+            .bind(plugin_id)
+            .bind(key)
+            .execute(self.0)
+            .await?;
+        Ok(())
+    }
+}

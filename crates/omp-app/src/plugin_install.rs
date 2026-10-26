@@ -164,7 +164,12 @@ async fn check_loads(p: &Package) -> Result<(), ApiError> {
         .map_err(|e| ApiError::internal(e.to_string()))?;
     let root = scratch.path().to_path_buf();
     let id = p.manifest.id.clone();
-    let loaded = tokio::task::spawn_blocking(move || Plugins::load(&[root]))
+    // A throwaway database: this check never keeps the plugin around, so
+    // nothing it might store needs to survive past this call.
+    let scratch_db = omp_db::Db::in_memory()
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let loaded = tokio::task::spawn_blocking(move || Plugins::load(&[root], scratch_db))
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
     if loaded.manifests().iter().any(|m| m.id == id) {

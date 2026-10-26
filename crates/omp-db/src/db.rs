@@ -10,8 +10,8 @@ use crate::{
     repo::{
         Blocklist, Config, CustomFormats, DelayProfiles, EpisodeFiles, EpisodeHistory, Episodes,
         History, ImportExclusions, Logs, MovieFiles, Movies, PendingReleases, PendingTvReleases,
-        Providers, QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles, RootFolders, Series,
-        Sessions, Tags, TvBlocklist, Users,
+        PluginStorage, Providers, QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles,
+        RootFolders, Series, Sessions, Tags, TvBlocklist, Users,
     },
 };
 
@@ -282,5 +282,9 @@ impl Db {
 
     pub fn providers(&self) -> Providers<'_> {
         Providers(&self.main)
+    }
+
+    pub fn plugin_storage(&self) -> PluginStorage<'_> {
+        PluginStorage(&self.main)
     }
 }

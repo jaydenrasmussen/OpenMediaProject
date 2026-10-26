@@ -80,6 +80,33 @@ pub trait Fetcher: Send + Sync {
     async fn request(&self, request: HttpRequest) -> Result<HttpResponse>;
 }
 
+/// Backs the host's per-plugin key/value storage. The host passes the
+/// calling plugin's id on every call; a plugin cannot see or guess another
+/// plugin's id, so this is the only scoping that is needed.
+#[async_trait::async_trait]
+pub trait Storage: Send + Sync {
+    async fn get(&self, plugin_id: &str, key: &str) -> Result<Option<String>>;
+    async fn set(&self, plugin_id: &str, key: &str, value: &str) -> Result<()>;
+    async fn delete(&self, plugin_id: &str, key: &str) -> Result<()>;
+}
+
+/// A [`Storage`] that keeps nothing; used where a plugin is loaded without a
+/// database (tests, the toy-indexer spike).
+pub struct NoStorage;
+
+#[async_trait::async_trait]
+impl Storage for NoStorage {
+    async fn get(&self, _plugin_id: &str, _key: &str) -> Result<Option<String>> {
+        Ok(None)
+    }
+    async fn set(&self, _plugin_id: &str, _key: &str, _value: &str) -> Result<()> {
+        Ok(())
+    }
+    async fn delete(&self, _plugin_id: &str, _key: &str) -> Result<()> {
+        Ok(())
+    }
+}
+
 /// What a plugin declared it needs (from `plugin.toml`).
 #[derive(Debug, Clone, Default)]
 pub struct Permissions {
@@ -101,6 +128,8 @@ struct State {
     table: ResourceTable,
     permissions: Permissions,
     fetcher: Arc<dyn Fetcher>,
+    storage: Arc<dyn Storage>,
+    plugin_id: String,
 }
 
 impl WasiView for State {
@@ -183,6 +212,28 @@ impl host::Host for State {
             Err(format!("the server answered {}", response.status))
         }
     }
+
+    async fn storage_get(&mut self, key: String) -> Option<String> {
+        match self.storage.get(&self.plugin_id, &key).await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(plugin = %self.plugin_id, "plugin storage read failed: {e:#}");
+                None
+            }
+        }
+    }
+
+    async fn storage_set(&mut self, key: String, value: String) {
+        if let Err(e) = self.storage.set(&self.plugin_id, &key, &value).await {
+            tracing::warn!(plugin = %self.plugin_id, "plugin storage write failed: {e:#}");
+        }
+    }
+
+    async fn storage_delete(&mut self, key: String) {
+        if let Err(e) = self.storage.delete(&self.plugin_id, &key).await {
+            tracing::warn!(plugin = %self.plugin_id, "plugin storage delete failed: {e:#}");
+        }
+    }
 }
 
 /// Compiles plugins and runs them. Cheap to clone.
@@ -191,10 +242,15 @@ pub struct PluginHost {
     engine: Engine,
     linker: Linker<State>,
     fetcher: Arc<dyn Fetcher>,
+    storage: Arc<dyn Storage>,
 }
 
 impl PluginHost {
     pub fn new(fetcher: Arc<dyn Fetcher>) -> Result<Self> {
+        Self::with_storage(fetcher, Arc::new(NoStorage))
+    }
+
+    pub fn with_storage(fetcher: Arc<dyn Fetcher>, storage: Arc<dyn Storage>) -> Result<Self> {
         let mut config = Config::new();
         config.async_support(true);
         config.consume_fuel(true);
@@ -208,6 +264,7 @@ impl PluginHost {
             engine,
             linker,
             fetcher,
+            storage,
         })
     }
 
@@ -219,11 +276,13 @@ impl PluginHost {
     pub fn load_indexer(
         &self,
         wasm: impl AsRef<Path>,
+        plugin_id: impl Into<String>,
         permissions: Permissions,
     ) -> Result<Plugin<Indexer>> {
         Ok(Plugin::new(
             self.clone(),
             self.component(wasm.as_ref())?,
+            plugin_id.into(),
             permissions,
         ))
     }
@@ -231,11 +290,13 @@ impl PluginHost {
     pub fn load_notification(
         &self,
         wasm: impl AsRef<Path>,
+        plugin_id: impl Into<String>,
         permissions: Permissions,
     ) -> Result<Plugin<Notification>> {
         Ok(Plugin::new(
             self.clone(),
             self.component(wasm.as_ref())?,
+            plugin_id.into(),
             permissions,
         ))
     }
@@ -243,16 +304,18 @@ impl PluginHost {
     pub fn load_list(
         &self,
         wasm: impl AsRef<Path>,
+        plugin_id: impl Into<String>,
         permissions: Permissions,
     ) -> Result<Plugin<List>> {
         Ok(Plugin::new(
             self.clone(),
             self.component(wasm.as_ref())?,
+            plugin_id.into(),
             permissions,
         ))
     }
 
-    fn store(&self, permissions: &Permissions) -> Result<Store<State>> {
+    fn store(&self, plugin_id: &str, permissions: &Permissions) -> Result<Store<State>> {
         let mut store = Store::new(
             &self.engine,
             State {
@@ -260,6 +323,8 @@ impl PluginHost {
                 table: ResourceTable::new(),
                 permissions: permissions.clone(),
                 fetcher: self.fetcher.clone(),
+                storage: self.storage.clone(),
+                plugin_id: plugin_id.to_owned(),
             },
         );
         store.set_fuel(FUEL_PER_CALL)?;
@@ -277,15 +342,22 @@ pub struct List;
 pub struct Plugin<K> {
     host: PluginHost,
     component: Component,
+    plugin_id: String,
     permissions: Permissions,
     _kind: std::marker::PhantomData<K>,
 }
 
 impl<K> Plugin<K> {
-    fn new(host: PluginHost, component: Component, permissions: Permissions) -> Self {
+    fn new(
+        host: PluginHost,
+        component: Component,
+        plugin_id: String,
+        permissions: Permissions,
+    ) -> Self {
         Self {
             host,
             component,
+            plugin_id,
             permissions,
             _kind: std::marker::PhantomData,
         }
@@ -294,7 +366,7 @@ impl<K> Plugin<K> {
 
 impl Plugin<Indexer> {
     async fn instantiate(&self) -> Result<(Store<State>, IndexerWorld)> {
-        let mut store = self.host.store(&self.permissions)?;
+        let mut store = self.host.store(&self.plugin_id, &self.permissions)?;
         let world =
             IndexerWorld::instantiate_async(&mut store, &self.component, &self.host.linker).await?;
         Ok((store, world))
@@ -341,7 +413,7 @@ impl Plugin<Indexer> {
 
 impl Plugin<Notification> {
     async fn instantiate(&self) -> Result<(Store<State>, NotificationWorld)> {
-        let mut store = self.host.store(&self.permissions)?;
+        let mut store = self.host.store(&self.plugin_id, &self.permissions)?;
         let world =
             NotificationWorld::instantiate_async(&mut store, &self.component, &self.host.linker)
                 .await?;
@@ -369,7 +441,7 @@ impl Plugin<Notification> {
 
 impl Plugin<List> {
     async fn instantiate(&self) -> Result<(Store<State>, ListWorld)> {
-        let mut store = self.host.store(&self.permissions)?;
+        let mut store = self.host.store(&self.plugin_id, &self.permissions)?;
         let world =
             ListWorld::instantiate_async(&mut store, &self.component, &self.host.linker).await?;
         Ok((store, world))

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::PathBuf,
     process::Command,
     sync::{Arc, Mutex},
@@ -7,7 +8,7 @@ use std::{
 use anyhow::Result;
 use omp_plugin_host::{
     Event, Fetcher, HttpRequest, HttpResponse, Indexer, MovieInfo, Notification, Permissions,
-    Plugin, PluginHost, Protocol, SearchQuery,
+    Plugin, PluginHost, Protocol, SearchQuery, Storage,
 };
 
 /// Answers every request with a canned response and remembers what was asked.
@@ -25,6 +26,41 @@ impl Fetcher for FakeFetcher {
             status: if self.status == 0 { 200 } else { self.status },
             body: "hello".into(),
         })
+    }
+}
+
+/// An in-memory [`Storage`] for tests, scoped by `(plugin_id, key)` exactly
+/// like the real SQLite-backed implementation.
+#[derive(Default)]
+struct FakeStorage {
+    rows: Mutex<HashMap<(String, String), String>>,
+}
+
+#[async_trait::async_trait]
+impl Storage for FakeStorage {
+    async fn get(&self, plugin_id: &str, key: &str) -> Result<Option<String>> {
+        Ok(self
+            .rows
+            .lock()
+            .unwrap()
+            .get(&(plugin_id.to_owned(), key.to_owned()))
+            .cloned())
+    }
+
+    async fn set(&self, plugin_id: &str, key: &str, value: &str) -> Result<()> {
+        self.rows
+            .lock()
+            .unwrap()
+            .insert((plugin_id.to_owned(), key.to_owned()), value.to_owned());
+        Ok(())
+    }
+
+    async fn delete(&self, plugin_id: &str, key: &str) -> Result<()> {
+        self.rows
+            .lock()
+            .unwrap()
+            .remove(&(plugin_id.to_owned(), key.to_owned()));
+        Ok(())
     }
 }
 
@@ -103,7 +139,7 @@ fn permissions(hosts: &[&str]) -> Permissions {
 fn load(allowed_hosts: &[&str]) -> Plugin<Indexer> {
     PluginHost::new(Arc::new(FakeFetcher::default()))
         .unwrap()
-        .load_indexer(toy_wasm(), permissions(allowed_hosts))
+        .load_indexer(toy_wasm(), "toy-indexer", permissions(allowed_hosts))
         .unwrap()
 }
 
@@ -179,7 +215,7 @@ async fn indexer_recent_and_test_calls() {
 fn webhook(fetcher: Arc<FakeFetcher>, hosts: &[&str]) -> Plugin<Notification> {
     PluginHost::new(fetcher)
         .unwrap()
-        .load_notification(webhook_wasm(), permissions(hosts))
+        .load_notification(webhook_wasm(), "webhook", permissions(hosts))
         .unwrap()
 }
 
@@ -267,9 +303,31 @@ fn load_notification(
     fetcher: Arc<FakeFetcher>,
     hosts: &[&str],
 ) -> Plugin<Notification> {
+    load_notification_as(wasm, "notification-plugin", fetcher, hosts)
+}
+
+fn load_notification_as(
+    wasm: &PathBuf,
+    plugin_id: &str,
+    fetcher: Arc<FakeFetcher>,
+    hosts: &[&str],
+) -> Plugin<Notification> {
     PluginHost::new(fetcher)
         .unwrap()
-        .load_notification(wasm, permissions(hosts))
+        .load_notification(wasm, plugin_id, permissions(hosts))
+        .unwrap()
+}
+
+fn load_notification_with_storage(
+    wasm: &PathBuf,
+    plugin_id: &str,
+    fetcher: Arc<FakeFetcher>,
+    storage: Arc<FakeStorage>,
+    hosts: &[&str],
+) -> Plugin<Notification> {
+    PluginHost::with_storage(fetcher, storage)
+        .unwrap()
+        .load_notification(wasm, plugin_id, permissions(hosts))
         .unwrap()
 }
 
@@ -540,5 +598,100 @@ async fn mediaserver_scan_does_nothing_for_a_plain_grab_event() {
     assert!(
         fetcher.seen.lock().unwrap().is_empty(),
         "a grab event should not trigger a library scan"
+    );
+}
+
+#[tokio::test]
+async fn mediaserver_scan_debounces_rapid_imports_using_storage() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let storage = Arc::new(FakeStorage::default());
+    let plugin = load_notification_with_storage(
+        mediaserver_scan_wasm(),
+        "mediaserver-scan",
+        fetcher.clone(),
+        storage.clone(),
+        &["*"],
+    );
+    let mut e = event();
+    e.kind = "import".into();
+    let settings = r#"{"server_type":"plex","server":"http://nas:32400","plex_token":"ptk","min_interval_seconds":3600}"#;
+
+    // A season pack imports several episodes back to back: only the first
+    // should actually ask Plex to rescan.
+    plugin.send(&e, settings).await.unwrap();
+    plugin.send(&e, settings).await.unwrap();
+    plugin.send(&e, settings).await.unwrap();
+    assert_eq!(
+        fetcher.seen.lock().unwrap().len(),
+        1,
+        "later imports within the cooldown must not scan again"
+    );
+    assert!(
+        storage.rows.lock().unwrap().contains_key(&(
+            "mediaserver-scan".to_owned(),
+            "last_scan:http://nas:32400".to_owned()
+        )),
+        "the last scan time was recorded under this server's key"
+    );
+
+    // The settings' Test button must always go through, even mid-cooldown.
+    let mut test_event = event();
+    test_event.kind = "test".into();
+    plugin.send(&test_event, settings).await.unwrap();
+    assert_eq!(fetcher.seen.lock().unwrap().len(), 2, "test always scans");
+
+    // A different server is not affected by the first one's cooldown.
+    let other = r#"{"server_type":"plex","server":"http://other:32400","plex_token":"ptk","min_interval_seconds":3600}"#;
+    plugin.send(&e, other).await.unwrap();
+    assert_eq!(
+        fetcher.seen.lock().unwrap().len(),
+        3,
+        "a different server has its own cooldown"
+    );
+
+    // min_interval_seconds: 0 disables debouncing entirely.
+    let no_debounce = r#"{"server_type":"plex","server":"http://nas:32400","plex_token":"ptk","min_interval_seconds":0}"#;
+    plugin.send(&e, no_debounce).await.unwrap();
+    assert_eq!(
+        fetcher.seen.lock().unwrap().len(),
+        4,
+        "min_interval_seconds 0 always scans"
+    );
+}
+
+#[tokio::test]
+async fn mediaserver_scan_storage_is_private_to_this_plugin_id() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let storage = Arc::new(FakeStorage::default());
+    // Pre-seed a recent scan time under a *different* plugin id, to show it
+    // cannot leak into mediaserver-scan's own cooldown.
+    storage
+        .set(
+            "some-other-plugin",
+            "last_scan:http://nas:32400",
+            "9999999999",
+        )
+        .await
+        .unwrap();
+    let plugin = load_notification_with_storage(
+        mediaserver_scan_wasm(),
+        "mediaserver-scan",
+        fetcher.clone(),
+        storage,
+        &["*"],
+    );
+    let mut e = event();
+    e.kind = "import".into();
+    plugin
+        .send(
+            &e,
+            r#"{"server_type":"plex","server":"http://nas:32400","plex_token":"ptk","min_interval_seconds":3600}"#,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        fetcher.seen.lock().unwrap().len(),
+        1,
+        "another plugin's stored value must not count as this plugin's cooldown"
     );
 }

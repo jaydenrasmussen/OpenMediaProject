@@ -1,6 +1,15 @@
 //! Tells Plex, Jellyfin or Emby to rescan its library after an import or upgrade.
 //! Does nothing for other event kinds, since a scan is only useful when a file changed.
 //!
+//! A season pack or a batch of movies imports as several history rows close
+//! together, each of which fires its own notification event. Without
+//! debouncing, that means one full-library rescan request per file, which
+//! can be expensive on a large library. Storage remembers the last time a
+//! scan was actually requested (per server, so several configured servers
+//! do not share a cooldown) and skips the call if the minimum interval has
+//! not elapsed yet; the next import after the window re-triggers it, so
+//! nothing is permanently missed.
+//!
 //! Plex: <https://support.plex.tv/articles/201638786-plex-media-server-url-commands/>
 //! Jellyfin/Emby: both expose the same Emby-derived `Library/Refresh` endpoint.
 
@@ -9,9 +18,15 @@ wit_bindgen::generate!({
     world: "notification-plugin",
 });
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use exports::omp::plugin::notification::{Event, Guest};
 use omp::plugin::host::{self, HttpRequest};
 use serde::Deserialize;
+
+/// Skip a rescan request if the last one for this server was within this
+/// many seconds, unless the caller's settings say otherwise.
+const DEFAULT_MIN_INTERVAL_SECONDS: u64 = 60;
 
 #[derive(Deserialize)]
 struct Settings {
@@ -21,6 +36,14 @@ struct Settings {
     plex_token: Option<String>,
     #[serde(default)]
     api_key: Option<String>,
+    /// Minimum seconds between scan requests to this server. 0 disables the
+    /// debounce entirely (always scan).
+    #[serde(default = "default_min_interval")]
+    min_interval_seconds: u64,
+}
+
+fn default_min_interval() -> u64 {
+    DEFAULT_MIN_INTERVAL_SECONDS
 }
 
 struct MediaServerScan;
@@ -54,6 +77,13 @@ impl Guest for MediaServerScan {
                     "title": "API key",
                     "format": "password",
                     "description": "Only used when server type is Jellyfin or Emby."
+                },
+                "min_interval_seconds": {
+                    "type": "integer",
+                    "title": "Minimum seconds between scans",
+                    "description": "A batch of imports (e.g. a season pack) only triggers one scan per this many seconds. 0 scans every time.",
+                    "default": 60,
+                    "minimum": 0
                 }
             }
         }"#
@@ -73,12 +103,46 @@ impl Guest for MediaServerScan {
             return Err("the server URL is empty".into());
         }
 
-        match s.server_type.as_str() {
+        // "test" always scans, even inside the cooldown, so the Test button
+        // in settings gives an honest answer.
+        let storage_key = format!("last_scan:{server}");
+        if event.kind != "test"
+            && s.min_interval_seconds > 0
+            && !cooldown_elapsed(&storage_key, s.min_interval_seconds)
+        {
+            return Ok(());
+        }
+
+        let result = match s.server_type.as_str() {
             "plex" => scan_plex(server, s.plex_token.as_deref()),
             "jellyfin" | "emby" => scan_emby_like(server, s.api_key.as_deref()),
             other => Err(format!("unknown server type: {other}")),
+        };
+        if result.is_ok() {
+            host::storage_set(&storage_key, &now_unix_seconds().to_string());
         }
+        result
     }
+}
+
+fn now_unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Whether enough time passed since the last scan recorded under `key` that
+/// a new one is allowed. True (allowed) if nothing was recorded yet, if the
+/// stored value is unreadable, or if it is already in the future (the clock
+/// moved back): fail open, since skipping a real library change is worse
+/// than one extra scan.
+fn cooldown_elapsed(key: &str, min_interval_seconds: u64) -> bool {
+    let Some(last) = host::storage_get(key).and_then(|v| v.parse::<u64>().ok()) else {
+        return true;
+    };
+    let now = now_unix_seconds();
+    now < last || now - last >= min_interval_seconds
 }
 
 fn scan_plex(server: &str, token: Option<&str>) -> Result<(), String> {

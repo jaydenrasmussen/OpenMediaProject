@@ -611,6 +611,70 @@ async fn provider_back_off_is_persisted() {
 }
 
 #[tokio::test]
+async fn plugin_storage_is_scoped_per_plugin() {
+    let db = Db::in_memory().await.unwrap();
+    let storage = db.plugin_storage();
+
+    assert_eq!(
+        storage.get("mediaserver-scan", "last_scan").await.unwrap(),
+        None
+    );
+
+    storage
+        .set("mediaserver-scan", "last_scan", "2026-01-01T00:00:00Z")
+        .await
+        .unwrap();
+    assert_eq!(
+        storage.get("mediaserver-scan", "last_scan").await.unwrap(),
+        Some("2026-01-01T00:00:00Z".to_owned())
+    );
+
+    // Another plugin's key of the same name is a different row.
+    assert_eq!(storage.get("webhook", "last_scan").await.unwrap(), None);
+    storage
+        .set("webhook", "last_scan", "unrelated")
+        .await
+        .unwrap();
+    assert_eq!(
+        storage
+            .get("mediaserver-scan", "last_scan")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("2026-01-01T00:00:00Z"),
+        "setting another plugin's key must not disturb this one"
+    );
+
+    // Overwriting replaces the value.
+    storage
+        .set("mediaserver-scan", "last_scan", "2026-01-02T00:00:00Z")
+        .await
+        .unwrap();
+    assert_eq!(
+        storage
+            .get("mediaserver-scan", "last_scan")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("2026-01-02T00:00:00Z")
+    );
+
+    storage
+        .delete("mediaserver-scan", "last_scan")
+        .await
+        .unwrap();
+    assert_eq!(
+        storage.get("mediaserver-scan", "last_scan").await.unwrap(),
+        None
+    );
+    // Deleting an already-missing key is not an error.
+    storage
+        .delete("mediaserver-scan", "last_scan")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn a_backup_is_a_working_copy_of_the_database() {
     let dir = tempfile::tempdir().unwrap();
     let db = Db::open(&dir.path().join("live")).await.unwrap();

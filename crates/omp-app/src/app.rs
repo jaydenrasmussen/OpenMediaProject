@@ -133,6 +133,7 @@ impl App {
         disk: Arc<dyn DiskSpace>,
     ) -> anyhow::Result<Arc<Self>> {
         seed_defaults(&db).await?;
+        let plugins_db = db.clone();
         let app = Arc::new(Self {
             db,
             engine: DecisionEngine::default(),
@@ -144,7 +145,10 @@ impl App {
             scene_source,
             probe,
             disk,
-            plugins: RwLock::new(Arc::new(crate::plugins::Plugins::load(&config.plugin_dirs))),
+            plugins: RwLock::new(Arc::new(crate::plugins::Plugins::load(
+                &config.plugin_dirs,
+                plugins_db,
+            ))),
             config,
             started: Utc::now(),
             login_limiter: crate::auth::LoginLimiter::default(),
@@ -226,7 +230,8 @@ impl App {
     /// Loads the plugins again from disk (after one was installed or removed).
     pub async fn reload_plugins(&self) {
         let dirs = self.config.plugin_dirs.clone();
-        let fresh = tokio::task::spawn_blocking(move || crate::plugins::Plugins::load(&dirs))
+        let db = self.db.clone();
+        let fresh = tokio::task::spawn_blocking(move || crate::plugins::Plugins::load(&dirs, db))
             .await
             .map(Arc::new);
         match fresh {

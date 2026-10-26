@@ -29,8 +29,8 @@ pub use series::{
     SeriesRecord, SeriesUpdate,
 };
 pub use simple::{
-    ImportExclusion, ImportExclusions, RemotePathMapping, RemotePathMappings, RootFolder,
-    RootFolders, Tag, Tags,
+    ImportExclusion, ImportExclusions, PluginStorage, RemotePathMapping, RemotePathMappings,
+    RootFolder, RootFolders, Tag, Tags,
 };
 pub use tv_activity::{
     EpisodeHistory, EpisodeHistoryRecord, PendingTvRelease, PendingTvReleases, TvBlocklist,

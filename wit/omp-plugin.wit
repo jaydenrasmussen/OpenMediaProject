@@ -27,6 +27,17 @@ interface host {
     /// GET a URL and return its body. Fails on transport errors and on
     /// non-2xx responses.
     http-get: func(url: string) -> result<string, string>;
+
+    /// Reads a value this plugin stored earlier under `key`, or `none` if
+    /// nothing is stored. Storage is private to this plugin id; there is no
+    /// way to read another plugin's keys.
+    storage-get: func(key: string) -> option<string>;
+
+    /// Stores `value` under `key`, replacing any earlier value.
+    storage-set: func(key: string, value: string);
+
+    /// Removes `key`, if it exists.
+    storage-delete: func(key: string);
 }
 
 interface indexer {

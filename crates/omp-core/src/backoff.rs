@@ -186,10 +186,7 @@ mod tests {
         // A long Retry-After is honoured even then.
         let mut r = ProviderStatus::default();
         r.record_failure(t(0), started, Some(Duration::hours(2)), true);
-        assert_eq!(
-            r.disabled_till,
-            Some(t(180)).filter(|_| r.escalation_level == 6)
-        );
+        assert_eq!(r.disabled_till, (r.escalation_level == 6).then_some(t(180)));
     }
 
     #[test]
