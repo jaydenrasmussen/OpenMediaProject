@@ -1764,3 +1764,126 @@ async fn a_backup_can_be_staged_for_restore() {
         StatusCode::ACCEPTED
     );
 }
+
+#[tokio::test]
+async fn custom_filters_are_validated_scoped_and_editable() {
+    let r = rig_with(false).await;
+
+    assert_eq!(
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/customfilter",
+            Some(json!({ "type": "", "label": "x", "filters": [] }))
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST,
+        "type is required"
+    );
+    assert_eq!(
+        call(
+            &r,
+            Method::POST,
+            "/api/v1/customfilter",
+            Some(json!({ "type": "movies", "label": "  ", "filters": [] }))
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST,
+        "label is required"
+    );
+
+    let (s, movies_filter) = call(
+        &r,
+        Method::POST,
+        "/api/v1/customfilter",
+        Some(json!({
+            "type": "movies",
+            "label": "Wanted",
+            "filters": [{ "key": "status", "value": "wanted" }],
+        })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{movies_filter}");
+    assert_eq!(movies_filter["type"], "movies");
+    let id = movies_filter["id"].as_i64().unwrap();
+
+    let (s, _) = call(
+        &r,
+        Method::POST,
+        "/api/v1/customfilter",
+        Some(json!({
+            "type": "series",
+            "label": "Ended",
+            "filters": [{ "key": "status", "value": "ended" }],
+        })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+
+    // Listing without a type sees both; with a type, only its own.
+    let (_, all) = get(&r, "/api/v1/customfilter").await;
+    assert_eq!(all.as_array().unwrap().len(), 2);
+    let (_, movies_only) = get(&r, "/api/v1/customfilter?type=movies").await;
+    let movies_only = movies_only.as_array().unwrap();
+    assert_eq!(movies_only.len(), 1);
+    assert_eq!(movies_only[0]["label"], "Wanted");
+
+    let (_, fetched) = get(&r, &format!("/api/v1/customfilter/{id}")).await;
+    assert_eq!(fetched["label"], "Wanted");
+
+    let (s, updated) = call(
+        &r,
+        Method::PUT,
+        &format!("/api/v1/customfilter/{id}"),
+        Some(json!({
+            "type": "movies",
+            "label": "Wanted (renamed)",
+            "filters": [{ "key": "status", "value": "wanted" }, { "key": "sort", "value": "year" }],
+        })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{updated}");
+    assert_eq!(updated["label"], "Wanted (renamed)");
+    assert_eq!(updated["filters"].as_array().unwrap().len(), 2);
+
+    assert_eq!(
+        call(
+            &r,
+            Method::PUT,
+            "/api/v1/customfilter/9999",
+            Some(json!({ "type": "movies", "label": "ghost", "filters": [] }))
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+
+    assert_eq!(
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/customfilter/{id}"),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        get(&r, &format!("/api/v1/customfilter/{id}")).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(
+            &r,
+            Method::DELETE,
+            &format!("/api/v1/customfilter/{id}"),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+}

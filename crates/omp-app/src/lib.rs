@@ -7,6 +7,7 @@ mod auth;
 mod backups;
 mod clients;
 mod config;
+mod custom_filters;
 pub mod events;
 mod health;
 mod ical;

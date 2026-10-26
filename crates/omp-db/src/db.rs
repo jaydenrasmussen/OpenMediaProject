@@ -8,10 +8,10 @@ use sqlx::{
 use crate::{
     Result,
     repo::{
-        Blocklist, Config, CustomFormats, DelayProfiles, EpisodeFiles, EpisodeHistory, Episodes,
-        History, ImportExclusions, Logs, MovieFiles, Movies, PendingReleases, PendingTvReleases,
-        PluginStorage, Providers, QualityDefinitionsRepo, QualityProfiles, ReleaseProfiles,
-        RootFolders, Series, Sessions, Tags, TvBlocklist, Users,
+        Blocklist, Config, CustomFilters, CustomFormats, DelayProfiles, EpisodeFiles,
+        EpisodeHistory, Episodes, History, ImportExclusions, Logs, MovieFiles, Movies,
+        PendingReleases, PendingTvReleases, PluginStorage, Providers, QualityDefinitionsRepo,
+        QualityProfiles, ReleaseProfiles, RootFolders, Series, Sessions, Tags, TvBlocklist, Users,
     },
 };
 
@@ -286,5 +286,9 @@ impl Db {
 
     pub fn plugin_storage(&self) -> PluginStorage<'_> {
         PluginStorage(&self.main)
+    }
+
+    pub fn custom_filters(&self) -> CustomFilters<'_> {
+        CustomFilters(&self.main)
     }
 }

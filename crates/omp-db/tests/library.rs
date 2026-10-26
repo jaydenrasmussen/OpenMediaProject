@@ -12,8 +12,8 @@ use omp_core::{
 use omp_db::{
     Db, DbError,
     repo::{
-        HistoryRecord, MovieFileRecord, MovieUpdate, NewMovie, PendingReason, Provider,
-        ProviderKind,
+        CustomFilter, HistoryRecord, MovieFileRecord, MovieUpdate, NewMovie, PendingReason,
+        Provider, ProviderKind,
     },
 };
 use omp_quality::profile::{ProfileItem, QualityProfile};
@@ -672,6 +672,69 @@ async fn plugin_storage_is_scoped_per_plugin() {
         .delete("mediaserver-scan", "last_scan")
         .await
         .unwrap();
+}
+
+fn draft_filter(filter_type: &str, label: &str) -> CustomFilter {
+    CustomFilter {
+        id: 0,
+        filter_type: filter_type.to_owned(),
+        label: label.to_owned(),
+        filters: vec![serde_json::json!({ "key": "monitored", "value": true })],
+    }
+}
+
+#[tokio::test]
+async fn custom_filters_crud_and_scoped_by_type() {
+    let db = Db::in_memory().await.unwrap();
+    let repo = db.custom_filters();
+
+    let movies_id = repo
+        .insert(&draft_filter("movies", "Missing"))
+        .await
+        .unwrap();
+    let series_id = repo.insert(&draft_filter("series", "Ended")).await.unwrap();
+
+    let stored = repo.get(movies_id).await.unwrap();
+    assert_eq!(stored.label, "Missing");
+    assert_eq!(stored.filter_type, "movies");
+    assert_eq!(
+        stored.filters,
+        [serde_json::json!({ "key": "monitored", "value": true })]
+    );
+
+    // Listing without a type sees everything; with a type, only its own.
+    assert_eq!(repo.list(None).await.unwrap().len(), 2);
+    let movies_only = repo.list(Some("movies")).await.unwrap();
+    assert_eq!(movies_only.len(), 1);
+    assert_eq!(movies_only[0].id, movies_id);
+    let series_only = repo.list(Some("series")).await.unwrap();
+    assert_eq!(series_only.len(), 1);
+    assert_eq!(series_only[0].id, series_id);
+
+    let mut updated = stored.clone();
+    updated.label = "Missing (renamed)".to_owned();
+    updated.filters = vec![serde_json::json!({ "key": "monitored", "value": false })];
+    repo.update(&updated).await.unwrap();
+    let reread = repo.get(movies_id).await.unwrap();
+    assert_eq!(reread.label, "Missing (renamed)");
+    assert_eq!(reread.filters, updated.filters);
+
+    // Updating or deleting an id that does not exist is reported, not silent.
+    let mut missing = draft_filter("movies", "Ghost");
+    missing.id = 9999;
+    assert!(matches!(
+        repo.update(&missing).await,
+        Err(DbError::NotFound)
+    ));
+    assert!(matches!(repo.delete(9999).await, Err(DbError::NotFound)));
+
+    repo.delete(series_id).await.unwrap();
+    assert!(matches!(repo.get(series_id).await, Err(DbError::NotFound)));
+    assert_eq!(
+        repo.list(None).await.unwrap().len(),
+        1,
+        "only the movies filter remains"
+    );
 }
 
 #[tokio::test]

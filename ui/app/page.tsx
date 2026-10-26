@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { CustomFilterBar } from "./components/CustomFilterBar";
 import { LoadState } from "./components/Page";
 import { Poster } from "./components/Poster";
 import { get } from "./lib/api";
@@ -11,6 +12,7 @@ import type { Movie } from "./lib/types";
 
 type Filter = "all" | "wanted" | "downloaded" | "unmonitored";
 type Sort = "title" | "year" | "added";
+type SavedView = { filter: Filter; sort: Sort };
 
 function badge(m: Movie) {
   if (m.has_file) return <span className="badge good">Downloaded</span>;
@@ -71,6 +73,14 @@ export default function Library() {
             <option value="year">Year</option>
             <option value="added">Recently added</option>
           </select>
+          <CustomFilterBar<SavedView>
+            filterType="movies"
+            state={{ filter, sort }}
+            onApply={(v) => {
+              setFilter(v.filter);
+              setSort(v.sort);
+            }}
+          />
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool, sqlite::SqliteRow, types::Json};
 
 use crate::{DbError, Result};
 
@@ -226,6 +226,100 @@ impl PluginStorage<'_> {
             .bind(key)
             .execute(self.0)
             .await?;
+        Ok(())
+    }
+}
+
+/// A saved search/filter for a library view (e.g. "movies" or "series"),
+/// matching Sonarr/Radarr's `CustomFilter`. `filters` is a list of free-form
+/// filter rows; the database stores it as JSON and does not interpret it,
+/// so the UI can evolve what a filter row looks like without a migration.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CustomFilter {
+    pub id: i64,
+    /// Which view this filter applies to, e.g. "movies" or "series".
+    pub filter_type: String,
+    pub label: String,
+    pub filters: Vec<serde_json::Value>,
+}
+
+pub struct CustomFilters<'a>(pub(crate) &'a SqlitePool);
+
+fn custom_filter_from_row(r: &SqliteRow) -> Result<CustomFilter> {
+    Ok(CustomFilter {
+        id: r.try_get("id")?,
+        filter_type: r.try_get("type")?,
+        label: r.try_get("label")?,
+        filters: r.try_get::<Json<Vec<serde_json::Value>>, _>("filters")?.0,
+    })
+}
+
+impl CustomFilters<'_> {
+    /// All filters, or only those for one view type, newest first within
+    /// their type is not guaranteed; ordered by label for a stable UI list.
+    pub async fn list(&self, filter_type: Option<&str>) -> Result<Vec<CustomFilter>> {
+        let rows = match filter_type {
+            Some(t) => {
+                sqlx::query(
+                    "SELECT * FROM custom_filters WHERE type = ? ORDER BY label COLLATE NOCASE",
+                )
+                .bind(t)
+                .fetch_all(self.0)
+                .await?
+            }
+            None => {
+                sqlx::query("SELECT * FROM custom_filters ORDER BY type, label COLLATE NOCASE")
+                    .fetch_all(self.0)
+                    .await?
+            }
+        };
+        rows.iter().map(custom_filter_from_row).collect()
+    }
+
+    pub async fn get(&self, id: i64) -> Result<CustomFilter> {
+        let row = sqlx::query("SELECT * FROM custom_filters WHERE id = ?")
+            .bind(id)
+            .fetch_optional(self.0)
+            .await?
+            .ok_or(DbError::NotFound)?;
+        custom_filter_from_row(&row)
+    }
+
+    pub async fn insert(&self, f: &CustomFilter) -> Result<i64> {
+        Ok(
+            sqlx::query("INSERT INTO custom_filters (type, label, filters) VALUES (?, ?, ?)")
+                .bind(&f.filter_type)
+                .bind(&f.label)
+                .bind(Json(&f.filters))
+                .execute(self.0)
+                .await?
+                .last_insert_rowid(),
+        )
+    }
+
+    pub async fn update(&self, f: &CustomFilter) -> Result<()> {
+        let done =
+            sqlx::query("UPDATE custom_filters SET type = ?, label = ?, filters = ? WHERE id = ?")
+                .bind(&f.filter_type)
+                .bind(&f.label)
+                .bind(Json(&f.filters))
+                .bind(f.id)
+                .execute(self.0)
+                .await?;
+        if done.rows_affected() == 0 {
+            return Err(DbError::NotFound);
+        }
+        Ok(())
+    }
+
+    pub async fn delete(&self, id: i64) -> Result<()> {
+        let done = sqlx::query("DELETE FROM custom_filters WHERE id = ?")
+            .bind(id)
+            .execute(self.0)
+            .await?;
+        if done.rows_affected() == 0 {
+            return Err(DbError::NotFound);
+        }
         Ok(())
     }
 }

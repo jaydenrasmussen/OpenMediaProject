@@ -2326,6 +2326,7 @@ pub fn router(app: Arc<App>) -> Router {
         .merge(crate::tv_activity::routes())
         .merge(crate::manual_import::routes())
         .merge(crate::path_mappings::routes())
+        .merge(crate::custom_filters::routes())
         .merge(crate::plugin_install::routes());
     let api = api
         .route("/system/task", get(list_tasks))

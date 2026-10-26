@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { CustomFilterBar } from "../components/CustomFilterBar";
 import { LoadState } from "../components/Page";
 import { Poster } from "../components/Poster";
 import { useToast } from "../components/toast";
@@ -12,6 +13,7 @@ import type { QualityProfile, Series } from "../lib/types";
 
 type Filter = "all" | "continuing" | "ended" | "missing" | "unmonitored";
 type Sort = "title" | "year" | "added" | "next";
+type SavedView = { filter: Filter; sort: Sort };
 
 function badge(s: Series) {
   if (!s.monitored) return <span className="badge">Unmonitored</span>;
@@ -112,6 +114,14 @@ export default function SeriesLibrary() {
             <option value="added">Recently added</option>
             <option value="next">Next airing</option>
           </select>
+          <CustomFilterBar<SavedView>
+            filterType="series"
+            state={{ filter, sort }}
+            onApply={(v) => {
+              setFilter(v.filter);
+              setSort(v.sort);
+            }}
+          />
         </div>
       </div>
 

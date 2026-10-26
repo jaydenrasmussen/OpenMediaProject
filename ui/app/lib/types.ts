@@ -225,6 +225,16 @@ export interface Tag {
   label: string;
 }
 
+// A saved search/filter for a library view (e.g. "movies" or "series").
+// `filters` is a free-form list the server does not interpret; it is
+// whatever shape the view that owns this filter_type understands.
+export interface CustomFilter {
+  id: number;
+  type: string;
+  label: string;
+  filters: Record<string, unknown>[];
+}
+
 export interface DelayProfile {
   id: number;
   enable_usenet: boolean;

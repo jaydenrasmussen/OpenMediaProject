@@ -130,6 +130,31 @@ pub(crate) const ROUTES: &[Entry] = &[
         "Download clients",
         "Delete a remote path mapping",
     ),
+    (
+        "get",
+        "/customfilter",
+        "Custom filters",
+        "Saved filters, optionally ?type=movies|series",
+    ),
+    ("post", "/customfilter", "Custom filters", "Save a filter"),
+    (
+        "get",
+        "/customfilter/{id}",
+        "Custom filters",
+        "Read a saved filter",
+    ),
+    (
+        "put",
+        "/customfilter/{id}",
+        "Custom filters",
+        "Replace a saved filter",
+    ),
+    (
+        "delete",
+        "/customfilter/{id}",
+        "Custom filters",
+        "Delete a saved filter",
+    ),
     ("get", "/plugin", "Plugins", "Installed plugins"),
     (
         "post",
