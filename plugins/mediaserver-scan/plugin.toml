@@ -1,0 +1,8 @@
+id = "mediaserver-scan"
+name = "Media server scan"
+version = "0.1.0"
+kind = "notification"
+wasm = "mediaserver_scan.wasm"
+description = "Tells Plex, Jellyfin or Emby to rescan its library after an import or upgrade."
+# The server is the user's own instance, so the plugin may reach any host.
+allowed_hosts = ["*"]

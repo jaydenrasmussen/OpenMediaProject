@@ -1,0 +1,8 @@
+id = "ntfy"
+name = "ntfy"
+version = "0.1.0"
+kind = "notification"
+wasm = "ntfy.wasm"
+description = "Sends each event as a push notification through an ntfy server."
+# The server is the user's choice (ntfy.sh or self-hosted), so the plugin may reach any host.
+allowed_hosts = ["*"]

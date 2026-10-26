@@ -1,0 +1,8 @@
+id = "gotify"
+name = "Gotify"
+version = "0.1.0"
+kind = "notification"
+wasm = "gotify.wasm"
+description = "Sends each event as a push notification through a self-hosted Gotify server."
+# The server is the user's own instance, so the plugin may reach any host.
+allowed_hosts = ["*"]

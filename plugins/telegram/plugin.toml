@@ -1,0 +1,8 @@
+id = "telegram"
+name = "Telegram"
+version = "0.1.0"
+kind = "notification"
+wasm = "telegram.wasm"
+description = "Sends each event as a message from a Telegram bot."
+# The Bot API is always api.telegram.org; the token and chat selects the destination.
+allowed_hosts = ["api.telegram.org"]

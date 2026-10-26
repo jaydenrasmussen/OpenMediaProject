@@ -25,8 +25,13 @@ RUN rustup target add wasm32-wasip2
 COPY wit wit
 COPY plugins/webhook plugins/webhook
 COPY plugins/custom-list plugins/custom-list
+COPY plugins/ntfy plugins/ntfy
+COPY plugins/gotify plugins/gotify
+COPY plugins/discord plugins/discord
+COPY plugins/telegram plugins/telegram
+COPY plugins/mediaserver-scan plugins/mediaserver-scan
 RUN set -eux; \
-    for p in webhook custom-list; do \
+    for p in webhook custom-list ntfy gotify discord telegram mediaserver-scan; do \
       (cd plugins/$p && cargo build --release --locked --target wasm32-wasip2); \
       mkdir -p /out/$p; \
       cp plugins/$p/plugin.toml /out/$p/; \

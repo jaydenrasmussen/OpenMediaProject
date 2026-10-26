@@ -69,6 +69,31 @@ fn webhook_wasm() -> &'static PathBuf {
     WASM.get_or_init(|| build_plugin("webhook", "webhook.wasm"))
 }
 
+fn ntfy_wasm() -> &'static PathBuf {
+    static WASM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    WASM.get_or_init(|| build_plugin("ntfy", "ntfy.wasm"))
+}
+
+fn gotify_wasm() -> &'static PathBuf {
+    static WASM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    WASM.get_or_init(|| build_plugin("gotify", "gotify.wasm"))
+}
+
+fn discord_wasm() -> &'static PathBuf {
+    static WASM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    WASM.get_or_init(|| build_plugin("discord", "discord.wasm"))
+}
+
+fn telegram_wasm() -> &'static PathBuf {
+    static WASM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    WASM.get_or_init(|| build_plugin("telegram", "telegram.wasm"))
+}
+
+fn mediaserver_scan_wasm() -> &'static PathBuf {
+    static WASM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    WASM.get_or_init(|| build_plugin("mediaserver-scan", "mediaserver_scan.wasm"))
+}
+
 fn permissions(hosts: &[&str]) -> Permissions {
     Permissions {
         allowed_hosts: hosts.iter().map(|s| s.to_string()).collect(),
@@ -234,5 +259,286 @@ async fn webhook_reports_failures() {
     assert!(
         fetcher.seen.lock().unwrap().is_empty(),
         "nothing reached the network"
+    );
+}
+
+fn load_notification(
+    wasm: &PathBuf,
+    fetcher: Arc<FakeFetcher>,
+    hosts: &[&str],
+) -> Plugin<Notification> {
+    PluginHost::new(fetcher)
+        .unwrap()
+        .load_notification(wasm, permissions(hosts))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn ntfy_posts_the_message_with_title_and_tags() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let plugin = load_notification(ntfy_wasm(), fetcher.clone(), &["*"]);
+    assert!(
+        plugin
+            .settings_schema()
+            .await
+            .unwrap()
+            .contains("\"topic\"")
+    );
+
+    plugin
+        .send(
+            &event(),
+            r#"{"server":"https://ntfy.sh","topic":"omp","token":"tk_123","priority":"high"}"#,
+        )
+        .await
+        .unwrap();
+    let seen = fetcher.seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    let r = &seen[0];
+    assert_eq!(
+        (r.method.as_str(), r.url.as_str()),
+        ("POST", "https://ntfy.sh/omp")
+    );
+    assert_eq!(r.body.as_deref(), Some("The Matrix 1080p"));
+    assert!(
+        r.headers
+            .iter()
+            .any(|(k, v)| k == "title" && v == "Grabbed")
+    );
+    assert!(
+        r.headers
+            .iter()
+            .any(|(k, v)| k == "tags" && v == "arrow_down")
+    );
+    assert!(
+        r.headers
+            .iter()
+            .any(|(k, v)| k == "authorization" && v == "Bearer tk_123")
+    );
+}
+
+#[tokio::test]
+async fn ntfy_rejects_an_empty_topic() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let plugin = load_notification(ntfy_wasm(), fetcher.clone(), &["*"]);
+    let err = plugin
+        .send(&event(), r#"{"server":"https://ntfy.sh","topic":""}"#)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("topic"), "{err}");
+    assert!(fetcher.seen.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn gotify_posts_a_json_message_with_priority() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let plugin = load_notification(gotify_wasm(), fetcher.clone(), &["*"]);
+    assert!(
+        plugin
+            .settings_schema()
+            .await
+            .unwrap()
+            .contains("\"token\"")
+    );
+
+    plugin
+        .send(
+            &event(),
+            r#"{"server":"https://gotify.example.com","token":"tok","priority":3}"#,
+        )
+        .await
+        .unwrap();
+    let seen = fetcher.seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    let r = &seen[0];
+    assert_eq!(
+        (r.method.as_str(), r.url.as_str()),
+        ("POST", "https://gotify.example.com/message?token=tok")
+    );
+    let body: serde_json::Value = serde_json::from_str(r.body.as_deref().unwrap()).unwrap();
+    assert_eq!(body["title"], "Grabbed");
+    assert_eq!(body["message"], "The Matrix 1080p");
+    assert_eq!(body["priority"], 3);
+}
+
+#[tokio::test]
+async fn gotify_raises_priority_on_a_health_issue() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let plugin = load_notification(gotify_wasm(), fetcher.clone(), &["*"]);
+    let mut e = event();
+    e.kind = "health-issue".into();
+    plugin
+        .send(
+            &e,
+            r#"{"server":"https://gotify.example.com","token":"tok"}"#,
+        )
+        .await
+        .unwrap();
+    let seen = fetcher.seen.lock().unwrap();
+    let body: serde_json::Value = serde_json::from_str(seen[0].body.as_deref().unwrap()).unwrap();
+    assert_eq!(body["priority"], 8);
+}
+
+#[tokio::test]
+async fn discord_posts_an_embed_with_movie_fields() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let plugin = load_notification(discord_wasm(), fetcher.clone(), &["discord.com"]);
+    assert!(
+        plugin
+            .settings_schema()
+            .await
+            .unwrap()
+            .contains("\"webhook_url\"")
+    );
+
+    plugin
+        .send(
+            &event(),
+            r#"{"webhook_url":"https://discord.com/api/webhooks/1/abc"}"#,
+        )
+        .await
+        .unwrap();
+    let seen = fetcher.seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    let r = &seen[0];
+    assert_eq!(r.method, "POST");
+    let body: serde_json::Value = serde_json::from_str(r.body.as_deref().unwrap()).unwrap();
+    let embed = &body["embeds"][0];
+    assert_eq!(embed["title"], "Grabbed");
+    assert_eq!(embed["description"], "The Matrix 1080p");
+    let fields = embed["fields"].as_array().unwrap();
+    assert!(
+        fields
+            .iter()
+            .any(|f| f["name"] == "Title" && f["value"] == "The Matrix")
+    );
+}
+
+#[tokio::test]
+async fn discord_only_reaches_discord_hosts() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let restricted = load_notification(discord_wasm(), fetcher.clone(), &["discord.com"]);
+    let err = restricted
+        .send(&event(), r#"{"webhook_url":"https://evil.test/steal"}"#)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("not allowed"), "{err}");
+    assert!(fetcher.seen.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn telegram_posts_markdown_v2_with_escaping() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let plugin = load_notification(telegram_wasm(), fetcher.clone(), &["api.telegram.org"]);
+    assert!(
+        plugin
+            .settings_schema()
+            .await
+            .unwrap()
+            .contains("\"bot_token\"")
+    );
+
+    plugin
+        .send(&event(), r#"{"bot_token":"123:ABC","chat_id":"456"}"#)
+        .await
+        .unwrap();
+    let seen = fetcher.seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    let r = &seen[0];
+    assert_eq!(
+        (r.method.as_str(), r.url.as_str()),
+        ("POST", "https://api.telegram.org/bot123:ABC/sendMessage")
+    );
+    let body: serde_json::Value = serde_json::from_str(r.body.as_deref().unwrap()).unwrap();
+    assert_eq!(body["chat_id"], "456");
+    // "The Matrix 1080p" has a dot that MarkdownV2 requires escaped.
+    assert!(
+        body["text"].as_str().unwrap().contains("1080p"),
+        "{}",
+        body["text"]
+    );
+    assert_eq!(body["parse_mode"], "MarkdownV2");
+}
+
+#[tokio::test]
+async fn telegram_rejects_an_empty_chat_id() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let plugin = load_notification(telegram_wasm(), fetcher.clone(), &["api.telegram.org"]);
+    let err = plugin
+        .send(&event(), r#"{"bot_token":"123:ABC","chat_id":""}"#)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("chat ID"), "{err}");
+    assert!(fetcher.seen.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn mediaserver_scan_refreshes_plex_by_token() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let plugin = load_notification(mediaserver_scan_wasm(), fetcher.clone(), &["*"]);
+    let mut e = event();
+    e.kind = "import".into();
+
+    plugin
+        .send(
+            &e,
+            r#"{"server_type":"plex","server":"http://nas:32400","plex_token":"ptk"}"#,
+        )
+        .await
+        .unwrap();
+    let seen = fetcher.seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "GET");
+    assert!(
+        seen[0]
+            .url
+            .contains("http://nas:32400/library/sections/all/refresh")
+    );
+    assert!(seen[0].url.contains("X-Plex-Token=ptk"));
+}
+
+#[tokio::test]
+async fn mediaserver_scan_refreshes_jellyfin_with_api_key_header() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let plugin = load_notification(mediaserver_scan_wasm(), fetcher.clone(), &["*"]);
+    let mut e = event();
+    e.kind = "upgrade".into();
+
+    plugin
+        .send(
+            &e,
+            r#"{"server_type":"jellyfin","server":"http://nas:8096","api_key":"jk"}"#,
+        )
+        .await
+        .unwrap();
+    let seen = fetcher.seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    let r = &seen[0];
+    assert_eq!(
+        (r.method.as_str(), r.url.as_str()),
+        ("POST", "http://nas:8096/Library/Refresh")
+    );
+    assert!(
+        r.headers
+            .iter()
+            .any(|(k, v)| k == "x-emby-token" && v == "jk")
+    );
+}
+
+#[tokio::test]
+async fn mediaserver_scan_does_nothing_for_a_plain_grab_event() {
+    let fetcher = Arc::new(FakeFetcher::default());
+    let plugin = load_notification(mediaserver_scan_wasm(), fetcher.clone(), &["*"]);
+    // `event()` defaults to kind "grab", which has not changed any file yet.
+    plugin
+        .send(
+            &event(),
+            r#"{"server_type":"plex","server":"http://nas:32400","plex_token":"ptk"}"#,
+        )
+        .await
+        .unwrap();
+    assert!(
+        fetcher.seen.lock().unwrap().is_empty(),
+        "a grab event should not trigger a library scan"
     );
 }

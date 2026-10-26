@@ -294,6 +294,7 @@ Findings from the spikes:
 6. [x] OpenAPI spec (GET /api/v1/openapi.json; hand-kept table checked by tests against the real routes; bodies are untyped objects)
 7. [x] Remote path mappings (per client or all; longest match; Windows-style remotes)
 8. [x] Plugin install by URL (zip with plugin.toml + wasm; preview shows allowed hosts, install must quote the previewed SHA-256; plugins reload without a restart)
+9. [x] Notification plugins from §7 Phase 3: ntfy, Gotify, Discord, Telegram, Plex/Jellyfin/Emby library scan (`mediaserver-scan`; only fires on import/upgrade). Each ships as its own first-party plugin in `plugins/`, built in the Dockerfile's `plugins` stage, with end-to-end tests against the real `wasmtime` host in `omp-plugin-host/tests/plugins.rs`. **Email is not done** — the plugin host only gives plugins HTTP access, no raw sockets, so true SMTP needs a host-API change; skipped per decision, not attempted as an HTTP-API workaround.
 
 ### Phase 1 — Movies vertical slice (Radarr core) (6–8 weeks)
 Do movies first: simpler model than TV. This proves the whole pipeline.
