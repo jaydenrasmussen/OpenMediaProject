@@ -13,6 +13,13 @@ pub enum Kind {
     Indexer,
     Notification,
     List,
+    /// A full domain module (music, books, subtitles): its own DB tables,
+    /// routes and UI pages, not just a settings form. See PLAN.md §14 for
+    /// the design note on what this needs structurally. The manifest can
+    /// declare this kind today; nothing loads or runs one yet, so a plugin
+    /// that declares it is reported in `discover`'s problems, the same as
+    /// any other plugin the host cannot currently run.
+    MediaType,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -125,6 +132,14 @@ mod tests {
         assert_eq!((m.id.as_str(), m.kind), ("webhook", Kind::Notification));
         assert_eq!(m.wasm_path(), Path::new("/p/webhook/webhook.wasm"));
         assert!(m.permissions().allows("anything"));
+    }
+
+    /// The manifest kind exists even though nothing runs it yet (PLAN.md §14).
+    #[test]
+    fn media_type_kind_parses() {
+        let text = GOOD.replace("notification", "media_type");
+        let m = Manifest::parse(&text, Path::new("/p/music")).unwrap();
+        assert_eq!(m.kind, Kind::MediaType);
     }
 
     #[test]

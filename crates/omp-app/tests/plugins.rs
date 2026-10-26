@@ -306,6 +306,72 @@ async fn a_broken_plugin_is_reported_not_fatal() {
 }
 
 #[tokio::test]
+async fn a_media_type_plugin_manifest_is_accepted_but_not_runnable_yet() {
+    // The manifest kind exists (PLAN.md §14) even though nothing loads or
+    // runs one yet: a well-formed media-type manifest is discovered like
+    // any other plugin, but is reported as a problem, not a crash, the
+    // same "broken plugin does not take down the host" guarantee every
+    // other unsupported case already gets.
+    let r = rig(false).await;
+    let dir = r.app.config.plugin_dirs[0].join("music");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("plugin.toml"),
+        r#"
+            id = "lidarr-ish"
+            name = "Music (placeholder)"
+            version = "0.1.0"
+            kind = "media_type"
+            wasm = "music.wasm"
+        "#,
+    )
+    .unwrap();
+    // discover() only checks the wasm file exists, not that it is valid.
+    std::fs::write(dir.join("music.wasm"), b"not a real component").unwrap();
+
+    let mut config = r.app.config.clone();
+    config.data_dir = r._dir.path().join("data_media_type");
+    let again = App::new(
+        config,
+        Db::in_memory().await.unwrap(),
+        None,
+        Arc::new(NoProbe),
+        Arc::new(NoDiskCheck),
+    )
+    .await
+    .unwrap();
+    let key = again.api_key().await.unwrap();
+    let res = omp_app::router(again)
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/plugin")
+                .header("x-api-key", key)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(
+        body["plugins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["id"] != "lidarr-ish"),
+        "not loaded, so not listed as installed: {body}"
+    );
+    assert!(
+        body["problems"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p.as_str().unwrap_or_default().contains("lidarr-ish")),
+        "reported as a problem instead: {body}"
+    );
+}
+
+#[tokio::test]
 async fn notifications_validate_test_and_follow_history() {
     let r = rig(true).await;
     let (url, mut received) = capture_server().await;

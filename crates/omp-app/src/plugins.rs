@@ -136,6 +136,10 @@ impl Plugins {
                 Kind::List => host
                     .load_list(m.wasm_path(), &m.id, m.permissions())
                     .map(|p| drop(me.lists.insert(m.id.clone(), Arc::new(p)))),
+                // Declared but not runnable yet; see PLAN.md §14. Reported
+                // the same way any other plugin the host cannot load is:
+                // in `problems()`, not a crash.
+                Kind::MediaType => Err(anyhow::anyhow!("media-type plugins are not supported yet")),
             };
             match loaded {
                 Ok(()) => me.manifests.push(m),
