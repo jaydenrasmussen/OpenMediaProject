@@ -33,8 +33,9 @@ jobs:
           restore-keys: plugins-${{ runner.os }}-
       # Build them once here; the tests then find them built.
       - run: |
-          for p in plugins/*/; do
-            (cd "$p" && cargo build --release --locked --target wasm32-wasip2)
+          # Only directories with a plugin.toml: plugins/target must not be taken for a plugin.
+          for manifest in plugins/*/plugin.toml; do
+            (cd "$(dirname "$manifest")" && cargo build --release --locked --target wasm32-wasip2)
           done
       # Tests that drive the real tools skip themselves when these are missing.
       - run: sudo apt-get update && sudo apt-get install -y par2 7zip ffmpeg
