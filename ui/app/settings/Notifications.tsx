@@ -10,8 +10,19 @@ import type { PluginList, Provider, Schema } from "../lib/types";
 
 const TRIGGERS = [
   { id: "grab", label: "A release is grabbed" },
-  { id: "import", label: "A movie is imported" },
+  { id: "import", label: "A movie or episode is imported" },
   { id: "download-failed", label: "A download fails" },
+  { id: "upgrade", label: "An import upgrades an existing file (also needs “imported”)" },
+  { id: "movie-add", label: "A movie is added" },
+  { id: "movie-delete", label: "A movie is deleted" },
+  { id: "series-add", label: "A series is added" },
+  { id: "series-delete", label: "A series is deleted" },
+  { id: "manual-interaction", label: "A download needs manual import" },
+  { id: "app-update", label: "The application is updated" },
+  { id: "rename", label: "A file is renamed" },
+  { id: "file-delete", label: "A file is deleted" },
+  { id: "health-issue", label: "A health issue appears" },
+  { id: "health-restored", label: "A health issue is resolved" },
 ];
 
 interface Draft {

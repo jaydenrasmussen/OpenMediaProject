@@ -40,7 +40,9 @@ pub use config::{AppConfig, TlsFiles};
 pub use host_settings::apply as apply_host_settings;
 pub use lists::sync_once as sync_import_lists;
 pub use logs::{DbLogLayer, LogReceiver, channel as log_channel};
+pub use notify::dispatch_health as dispatch_health_notifications;
 pub use notify::dispatch_once as dispatch_notifications;
+pub use notify::dispatch_system as dispatch_system_notifications;
 pub use tasks::{
     process_downloads_once, rescan_movie_once, rss_sync_once, search_movie_once, spawn_scheduler,
 };

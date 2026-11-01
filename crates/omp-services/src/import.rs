@@ -747,7 +747,9 @@ impl Importer<'_> {
                         c.path.to_string_lossy().into_owned(),
                     ),
                 ]
-                .into(),
+                .into_iter()
+                .chain((old.is_some()).then(|| ("upgrade".to_owned(), "true".to_owned())))
+                .collect(),
             })
             .await
             .map_err(|e| e.to_string())?;

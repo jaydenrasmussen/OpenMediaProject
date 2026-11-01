@@ -181,6 +181,7 @@ fn event() -> Event {
         kind: "grab".into(),
         title: "Grabbed".into(),
         message: "The Matrix 1080p".into(),
+        series: None,
         movie: Some(MovieInfo {
             title: "The Matrix".into(),
             year: 1999,

@@ -538,6 +538,7 @@ pub(crate) async fn add_to_library(app: &Arc<App>, req: AddSeriesBody) -> Result
             }
         });
     }
+    crate::notify::announce_series_added(app, id).await;
     Ok(id)
 }
 
@@ -736,6 +737,10 @@ async fn remove_series(
             .await?;
     }
     app.db.series().delete(id).await?;
+    crate::notify::announce(
+        app,
+        crate::notify::series_event("series-delete", "Series deleted", &s.info),
+    );
     Ok(())
 }
 
@@ -1024,6 +1029,7 @@ async fn import_series(State(app): Shared, Json(req): Json<ImportBatch>) -> ApiR
             omp_services::rescan_series(&app.db, id, Utc::now())
                 .await
                 .map_err(|e| e.to_string())?;
+            crate::notify::announce_series_added(&app, id).await;
             Ok(id)
         }
         .await;

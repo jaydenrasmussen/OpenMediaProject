@@ -53,6 +53,12 @@ impl Guest for Webhook {
                 "tmdbId": m.tmdb_id,
                 "imdbId": m.imdb_id,
             })),
+            "series": event.series.map(|s| json!({
+                "title": s.title,
+                "year": s.year,
+                "tmdbId": s.tmdb_id,
+                "tvdbId": s.tvdb_id,
+            })),
         })
         .to_string();
 

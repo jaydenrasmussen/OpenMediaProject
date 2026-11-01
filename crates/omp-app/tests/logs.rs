@@ -135,6 +135,7 @@ async fn scheduled_tasks_are_listed_with_their_schedule() {
             "import-lists",
             "media-servers",
             "notifications",
+            "notify-health",
             "process-downloads",
             "recycle-bin",
             "refresh-movies",

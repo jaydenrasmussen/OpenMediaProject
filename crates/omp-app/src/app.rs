@@ -61,6 +61,8 @@ pub struct App {
     pub(crate) tv_search_cache:
         std::sync::Mutex<crate::releases::SearchCache<omp_services::TvEvaluation>>,
     tasks: std::sync::Mutex<std::collections::BTreeMap<&'static str, TaskStatus>>,
+    /// Notification events that history doesn't record, waiting to be sent.
+    pub(crate) outbox: std::sync::Mutex<Vec<omp_plugin_host::Event>>,
     shutdown: tokio::sync::Notify,
     pub(crate) rss_lock: tokio::sync::Mutex<()>,
     pub(crate) tv_rss_lock: tokio::sync::Mutex<()>,
@@ -180,6 +182,7 @@ impl App {
             search_cache: std::sync::Mutex::default(),
             tv_search_cache: std::sync::Mutex::default(),
             tasks: std::sync::Mutex::default(),
+            outbox: std::sync::Mutex::default(),
             shutdown: tokio::sync::Notify::new(),
             rss_lock: tokio::sync::Mutex::new(()),
             tv_rss_lock: tokio::sync::Mutex::new(()),

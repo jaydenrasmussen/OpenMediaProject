@@ -11,7 +11,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use omp_app::{App, AppConfig, router};
-use omp_core::tv::{SeriesInfo, SeriesStatus};
+use omp_core::tv::{EpisodeInfo, NewItemMonitor, SeriesInfo, SeriesStatus, SeriesType};
 use omp_core::{
     history::HistoryEvent,
     movie::{MovieMetadata, MovieStatus},
@@ -19,7 +19,7 @@ use omp_core::{
 };
 use omp_db::{
     Db,
-    repo::{HistoryRecord, NewMovie},
+    repo::{EpisodeHistoryRecord, HistoryRecord, NewMovie, NewSeries},
 };
 use omp_metadata::{MetadataError, MovieMetadataProvider, SeriesMetadataProvider};
 use omp_services::{MediaProbe, NoDiskCheck, ProbeInfo};
@@ -405,6 +405,310 @@ async fn notifications_validate_test_and_follow_history() {
 
     // Nothing is replayed.
     assert_eq!(omp_app::dispatch_notifications(&r.app).await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn notifications_cover_upgrades_batches_and_library_changes() {
+    let r = rig(true).await;
+    let (url, mut received) = capture_server().await;
+    let hook = |name: &str, triggers: Value| {
+        json!({
+            "name": name, "implementation": "webhook", "plugin_id": "webhook",
+            "settings": { "triggers": triggers, "settings": { "url": url } },
+        })
+    };
+    // One wants every kind of import; the other only plain imports.
+    for body in [
+        hook(
+            "All",
+            json!(["import", "upgrade", "rename", "movie-delete"]),
+        ),
+        hook("Plain", json!(["import"])),
+    ] {
+        let (s, saved) = call(&r, Method::POST, "/api/v1/notification", Some(body)).await;
+        assert_eq!(s, StatusCode::CREATED, "{saved}");
+    }
+    assert_eq!(omp_app::dispatch_notifications(&r.app).await.unwrap(), 0);
+
+    let meta = omp_metadata_movie();
+    let metadata_id = r.app.db.movies().upsert_metadata(&meta).await.unwrap();
+    let profile = r.app.db.quality_profiles().list().await.unwrap()[0].id;
+    let movie_id = r
+        .app
+        .db
+        .movies()
+        .add(&NewMovie {
+            metadata_id,
+            monitored: true,
+            minimum_availability: MovieStatus::Announced,
+            quality_profile_id: profile,
+            path: "/movies/The Matrix (1999)".into(),
+            root_folder_path: None,
+            tags: vec![],
+        })
+        .await
+        .unwrap();
+    let row = |event, title: &str, data: &[(&str, &str)]| HistoryRecord {
+        id: 0,
+        movie_id,
+        event,
+        date: chrono::Utc::now(),
+        source_title: title.into(),
+        quality: QualityModel::default(),
+        languages: vec![],
+        download_id: None,
+        data: data
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
+    };
+    for h in [
+        row(HistoryEvent::DownloadFolderImported, "plain", &[]),
+        row(
+            HistoryEvent::DownloadFolderImported,
+            "better",
+            &[("upgrade", "true")],
+        ),
+        row(HistoryEvent::MovieFileRenamed, "a", &[]),
+        row(HistoryEvent::MovieFileRenamed, "b", &[]),
+        row(HistoryEvent::MovieFileRenamed, "c", &[]),
+    ] {
+        r.app.db.history().insert(&h).await.unwrap();
+    }
+    // The plain import goes to both. The upgrade goes out as an upgrade to
+    // "All" and as an ordinary import to "Plain", which never asked for
+    // upgrades. The rename batch goes to "All" alone. That is 2 + 2 + 1.
+    assert_eq!(omp_app::dispatch_notifications(&r.app).await.unwrap(), 5);
+    let mut seen = Vec::new();
+    for _ in 0..5 {
+        let v: Value = serde_json::from_str(&received.recv().await.unwrap()).unwrap();
+        seen.push(v);
+    }
+    let count = |kind: &str| seen.iter().filter(|v| v["event"] == kind).count();
+    assert_eq!(
+        (count("import"), count("upgrade"), count("rename")),
+        (3, 1, 1)
+    );
+    let upgrade = seen.iter().find(|v| v["event"] == "upgrade").unwrap();
+    assert_eq!(upgrade["title"], "Movie upgraded");
+    assert!(
+        seen.iter()
+            .all(|v| v["title"] != "Movie upgraded" || v["event"] == "upgrade")
+    );
+    let rename = seen.iter().find(|v| v["event"] == "rename").unwrap();
+    assert!(
+        rename["title"].as_str().unwrap().contains("3 files"),
+        "{rename}"
+    );
+
+    let (s, _) = call(
+        &r,
+        Method::DELETE,
+        &format!("/api/v1/movie/{movie_id}"),
+        None,
+    )
+    .await;
+    assert!(s.is_success());
+    assert_eq!(omp_app::dispatch_notifications(&r.app).await.unwrap(), 1);
+    let gone: Value = serde_json::from_str(&received.recv().await.unwrap()).unwrap();
+    assert_eq!(gone["event"], "movie-delete");
+    assert_eq!(gone["movie"]["title"], "The Matrix");
+}
+
+#[tokio::test]
+async fn notifications_carry_series_and_report_system_and_health_changes() {
+    let r = rig(true).await;
+    let (url, mut received) = capture_server().await;
+    let hook = json!({
+        "name": "Hook", "implementation": "webhook", "plugin_id": "webhook",
+        "settings": { "triggers": ["grab", "series-delete", "app-update", "health-issue", "health-restored"],
+                      "settings": { "url": url } },
+    });
+    let (s, saved) = call(&r, Method::POST, "/api/v1/notification", Some(hook)).await;
+    assert_eq!(s, StatusCode::CREATED, "{saved}");
+
+    // Baselines: nothing is announced the first time.
+    assert_eq!(omp_app::dispatch_notifications(&r.app).await.unwrap(), 0);
+    assert_eq!(
+        omp_app::dispatch_health_notifications(&r.app)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        omp_app::dispatch_system_notifications(&r.app)
+            .await
+            .unwrap(),
+        0
+    );
+
+    // A new version is announced once.
+    r.app
+        .db
+        .config()
+        .set("notification_version", "0.0.1")
+        .await
+        .unwrap();
+    assert_eq!(
+        omp_app::dispatch_system_notifications(&r.app)
+            .await
+            .unwrap(),
+        1
+    );
+    let update: Value = serde_json::from_str(&received.recv().await.unwrap()).unwrap();
+    assert_eq!(update["event"], "app-update");
+    assert!(
+        update["message"].as_str().unwrap().contains("0.0.1"),
+        "{update}"
+    );
+    assert_eq!(
+        omp_app::dispatch_system_notifications(&r.app)
+            .await
+            .unwrap(),
+        0
+    );
+
+    // The rig starts with no root folder. Adding a missing one resolves that
+    // issue and raises another; removing it swaps them back.
+    let missing = r
+        .app
+        .db
+        .root_folders()
+        .add("/definitely/not/here")
+        .await
+        .unwrap();
+    assert_eq!(
+        omp_app::dispatch_health_notifications(&r.app)
+            .await
+            .unwrap(),
+        2
+    );
+    let mut got = Vec::new();
+    for _ in 0..2 {
+        got.push(serde_json::from_str::<Value>(&received.recv().await.unwrap()).unwrap());
+    }
+    let issue = got.iter().find(|v| v["event"] == "health-issue").unwrap();
+    assert!(
+        issue["message"]
+            .as_str()
+            .unwrap()
+            .contains("/definitely/not/here"),
+        "{issue}"
+    );
+    let restored = got
+        .iter()
+        .find(|v| v["event"] == "health-restored")
+        .unwrap();
+    assert!(
+        restored["message"]
+            .as_str()
+            .unwrap()
+            .contains("No root folder"),
+        "{restored}"
+    );
+
+    // Nothing changed: nothing is said.
+    assert_eq!(
+        omp_app::dispatch_health_notifications(&r.app)
+            .await
+            .unwrap(),
+        0
+    );
+    r.app.db.root_folders().delete(missing.id).await.unwrap();
+    assert_eq!(
+        omp_app::dispatch_health_notifications(&r.app)
+            .await
+            .unwrap(),
+        2
+    );
+    for _ in 0..2 {
+        received.recv().await.unwrap();
+    }
+
+    // Episode events carry the series.
+    let profile = r.app.db.quality_profiles().list().await.unwrap()[0].id;
+    let series_id = r
+        .app
+        .db
+        .series()
+        .add(&NewSeries {
+            info: SeriesInfo {
+                tmdb_id: 1396,
+                tvdb_id: Some(81189),
+                title: "Breaking Bad".into(),
+                year: 2008,
+                status: SeriesStatus::Ended,
+                ..Default::default()
+            },
+            series_type: SeriesType::Standard,
+            monitored: true,
+            monitor_new_items: NewItemMonitor::All,
+            quality_profile_id: profile,
+            season_folder: true,
+            use_scene_numbering: false,
+            path: "/tv/Breaking Bad (2008)".into(),
+            root_folder_path: None,
+            tags: vec![],
+        })
+        .await
+        .unwrap();
+    let episode_id = r
+        .app
+        .db
+        .episodes()
+        .insert(
+            series_id,
+            &EpisodeInfo {
+                tmdb_id: 1,
+                season_number: 1,
+                episode_number: 1,
+                title: "Pilot".into(),
+                ..Default::default()
+            },
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    r.app
+        .db
+        .episode_history()
+        .insert(&EpisodeHistoryRecord {
+            id: 0,
+            series_id,
+            episode_id,
+            event: HistoryEvent::Grabbed,
+            date: chrono::Utc::now(),
+            source_title: "Breaking.Bad.S01E01.1080p".into(),
+            quality: QualityModel::default(),
+            languages: vec![],
+            download_id: Some("abc".into()),
+            data: Default::default(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(omp_app::dispatch_notifications(&r.app).await.unwrap(), 1);
+    let grab: Value = serde_json::from_str(&received.recv().await.unwrap()).unwrap();
+    assert_eq!(grab["event"], "grab");
+    assert_eq!(grab["series"]["title"], "Breaking Bad");
+    assert_eq!(grab["series"]["tvdbId"], 81189);
+    assert!(
+        grab["message"].as_str().unwrap().contains("S01E01"),
+        "{grab}"
+    );
+
+    let (s, _) = call(
+        &r,
+        Method::DELETE,
+        &format!("/api/v1/series/{series_id}"),
+        None,
+    )
+    .await;
+    assert!(s.is_success());
+    assert_eq!(omp_app::dispatch_notifications(&r.app).await.unwrap(), 1);
+    let gone: Value = serde_json::from_str(&received.recv().await.unwrap()).unwrap();
+    assert_eq!(gone["event"], "series-delete");
+    assert_eq!(gone["series"]["tmdbId"], 1396);
 }
 
 fn omp_metadata_movie() -> omp_core::movie::MovieMetadata {

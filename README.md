@@ -34,6 +34,7 @@
 - **Plugins:** WebAssembly plugins add indexers, notifications, import lists and download clients. They run sandboxed and can reach only the hosts they declare. Install one from a URL.
 - **Plex and Jellyfin:** connect a server and every title shows whether it is already there, and Wanted leaves out what a server already holds. Read-only.
 - **Notifications:** email is built in. Plugins cover Discord, Slack, Telegram, ntfy, Gotify, Pushover, Plex, Jellyfin and Emby, and webhooks.
+  Each notification chooses its events: grab, import, upgrade, download failed, rename, file delete, movie or series added or deleted, health issue and resolved, manual import needed, and application update. Bulk renames and deletes arrive as one message. An upgrade reaches a notification that chose only "import" as an import.
 - **Import lists:** keep a movie library filled from a list. Lists are plugins (a custom list that reads a URL is included) and can name movies or series.
 - **Live:** the UI updates over a WebSocket as downloads move and tasks finish. There is a documented API at `/api/v1/openapi.json`.
 - **Built to run unattended:** one binary with the UI inside, SQLite, backups, a health page that says what is wrong in words, and sign-in with rate limiting.

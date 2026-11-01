@@ -277,3 +277,9 @@ async fn removed_downloads_are_forgotten_but_an_unreachable_client_keeps_them() 
         "kept while the client cannot be asked"
     );
 }
+
+#[test]
+fn an_unrefreshed_monitor_is_not_settled() {
+    // Its empty snapshot is "not looked yet", not "nothing is tracked".
+    assert!(!omp_services::DownloadMonitor::new().settled());
+}

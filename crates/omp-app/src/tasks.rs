@@ -473,6 +473,23 @@ pub fn spawn_scheduler(app: Arc<App>) -> Vec<JoinHandle<()>> {
         ),
         every(
             &app,
+            "notify-health",
+            "Send health and system notifications",
+            minute,
+            Duration::from_secs(300),
+            false,
+            |app| async move {
+                async {
+                    Ok(crate::notify::dispatch_health(&app).await?
+                        + crate::notify::dispatch_system(&app).await?)
+                }
+                .await
+                .map(|n: usize| (n > 0).then(|| format!("{n} sent")))
+                .map_err(|e: anyhow::Error| e.to_string())
+            },
+        ),
+        every(
+            &app,
             "media-servers",
             "Read media server libraries",
             minute,

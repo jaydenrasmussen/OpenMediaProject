@@ -604,6 +604,10 @@ pub(crate) async fn add_to_library(app: &Arc<App>, req: AddMovie) -> Result<Movi
     // The folder may already hold the movie.
     let _ = tasks::rescan_movie_once(app, id).await;
     let record = app.db.movies().get(id).await?;
+    crate::notify::announce(
+        app,
+        crate::notify::movie_event("movie-add", "Movie added", &record),
+    );
     if req.search_now && req.monitored {
         let app = app.clone();
         tokio::spawn(async move {
@@ -732,6 +736,10 @@ async fn remove_movie(
             .await?;
     }
     app.db.movies().delete(id).await?;
+    crate::notify::announce(
+        app,
+        crate::notify::movie_event("movie-delete", "Movie deleted", &m),
+    );
     Ok(())
 }
 
@@ -1861,6 +1869,7 @@ async fn import_movies(State(app): Shared, Json(req): Json<ImportBatch>) -> ApiR
             tasks::rescan_movie_once(&app, id)
                 .await
                 .map_err(|e| e.to_string())?;
+            crate::notify::announce_movie_added(&app, id).await;
             Ok(id)
         }
         .await;

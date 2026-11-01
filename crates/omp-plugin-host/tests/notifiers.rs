@@ -80,6 +80,7 @@ fn event(kind: &str) -> Event {
         title: "Release grabbed".into(),
         message: "Some Show S01E01 (WEBDL-1080p)".into(),
         movie: None,
+        series: None,
     }
 }
 

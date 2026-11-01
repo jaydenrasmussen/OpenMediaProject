@@ -84,7 +84,7 @@ pub use dc::{AddRequest as ClientAddRequest, Item as ClientItemInfo, Status as C
 pub use ix::{Protocol, Release, SearchQuery};
 pub use ls::{Item as ListItem, ItemKind as ListItemKind};
 pub use ms::{ItemKind as MediaItemKind, LibraryItem as MediaLibraryItem, Page as MediaPage};
-pub use nt::{Event, MovieInfo};
+pub use nt::{Event, MovieInfo, SeriesInfo};
 
 /// One HTTP request a plugin asked for.
 #[derive(Debug, Clone)]

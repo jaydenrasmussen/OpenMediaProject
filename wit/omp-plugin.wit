@@ -78,12 +78,23 @@ interface notification {
         imdb-id: option<string>,
     }
 
+    record series-info {
+        title: string,
+        year: u32,
+        tmdb-id: s64,
+        tvdb-id: option<s64>,
+    }
+
     record event {
-        /// grab, import, upgrade, download-failed, health-issue, health-restored, test
+        /// grab, import, upgrade, download-failed, rename, file-delete, movie-add,
+        /// movie-delete, series-add, series-delete, health-issue, health-restored,
+        /// manual-interaction, app-update, test
         kind: string,
         title: string,
         message: string,
         movie: option<movie-info>,
+        /// Set for events about a series or its episodes.
+        series: option<series-info>,
     }
 
     settings-schema: func() -> string;

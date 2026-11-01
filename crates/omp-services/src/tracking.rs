@@ -7,7 +7,13 @@
 //! its download id. Downloads that were not grabbed here are only picked up
 //! if they sit in the configured category, and then need manual import.
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use chrono::{DateTime, Utc};
 use omp_core::{
@@ -84,6 +90,10 @@ pub struct MonitorOptions {
 #[derive(Default)]
 pub struct DownloadMonitor {
     tracked: Mutex<HashMap<String, TrackedDownload>>,
+    /// A refresh has finished at least once.
+    refreshed: AtomicBool,
+    /// A refresh is running; `tracked` is empty while it does.
+    refreshing: AtomicBool,
 }
 
 fn state_from_history(
@@ -114,6 +124,12 @@ impl DownloadMonitor {
 
     pub fn get(&self, download_id: &str) -> Option<TrackedDownload> {
         self.tracked.lock().unwrap().get(download_id).cloned()
+    }
+
+    /// Is `snapshot` the real picture? Not before the first refresh finishes,
+    /// and not while one is running.
+    pub fn settled(&self) -> bool {
+        self.refreshed.load(Ordering::SeqCst) && !self.refreshing.load(Ordering::SeqCst)
     }
 
     /// Everything currently tracked, in a stable order.
@@ -151,9 +167,14 @@ impl DownloadMonitor {
         registry: &ClientRegistry,
         options: &MonitorOptions,
     ) -> Result<RefreshResult, ServiceError> {
+        self.refreshing.store(true, Ordering::SeqCst);
         let mut map = std::mem::take(&mut *self.tracked.lock().unwrap());
         let result = self.refresh_into(&mut map, db, registry, options).await;
         *self.tracked.lock().unwrap() = map;
+        if result.is_ok() {
+            self.refreshed.store(true, Ordering::SeqCst);
+        }
+        self.refreshing.store(false, Ordering::SeqCst);
         result
     }
 
