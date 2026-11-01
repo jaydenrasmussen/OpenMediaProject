@@ -14,6 +14,7 @@
 .DS_Store
 .idea/
 .vscode/
+/plugins/target/
 /plugins/*/target/
 /e2e/node_modules/
 /e2e/test-results/

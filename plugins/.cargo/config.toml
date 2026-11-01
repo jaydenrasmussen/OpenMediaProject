@@ -1,0 +1,4 @@
+# Every plugin builds into one target directory (plugins/target), so the
+# dependencies they share compile once, and CI can cache the directory.
+[build]
+target-dir = "target"

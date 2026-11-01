@@ -88,7 +88,7 @@ fn install_plugin(into: &std::path::Path, name: &str, artifact: &str) {
     std::fs::create_dir_all(&dest).unwrap();
     std::fs::copy(source.join("plugin.toml"), dest.join("plugin.toml")).unwrap();
     std::fs::copy(
-        source.join("target/wasm32-wasip2/release").join(artifact),
+        source.join("../target/wasm32-wasip2/release").join(artifact),
         dest.join(artifact),
     )
     .unwrap();

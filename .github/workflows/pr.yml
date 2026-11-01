@@ -24,6 +24,18 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-wasip2
       - uses: Swatinem/rust-cache@v2
+      # The plugins share one target directory (see plugins/.cargo/config.toml).
+      # Cache it on its own: rust-cache only covers the workspace's target.
+      - uses: actions/cache@v4
+        with:
+          path: plugins/target
+          key: plugins-${{ runner.os }}-${{ hashFiles('plugins/*/Cargo.lock', 'plugins/*/src/**', 'plugins/*/Cargo.toml', 'wit/**') }}
+          restore-keys: plugins-${{ runner.os }}-
+      # Build them once here; the tests then find them built.
+      - run: |
+          for p in plugins/*/; do
+            (cd "$p" && cargo build --release --locked --target wasm32-wasip2)
+          done
       # Tests that drive the real tools skip themselves when these are missing.
       - run: sudo apt-get update && sudo apt-get install -y par2 7zip ffmpeg
       - run: python3 scripts/check_audit.py

@@ -313,7 +313,7 @@ async fn a_real_jellyfin_library_is_read_with_its_ids() {
     let plugin = PluginHost::new(Arc::new(Real(reqwest::Client::new())))
         .unwrap()
         .load_media_server(
-            dir.join("target/wasm32-wasip2/release")
+            dir.join("../target/wasm32-wasip2/release")
                 .join(&manifest.wasm),
             Permissions {
                 allowed_hosts: manifest.allowed_hosts.clone(),

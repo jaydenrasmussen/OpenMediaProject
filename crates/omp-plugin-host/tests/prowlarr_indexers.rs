@@ -71,7 +71,7 @@ fn load() -> (Plugin<Indexer>, Arc<Site>) {
     let plugin = PluginHost::new(site.clone())
         .unwrap()
         .load_indexer(
-            dir.join("target/wasm32-wasip2/release")
+            dir.join("../target/wasm32-wasip2/release")
                 .join(&manifest.wasm),
             Permissions {
                 allowed_hosts: manifest.allowed_hosts.clone(),

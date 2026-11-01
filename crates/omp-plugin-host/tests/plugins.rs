@@ -57,7 +57,7 @@ fn build_plugin(name: &str, artifact: &str) -> PathBuf {
         .status()
         .unwrap();
     assert!(status.success(), "building {name} failed");
-    dir.join("target/wasm32-wasip2/release").join(artifact)
+    dir.join("../target/wasm32-wasip2/release").join(artifact)
 }
 
 fn toy_wasm() -> &'static PathBuf {

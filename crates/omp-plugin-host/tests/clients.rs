@@ -72,7 +72,7 @@ fn load(name: &str, script: Script) -> (Plugin<DownloadClient>, Arc<Scripted>, M
     )
     .unwrap();
     let wasm = dir
-        .join("target/wasm32-wasip2/release")
+        .join("../target/wasm32-wasip2/release")
         .join(&manifest.wasm);
     let fetcher = Arc::new(Scripted {
         script,

@@ -138,7 +138,7 @@ fn load(name: &str) -> Plugin<DownloadClient> {
     )
     .unwrap();
     let wasm = dir
-        .join("target/wasm32-wasip2/release")
+        .join("../target/wasm32-wasip2/release")
         .join(&manifest.wasm);
     let client = omp_net::client_builder()
         .timeout(Duration::from_secs(30))
