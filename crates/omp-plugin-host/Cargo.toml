@@ -14,7 +14,9 @@ async-trait = "0.1.92"
 tokio.workspace = true
 tracing.workspace = true
 url = "2.5.8"
-wasmtime = "49"
+# Every default feature but `cache`: the host never turns the compiled-code
+# cache on, and it is the only user of the zstd crate.
+wasmtime = { version = "49", default-features = false, features = ["anyhow", "async", "backtrace", "gc", "gc-copying", "gc-drc", "gc-null", "wat", "profiling", "parallel-compilation", "cranelift", "pooling-allocator", "demangle", "addr2line", "coredump", "debug-builtins", "runtime", "component-model", "component-model-async", "threads", "stack-switching", "std", "debug", "compile-time-builtins", "wit-parser"] }
 wasmtime-wasi = "49"
 
 [lints]
