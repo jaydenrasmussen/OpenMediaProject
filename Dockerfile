@@ -69,10 +69,13 @@ COPY plugins/plex-library plugins/plex-library
 COPY plugins/jellyfin-library plugins/jellyfin-library
 COPY crates/omp-cardigann crates/omp-cardigann
 COPY plugins/prowlarr-indexers plugins/prowlarr-indexers
+# Not --locked: a release stamps its version into Cargo.toml, and omp-cardigann (which
+# prowlarr-indexers depends on) takes that version, so that one lock entry has to change.
+# Cargo still keeps every locked dependency version; CI builds the plugins with --locked.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     set -eux; \
     for p in webhook custom-list discord slack telegram ntfy gotify pushover plex jellyfin-emby sabnzbd qbittorrent transmission nzbget plex-library jellyfin-library prowlarr-indexers; do \
-      (cd plugins/$p && cargo build --release --locked --target wasm32-wasip2); \
+      (cd plugins/$p && cargo build --release --target wasm32-wasip2); \
       mkdir -p /out/$p; \
       cp plugins/$p/plugin.toml /out/$p/; \
       cp /cargo-target/wasm32-wasip2/release/$(echo $p | tr - _).wasm /out/$p/; \
